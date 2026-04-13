@@ -1,0 +1,184 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useApp } from '../context/AppContext.jsx';
+import FitScoreBadge from '../components/FitScoreBadge.jsx';
+import StatusBadge from '../components/StatusBadge.jsx';
+import LaneBadge from '../components/LaneBadge.jsx';
+import { approveOpportunity, updateOpportunity } from '../lib/api.js';
+import { getResumeEmphasisLabel } from '../../netlify/functions/_shared/scoring.js';
+
+export default function OpportunityDetail() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const { state, loadOpportunities, notify } = useApp();
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const opp = state.opportunities.find(o => o.id === id);
+
+  useEffect(() => {
+    if (opp) setNotes(opp.notes || '');
+  }, [opp?.id]);
+
+  if (!opp) return (
+    <div className="card card-pad">
+      <div className="text-muted">Opportunity not found.</div>
+      <button className="btn btn-secondary" style={{ marginTop: 12 }} onClick={() => nav(-1)}>← Back</button>
+    </div>
+  );
+
+  const handleApprove = async (action) => {
+    setSaving(true);
+    try {
+      await approveOpportunity(opp.id, action, reason);
+      await loadOpportunities();
+      notify(`${action === 'approve' ? 'Approved' : 'Rejected'} successfully.`, action === 'approve' ? 'success' : 'info');
+    } catch (e) { notify(e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const saveNotes = async () => {
+    setSaving(true);
+    try {
+      await updateOpportunity(opp.id, { notes });
+      await loadOpportunities();
+      notify('Notes saved.', 'success');
+    } catch (e) { notify(e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const Field = ({ label, children }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div className="detail-label">{label}</div>
+      <div className="detail-value">{children}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <button className="btn btn-secondary btn-sm" style={{ marginBottom: 16 }} onClick={() => nav(-1)}>← Back</button>
+
+      <div className="detail-grid">
+        {/* Main Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="card card-pad">
+            <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+              <FitScoreBadge score={opp.fit_score} />
+              <LaneBadge lane={opp.lane} />
+              <StatusBadge status={opp.status} />
+              {opp.approval_state === 'approved' && <span className="badge" style={{ background: 'var(--green-light)', color: 'var(--green)' }}>✓ Approved</span>}
+            </div>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>{opp.title}</h1>
+            <div style={{ fontSize: 14, color: 'var(--gray-600)', marginBottom: 12 }}>
+              {opp.company}{opp.location ? ` · ${opp.location}` : ''}
+            </div>
+            {opp.url && (
+              <a href={opp.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }}>
+                View Original Posting ↗
+              </a>
+            )}
+            {opp.description && (
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--gray-700)', whiteSpace: 'pre-wrap', background: 'var(--gray-50)', borderRadius: 6, padding: 12 }}>
+                {opp.description}
+              </div>
+            )}
+          </div>
+
+          {/* Notes */}
+          <div className="card card-pad">
+            <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Notes</h3>
+            <textarea
+              className="form-textarea w-full"
+              rows={4}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Add notes, prep reminders, or context..."
+            />
+            <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }} onClick={saveNotes} disabled={saving}>
+              Save Notes
+            </button>
+          </div>
+
+          {/* Approval Gate */}
+          {opp.approval_state === 'pending' && (
+            <div className="card card-pad" style={{ borderLeft: '3px solid var(--amber)', background: '#fffbeb' }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>⚠ Approval Required</h3>
+              <p style={{ fontSize: 13, color: 'var(--gray-700)', marginBottom: 12 }}>
+                This opportunity must be explicitly approved before any application action is taken.
+              </p>
+              <input
+                className="form-input w-full"
+                placeholder="Optional reason / note"
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                style={{ marginBottom: 10 }}
+              />
+              <div className="flex gap-2">
+                <button className="btn btn-success" disabled={saving} onClick={() => handleApprove('approve')}>✓ Approve</button>
+                <button className="btn btn-danger" disabled={saving} onClick={() => handleApprove('reject')}>✕ Reject</button>
+              </div>
+            </div>
+          )}
+
+          {/* Human Override Audit */}
+          {opp.human_override && (
+            <div className="card card-pad" style={{ background: 'var(--gray-50)' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>📋 Audit Trail</h3>
+              <div style={{ fontSize: 12, color: 'var(--gray-600)', lineHeight: 1.6 }}>
+                <div>Action: <strong>{opp.human_override.action}</strong></div>
+                <div>Decided: {new Date(opp.human_override.decided_at).toLocaleString()}</div>
+                {opp.human_override.reason && <div>Reason: {opp.human_override.reason}</div>}
+                <div>Original score: {opp.human_override.original_fit_score} · Original rec: {opp.human_override.original_recommendation ? 'Yes' : 'No'}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="card card-pad">
+            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Scoring Details</h3>
+            <Field label="Fit Score">{opp.fit_score}/100</Field>
+            <Field label="Lane">{opp.lane?.replace(/_/g, ' ')}</Field>
+            <Field label="Resume Emphasis">{getResumeEmphasisLabel(opp.resume_emphasis)}</Field>
+            <Field label="Recommended">{opp.recommended ? '✓ Yes' : '✗ No'}</Field>
+            <div style={{ marginBottom: 14 }}>
+              <div className="detail-label">Score Signals</div>
+              <div className="signals-list" style={{ marginTop: 4 }}>
+                {(opp.fit_signals || []).map((s, i) => (
+                  <span key={i} className="signal-chip">{s}</span>
+                ))}
+              </div>
+            </div>
+            {opp.recommendation_text && (
+              <div style={{ fontSize: 12, color: 'var(--gray-700)', background: 'var(--gray-50)', borderRadius: 6, padding: 10, lineHeight: 1.5 }}>
+                {opp.recommendation_text}
+              </div>
+            )}
+          </div>
+
+          <div className="card card-pad">
+            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Tracking</h3>
+            <Field label="Source">{opp.source}</Field>
+            <Field label="Ingested">{new Date(opp.ingested_at).toLocaleDateString()}</Field>
+            <Field label="Approval State">{opp.approval_state}</Field>
+            {opp.applied_date && <Field label="Applied">{new Date(opp.applied_date).toLocaleDateString()}</Field>}
+            {opp.last_action_date && <Field label="Last Action">{new Date(opp.last_action_date).toLocaleDateString()}</Field>}
+            {opp.next_action && (
+              <>
+                <Field label="Next Action">{opp.next_action}</Field>
+                {opp.next_action_due && <Field label="Due">{opp.next_action_due}</Field>}
+              </>
+            )}
+            {opp.stale_flag && (
+              <div style={{ fontSize: 12, color: 'var(--amber)', background: 'var(--amber-light)', borderRadius: 6, padding: 8, marginTop: 8 }}>
+                ⚠ {opp.stale_reason || 'Flagged stale — follow up or close.'}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,20 @@
+[build]
+  command = "npm install && npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+  VITE_DEMO_MODE = "true"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["netlify/functions/_shared/**"]
+
+[[plugins]]
+  package = "@netlify/plugin-functions-install-core"

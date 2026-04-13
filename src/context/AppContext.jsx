@@ -1,178 +1,92 @@
-import { createContext, useContext, useReducer, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
-import {
-    initialRooms,
-    initialStaff,
-    initialShifts,
-    initialTasks,
-} from '../data/mockData';
+import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import { fetchOpportunities, fetchSources, fetchLogs, isDemoMode } from '../lib/api.js';
 
 const AppContext = createContext(null);
 
-const STORAGE_KEY = 'guesthouse-tracker-state';
-
-function loadState() {
-    try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            return JSON.parse(saved);
-        }
-    } catch (e) {
-        console.warn('Failed to load state from localStorage:', e);
-    }
-    return null;
+function getInitial() {
+  return {
+    opportunities: [],
+    sources: [],
+    logs: [],
+    loading: false,
+    error: null,
+    notification: null,
+    demoMode: isDemoMode(),
+    liveIntakeEnabled: false,
+  };
 }
 
-function getDefaultState() {
-    return {
-        rooms: initialRooms,
-        staff: initialStaff,
-        shifts: initialShifts,
-        tasks: initialTasks,
-        currentUser: null, // { id, name, role, isAdmin }
+function reducer(state, action) {
+  switch (action.type) {
+    case 'SET_LOADING': return { ...state, loading: action.payload };
+    case 'SET_ERROR': return { ...state, error: action.payload, loading: false };
+    case 'SET_OPPORTUNITIES': return { ...state, opportunities: action.payload, loading: false };
+    case 'SET_SOURCES': return { ...state, sources: action.payload.sources, liveIntakeEnabled: action.payload.liveIntakeEnabled };
+    case 'SET_LOGS': return { ...state, logs: action.payload };
+    case 'UPDATE_OPPORTUNITY': return {
+      ...state,
+      opportunities: state.opportunities.map(o => o.id === action.payload.id ? { ...o, ...action.payload } : o),
     };
-}
-
-function getInitialState() {
-    const saved = loadState();
-    if (saved) {
-        // Validate saved state has all required fields
-        const defaults = getDefaultState();
-        if (
-            Array.isArray(saved.rooms) &&
-            Array.isArray(saved.staff) &&
-            Array.isArray(saved.shifts) &&
-            Array.isArray(saved.tasks)
-        ) {
-            return {
-                ...defaults,
-                ...saved,
-            };
-        }
-        // Corrupted data — clear and start fresh
-        console.warn('Corrupted localStorage data detected, resetting...');
-        localStorage.removeItem(STORAGE_KEY);
-    }
-    return getDefaultState();
-}
-
-function appReducer(state, action) {
-    switch (action.type) {
-        case 'SET_ROOMS':
-            return { ...state, rooms: action.payload };
-
-        case 'SET_CURRENT_USER':
-            return { ...state, currentUser: action.payload };
-
-        case 'LOGOUT':
-            return { ...state, currentUser: null };
-
-        case 'SET_ROOM_STATUS':
-            return {
-                ...state,
-                rooms: (state.rooms || []).map((room) =>
-                    room.id === action.payload.roomId
-                        ? { ...room, status: action.payload.status }
-                        : room
-                ),
-            };
-
-        case 'TOGGLE_TASK':
-            return {
-                ...state,
-                tasks: (state.tasks || []).map((task) =>
-                    task.id === action.payload.taskId
-                        ? { ...task, completed: !task.completed }
-                        : task
-                ),
-            };
-
-        case 'MARK_ROOM_CLEANED': {
-            const now = new Date().toISOString();
-            return {
-                ...state,
-                rooms: (state.rooms || []).map((room) =>
-                    room.id === action.payload.roomId
-                        ? { ...room, status: 'clean', lastCleaned: now }
-                        : room
-                ),
-                tasks: (state.tasks || []).map((task) =>
-                    task.roomId === action.payload.roomId &&
-                        task.description.toLowerCase().includes('clean')
-                        ? { ...task, completed: true }
-                        : task
-                ),
-            };
-        }
-
-        case 'ASSIGN_TASK':
-            return {
-                ...state,
-                rooms: (state.rooms || []).map((room) =>
-                    room.id === action.payload.roomId
-                        ? { ...room, assignedTo: action.payload.staffId }
-                        : room
-                ),
-            };
-
-        case 'RESET_DATA':
-            return {
-                ...getDefaultState(),
-                currentUser: state.currentUser,
-            };
-
-        default:
-            return state;
-    }
+    case 'ADD_OPPORTUNITY': return { ...state, opportunities: [action.payload, ...state.opportunities] };
+    case 'NOTIFY': return { ...state, notification: action.payload };
+    case 'CLEAR_NOTIFY': return { ...state, notification: null };
+    default: return state;
+  }
 }
 
 export function AppProvider({ children }) {
-    const [state, dispatch] = useReducer(appReducer, undefined, getInitialState);
+  const [state, dispatch] = useReducer(reducer, undefined, getInitial);
 
-    // Persist to localStorage on every state change
-    useEffect(() => {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        } catch (e) {
-            console.warn('Failed to save state:', e);
-        }
-    }, [state]);
+  const loadOpportunities = useCallback(async (filters = {}) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    try {
+      const opps = await fetchOpportunities(filters);
+      dispatch({ type: 'SET_OPPORTUNITIES', payload: opps });
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', payload: err.message });
+    }
+  }, []);
 
-    // Fetch rooms from Supabase on mount
-    useEffect(() => {
-        const fetchRooms = async () => {
-            const { data, error } = await supabase.from('rooms').select('*').order('room_number');
-            if (error) {
-                console.error('Error fetching rooms:', error);
-            } else if (data && data.length > 0) {
-                const mappedRooms = data.map(dbRoom => ({
-                    id: dbRoom.id.toString(),
-                    number: dbRoom.room_number,
-                    status: dbRoom.status || 'clean',
-                    type: 'Standard',
-                    floor: 1,
-                    cleaningNotes: dbRoom.cleaning_notes,
-                    lastCleaned: dbRoom.created_at
-                }));
-                dispatch({ type: 'SET_ROOMS', payload: mappedRooms });
-            }
-        };
-        fetchRooms();
-    }, []);
+  const loadSources = useCallback(async () => {
+    try {
+      const data = await fetchSources();
+      dispatch({ type: 'SET_SOURCES', payload: data });
+    } catch (err) {
+      console.error('Failed to load sources:', err);
+    }
+  }, []);
 
-    return (
-        <AppContext.Provider value={{ state, dispatch }}>
-            {children}
-        </AppContext.Provider>
-    );
+  const loadLogs = useCallback(async () => {
+    try {
+      const data = await fetchLogs();
+      dispatch({ type: 'SET_LOGS', payload: data.logs || [] });
+    } catch (err) {
+      console.error('Failed to load logs:', err);
+    }
+  }, []);
+
+  const notify = useCallback((message, type = 'info') => {
+    dispatch({ type: 'NOTIFY', payload: { message, type, id: Date.now() } });
+    setTimeout(() => dispatch({ type: 'CLEAR_NOTIFY' }), 4000);
+  }, []);
+
+  useEffect(() => {
+    loadOpportunities();
+    loadSources();
+    loadLogs();
+  }, [loadOpportunities, loadSources, loadLogs]);
+
+  return (
+    <AppContext.Provider value={{ state, dispatch, loadOpportunities, loadSources, loadLogs, notify }}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
 export function useApp() {
-    const context = useContext(AppContext);
-    if (!context) {
-        throw new Error('useApp must be used within AppProvider');
-    }
-    return context;
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error('useApp must be used within AppProvider');
+  return ctx;
 }
 
 export default AppContext;
