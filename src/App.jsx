@@ -27,7 +27,7 @@ class ErrorBoundary extends React.Component {
         <div style={{ padding: 40, fontFamily: 'system-ui, sans-serif', maxWidth: 600, margin: '0 auto' }}>
           <h1 style={{ color: '#c81e1e', fontSize: 20, marginBottom: 12 }}>⚠️ Something went wrong</h1>
           <p style={{ color: '#374151', marginBottom: 16 }}>
-            The application encountered an unexpected error. If this persists, try clearing your browser&apos;s local storage.
+            The application encountered an unexpected error. If this persists, try clearing your browser's local storage.
           </p>
           <pre style={{ background: '#f3f4f6', padding: 16, borderRadius: 8, fontSize: 12, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
             {this.state.error?.message || String(this.state.error)}
@@ -36,7 +36,7 @@ class ErrorBoundary extends React.Component {
             onClick={() => { localStorage.clear(); window.location.reload(); }}
             style={{ marginTop: 16, padding: '8px 16px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
           >
-            Clear data &amp; reload
+            Clear data & reload
           </button>
         </div>
       );
