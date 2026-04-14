@@ -56,6 +56,16 @@ export const DEFAULT_SOURCES = [
     liveCapable: false,
   },
   {
+    id: 'src-manual-external',
+    name: 'Quick Add (External Posting)',
+    type: SOURCE_TYPES.MANUAL,
+    url: null,
+    enabled: true,
+    trustLevel: TRUST_LEVELS.HIGH,
+    description: 'Roles pasted manually from LinkedIn or any external posting. Not scraped — user provides the JD text.',
+    liveCapable: false,
+  },
+  {
     id: 'src-csv',
     name: 'CSV Upload / Paste',
     type: SOURCE_TYPES.CSV,
@@ -156,6 +166,7 @@ export const SOURCE_FAMILIES = {
   APSJOBS: 'apsjobs',
   RSS: 'rss',
   MANUAL: 'manual',
+  MANUAL_EXTERNAL: 'manual_external', // user-pasted external role (e.g. from LinkedIn, company site)
   CSV: 'csv',
   DEMO: 'demo',
   LINKEDIN: 'linkedin', // NOT automated — email intake only

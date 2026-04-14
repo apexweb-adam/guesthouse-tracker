@@ -14,6 +14,7 @@ import ApplyPack from './pages/ApplyPack.jsx';
 import Sources from './pages/Sources.jsx';
 import Import from './pages/Import.jsx';
 import Reports from './pages/Reports.jsx';
+import QuickAdd from './pages/QuickAdd.jsx';
 import './App.css';
 
 // ── Error Boundary ─────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ const router = createBrowserRouter([
       { path: 'apply-pack/:id', element: <ApplyPack /> },
       { path: 'sources', element: <Sources /> },
       { path: 'import', element: <Import /> },
+      { path: 'quick-add', element: <QuickAdd /> },
       { path: 'reports', element: <Reports /> },
     ],
   },

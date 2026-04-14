@@ -8,7 +8,7 @@
 import { scoreOpportunity, classifyLane, LANES } from '../netlify/functions/_shared/scoring.js';
 import { generateDedupHash, checkDuplicate, partitionByDedup } from '../netlify/functions/_shared/dedup.js';
 import { evaluateStaleness, scanForStale } from '../netlify/functions/_shared/stale.js';
-import { passesDiscoveryProfile, DEFAULT_DISCOVERY_PROFILE, SOURCE_FAMILIES } from '../netlify/functions/_shared/sources.js';
+import { passesDiscoveryProfile, DEFAULT_DISCOVERY_PROFILE, SOURCE_FAMILIES, DEFAULT_SOURCES } from '../netlify/functions/_shared/sources.js';
 import { normaliseJob, stripHtml } from '../netlify/functions/_shared/jobFinder.js';
 
 let passed = 0;
@@ -625,6 +625,101 @@ try {
   githubConfigValidated = e.message.includes('GREENHOUSE_BOARDS');
 }
 assert('Source config validation: Greenhouse with empty boards throws clear error', githubConfigValidated);
+
+// ─── 13. Quick Add from External Posting ─────────────────────────────────────
+
+console.log('\n== 13. Quick Add from External Posting ==');
+
+// 13a. SOURCE_FAMILIES includes manual_external
+assert(
+  'SOURCE_FAMILIES has manual_external',
+  SOURCE_FAMILIES.MANUAL_EXTERNAL === 'manual_external',
+  'Should define manual_external source family'
+);
+
+// 13b. sources.js has src-manual-external definition
+const quickAddSourceExists = DEFAULT_SOURCES.some(s => s.id === 'src-manual-external');
+assert(
+  'sources.js defines src-manual-external source',
+  quickAddSourceExists,
+  'Should have a src-manual-external source entry'
+);
+if (quickAddSourceExists) {
+  const src = DEFAULT_SOURCES.find(s => s.id === 'src-manual-external');
+  assert('src-manual-external has HIGH trust level', src.trustLevel === 'high' || src.trustLevel === 'HIGH' || src.trustLevel?.toLowerCase() === 'high');
+  assert('src-manual-external is enabled by default', src.enabled === true);
+  assert('src-manual-external description mentions paste/manual', src.description.toLowerCase().includes('paste') || src.description.toLowerCase().includes('manual'));
+}
+
+// 13c. quick-add.js Netlify function exists
+let quickAddFn = '';
+try { quickAddFn = readFileSync(join(__dirname_v, '../netlify/functions/quick-add.js'), 'utf-8'); } catch {}
+assert('netlify/functions/quick-add.js exists', quickAddFn.length > 0);
+assert('quick-add.js requires reference_posting_url', quickAddFn.includes('reference_posting_url'));
+assert('quick-add.js requires pasted_jd_text', quickAddFn.includes('pasted_jd_text'));
+assert('quick-add.js accepts external_apply_url', quickAddFn.includes('external_apply_url'));
+assert('quick-add.js uses SOURCE_FAMILIES.MANUAL_EXTERNAL', quickAddFn.includes('MANUAL_EXTERNAL') || quickAddFn.includes('manual_external'));
+assert('quick-add.js calls processBatch (shared scoring path)', quickAddFn.includes('processBatch'));
+assert('quick-add.js detects LinkedIn URLs (isLinkedInUrl)', quickAddFn.includes('isLinkedInUrl') || quickAddFn.includes('linkedin'));
+assert('quick-add.js does NOT fetch LinkedIn (safety guard)', !quickAddFn.includes("fetch('https://www.linkedin") && !quickAddFn.includes('fetch("https://www.linkedin'));
+assert('quick-add.js returns duplicate:true when deduped', quickAddFn.includes('duplicate: true') || quickAddFn.includes("duplicate:true"));
+assert('quick-add.js stores reference_posting_url on record', quickAddFn.includes('reference_posting_url'));
+assert('quick-add.js stores is_manual_external_intake flag', quickAddFn.includes('is_manual_external_intake'));
+
+// 13d. api.js exports quickAddOpportunity
+const apiSrc13 = apiSrc; // use already-read file from Section 12
+assert('api.js exports quickAddOpportunity', apiSrc13.includes('export async function quickAddOpportunity'));
+assert('api.js quickAddOpportunity validates reference_posting_url', apiSrc13.includes('reference_posting_url') && apiSrc13.includes('required'));
+assert('api.js quickAddOpportunity validates pasted_jd_text', apiSrc13.includes('pasted_jd_text') && apiSrc13.includes('required'));
+assert('api.js quickAddOpportunity calls scoreOpportunity (shared path)', apiSrc13.includes('scoreOpportunity'));
+assert('api.js quickAddOpportunity calls /.netlify/functions/quick-add in production', apiSrc13.includes('/quick-add'));
+assert('api.js quickAddOpportunity handles LinkedIn URL safely in demo mode', apiSrc13.includes('isLinkedIn') || apiSrc13.includes('linkedin.com'));
+
+// 13e. QuickAdd.jsx page exists
+let quickAddJsx = '';
+try { quickAddJsx = readFileSync(join(__dirname_v, '../src/pages/QuickAdd.jsx'), 'utf-8'); } catch {}
+assert('src/pages/QuickAdd.jsx exists', quickAddJsx.length > 0);
+assert('QuickAdd.jsx imports quickAddOpportunity', quickAddJsx.includes('quickAddOpportunity'));
+assert('QuickAdd.jsx has reference_posting_url field', quickAddJsx.includes('reference_posting_url'));
+assert('QuickAdd.jsx has pasted_jd_text textarea', quickAddJsx.includes('pasted_jd_text'));
+assert('QuickAdd.jsx has external_apply_url field', quickAddJsx.includes('external_apply_url'));
+assert('QuickAdd.jsx warns user about LinkedIn (no scraping notice)', quickAddJsx.toLowerCase().includes('linkedin'));
+assert('QuickAdd.jsx shows fit score in success state', quickAddJsx.includes('fit_score') || quickAddJsx.includes('Fit Score'));
+assert('QuickAdd.jsx links to Approval Queue after success', quickAddJsx.includes('/queue'));
+assert('QuickAdd.jsx links to opportunity detail after success', quickAddJsx.includes('/opportunity/'));
+
+// 13f. App.jsx registers /quick-add route
+const appSrc13 = appSrc; // use already-read file from Section 12
+assert('App.jsx has /quick-add route', appSrc13.includes("path: 'quick-add'") || appSrc13.includes('path="quick-add"'));
+assert('App.jsx imports QuickAdd', appSrc13.includes("import QuickAdd"));
+
+// 13g. Sidebar.jsx includes Quick Add nav entry
+const sidebarSrc13 = sidebarSrc; // use already-read file from Section 12
+assert('Sidebar.jsx has Quick Add nav entry', sidebarSrc13.includes('/quick-add'));
+assert('Sidebar.jsx Quick Add has meaningful label', sidebarSrc13.includes('Quick Add'));
+
+// 13h. Scoring logic — pasted text exercises existing shared scoreOpportunity
+const tpmScore = scoreOpportunity('Technical Project Manager', 'Lead technical delivery projects, agile, SDLC, stakeholder management, Jira, release planning, cross-functional teams');
+assert('Quick Add scoring: strong TPM title+JD → TPM lane', tpmScore.lane === LANES.TPM);
+assert('Quick Add scoring: strong TPM → recommended', tpmScore.recommended === true);
+
+const deliveryScore = scoreOpportunity('Delivery Manager', 'Agile delivery lead for cross-functional squads, SAFe, sprint planning, velocity tracking, release management, incident response');
+assert('Quick Add scoring: Delivery Manager → DELIVERY lane', deliveryScore.lane === LANES.DELIVERY_MANAGER);
+assert('Quick Add scoring: strong Delivery → recommended', deliveryScore.recommended === true);
+
+const genericOpsScore = scoreOpportunity('Operations Manager', 'Store operations, staff rostering, inventory management, customer service KPIs, loss prevention');
+assert('Quick Add scoring: weak generic Ops → NOT TPM lane', genericOpsScore.lane !== LANES.TPM);
+assert('Quick Add scoring: weak generic Ops → not recommended or low score', !genericOpsScore.recommended || genericOpsScore.score < 60);
+
+// 13i. Dedup works for manual external roles using reference URL as fallback
+const hashA = generateDedupHash({ title: 'Technical PM', company: 'Atlassian', url: 'https://www.linkedin.com/jobs/view/12345' });
+const hashB = generateDedupHash({ title: 'Technical PM', company: 'Atlassian', url: 'https://www.linkedin.com/jobs/view/12345' });
+assert('Quick Add dedup: same title+company+URL hash is stable (idempotent)', hashA === hashB);
+
+const hashC = generateDedupHash({ title: 'Technical PM', company: 'Atlassian', url: 'https://boards.greenhouse.io/atlassian/jobs/999' });
+// When both title and company are present, the hash is title|company — URL is not included.
+// So same title+company at different URLs deduplicates correctly (they're the same role at the same company).
+assert('Quick Add dedup: same title+company, different URL → same hash (title+company key wins)', hashA === hashC);
 
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

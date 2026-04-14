@@ -6,6 +6,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: '📊', end: true },
   { to: '/discover', label: 'Discovered Jobs', icon: '🔍', badge: 'discovered' },
   { to: '/queue', label: 'Approval Queue', icon: '✅', badge: 'queue' },
+  { to: '/quick-add', label: 'Quick Add Job', icon: '⚡' },
   { to: '/tracker', label: 'Tracker', icon: '📋' },
   { to: '/sources', label: 'Sources', icon: '📡' },
   { to: '/import', label: 'Import', icon: '📥' },

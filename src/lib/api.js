@@ -262,6 +262,124 @@ function parseCSVInline(text) {
   });
 }
 
+// ─── Quick Add from External Posting ─────────────────────────────────────────
+
+/**
+ * Quick Add from External Posting.
+ *
+ * Accepts user-pasted job data from LinkedIn or any external source.
+ * The backend scores, deduplicates, and queues the role for approval.
+ * This does NOT scrape LinkedIn — the user provides all text.
+ *
+ * @param {object} fields
+ * @param {string} fields.reference_posting_url  Where the user found the role (required)
+ * @param {string} fields.pasted_jd_text         Full JD text pasted by the user (required)
+ * @param {string} fields.title                  Role title (required)
+ * @param {string} fields.company                Company name (required)
+ * @param {string} [fields.external_apply_url]   Direct apply URL if available
+ * @param {string} [fields.location]
+ * @param {string} [fields.notes]
+ */
+export async function quickAddOpportunity(fields) {
+  const {
+    reference_posting_url = '',
+    pasted_jd_text = '',
+    external_apply_url = '',
+    title = '',
+    company = '',
+    location = '',
+    notes = '',
+  } = fields;
+
+  // Client-side validation for fast feedback
+  if (!reference_posting_url.trim()) throw new Error('Reference URL is required.');
+  if (!pasted_jd_text.trim()) throw new Error('Pasted job description text is required.');
+  if (!title.trim()) throw new Error('Role title is required.');
+  if (!company.trim()) throw new Error('Company name is required.');
+
+  if (isDemoMode()) {
+    const store = getStore();
+    // Dedup check
+    const isLinkedIn = /linkedin\.com/i.test(reference_posting_url);
+    const dedupUrl = external_apply_url.trim() || (!isLinkedIn ? reference_posting_url.trim() : '');
+    const hash = generateDedupHash({ title: title.trim(), company: company.trim(), url: dedupUrl });
+    const existingHashes = store.opportunities.map(o => o.dedup_hash);
+    if (existingHashes.includes(hash)) {
+      return {
+        ok: true,
+        duplicate: true,
+        message: 'This opportunity already exists in your queue (deduplicated). No duplicate was created.',
+      };
+    }
+
+    // Score using pasted JD as source of truth
+    const scoring = scoreOpportunity(title.trim(), pasted_jd_text.trim());
+    const now = new Date().toISOString();
+    const opp = {
+      id: `opp-${Date.now()}`,
+      title: title.trim(),
+      company: company.trim(),
+      location: location.trim() || null,
+      description: pasted_jd_text.trim(),
+
+      // URL model
+      url: external_apply_url.trim() || (!isLinkedIn ? reference_posting_url.trim() : null),
+      canonical_job_url: external_apply_url.trim() || (!isLinkedIn ? reference_posting_url.trim() : null),
+      application_url: external_apply_url.trim() || null,
+      reference_posting_url: reference_posting_url.trim(),
+
+      // Source / provenance
+      source: 'src-manual-external',
+      source_family: 'manual_external',
+      source_type: 'manual',
+      source_job_id: null,
+      is_demo_record: false,
+      is_manual_external_intake: true,
+      intake_source_is_linkedin: isLinkedIn,
+
+      // Scoring
+      dedup_hash: hash,
+      is_duplicate: false,
+      lane: scoring.lane,
+      fit_score: scoring.score,
+      fit_signals: scoring.signals,
+      recommended: scoring.recommended,
+      high_fit: scoring.highFit,
+      resume_emphasis: scoring.resumeEmphasis,
+      recommendation_text: getRecommendation(scoring.lane, scoring.score),
+
+      // Workflow
+      status: 'discovered',
+      approval_state: 'pending',
+      ingested_at: now,
+      discovered_at: now,
+      human_override: null,
+      notes: notes.trim() || '',
+    };
+    mutateStore(s => s.opportunities.unshift(opp));
+    return {
+      ok: true,
+      duplicate: false,
+      demo: true,
+      intake_source_is_linkedin: isLinkedIn,
+      opportunity: opp,
+      message: isLinkedIn
+        ? 'Role added from LinkedIn reference. The system has NOT fetched LinkedIn — purely paste-based intake.'
+        : 'Role added successfully and queued for approval.',
+    };
+  }
+
+  // Production: call /quick-add function
+  const res = await fetch('/.netlify/functions/quick-add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reference_posting_url, pasted_jd_text, external_apply_url, title, company, location, notes }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Quick Add failed');
+  return data;
+}
+
 // ─── Sources ──────────────────────────────────────────────────────────────────
 
 export async function fetchSources() {
