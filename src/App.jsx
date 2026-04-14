@@ -10,6 +10,7 @@ import Tracker from './pages/Tracker.jsx';
 import OpportunityDetail from './pages/OpportunityDetail.jsx';
 import Sources from './pages/Sources.jsx';
 import Import from './pages/Import.jsx';
+import Reports from './pages/Reports.jsx';
 import './App.css';
 
 // ── Error Boundary ─────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ const router = createBrowserRouter([
       { path: 'opportunity/:id', element: <OpportunityDetail /> },
       { path: 'sources', element: <Sources /> },
       { path: 'import', element: <Import /> },
+      { path: 'reports', element: <Reports /> },
     ],
   },
 ]);

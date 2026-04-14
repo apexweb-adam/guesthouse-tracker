@@ -6,9 +6,9 @@
  * - Production mode: calls Netlify Functions at /.netlify/functions/*
  */
 
-import { scoreOpportunity, getRecommendation } from '../../netlify/functions/_shared/scoring.js';
+import { scoreOpportunity, getRecommendation, LANE_CONFIG } from '../../netlify/functions/_shared/scoring.js';
 import { generateDedupHash } from '../../netlify/functions/_shared/dedup.js';
-import { evaluateStaleness, computeNextAction } from '../../netlify/functions/_shared/stale.js';
+import { evaluateStaleness, scanForStale, computeNextAction } from '../../netlify/functions/_shared/stale.js';
 import { DEFAULT_SOURCES } from '../../netlify/functions/_shared/sources.js';
 import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
@@ -296,6 +296,158 @@ export async function fetchLogs(params = {}) {
   }
   const qs = new URLSearchParams(params);
   return apiFetch(`/logs?${qs}`);
+}
+
+// ─── Prep Package ─────────────────────────────────────────────────────────────
+
+export async function fetchPrep(id) {
+  if (isDemoMode()) {
+    const { generatePrepPackage } = await import('../../netlify/functions/_shared/prep.js');
+    const { opportunities } = getStore();
+    const opp = opportunities.find(o => o.id === id);
+    if (!opp) throw new Error('Opportunity not found');
+    return { prep: generatePrepPackage(opp) };
+  }
+  return apiFetch(`/prep?id=${encodeURIComponent(id)}`);
+}
+
+// ─── Digests & Reporting ──────────────────────────────────────────────────────
+
+export async function fetchDigest(type = 'approval') {
+  if (isDemoMode()) {
+    const { opportunities, logs } = getStore();
+    const now = new Date().toISOString();
+
+    if (type === 'approval') {
+      const pending = opportunities
+        .filter(o => o.approval_state === 'pending' && !['rejected', 'ghosted', 'stale'].includes(o.status))
+        .sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
+      return {
+        digest: {
+          type: 'approval',
+          summary: `${pending.length} opportunit${pending.length === 1 ? 'y' : 'ies'} pending approval`,
+          totalPending: pending.length,
+          recommendedCount: pending.filter(o => o.recommended).length,
+          highFitCount: pending.filter(o => o.high_fit).length,
+          topOpportunities: pending.slice(0, 5).map(o => ({
+            id: o.id, title: o.title, company: o.company,
+            fitScore: o.fit_score, recommended: o.recommended,
+            laneLabel: LANE_CONFIG[o.lane]?.label || o.lane,
+          })),
+          generatedAt: now,
+        },
+      };
+    }
+
+    if (type === 'stale') {
+      const active = opportunities.filter(o => ['applied', 'interviewing', 'offer', 'approved'].includes(o.status));
+      const enriched = active.map(o => ({ ...o, ...evaluateStaleness(o) }));
+      const stale = scanForStale(enriched);
+      return {
+        digest: {
+          type: 'stale',
+          summary: `${stale.length} opportunit${stale.length === 1 ? 'y' : 'ies'} need follow-up`,
+          totalStale: stale.length,
+          ghostedCount: stale.filter(o => o.isGhosted).length,
+          staleCount: stale.filter(o => o.isStale && !o.isGhosted).length,
+          items: stale.map(o => ({
+            id: o.id, title: o.title, company: o.company, status: o.status,
+            daysSinceAction: o.daysSinceAction, isGhosted: o.isGhosted,
+            reason: o.reason, suggestedAction: o.suggestedAction,
+          })),
+          generatedAt: now,
+        },
+      };
+    }
+
+    if (type === 'weekly') {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+      return {
+        digest: {
+          type: 'weekly',
+          summary: 'Weekly digest (demo data)',
+          newThisWeek: opportunities.filter(o => o.ingested_at >= sevenDaysAgo).length,
+          funnel: {
+            discovered: opportunities.filter(o => ['discovered', 'queued'].includes(o.status)).length,
+            pendingApproval: opportunities.filter(o => o.approval_state === 'pending').length,
+            approved: opportunities.filter(o => o.approval_state === 'approved').length,
+            applied: opportunities.filter(o => o.status === 'applied').length,
+            interviewing: opportunities.filter(o => o.status === 'interviewing').length,
+            offers: opportunities.filter(o => o.status === 'offer').length,
+            rejected: opportunities.filter(o => o.status === 'rejected').length,
+          },
+          ingestion: {
+            runsTotal: logs.length,
+            newJobsIngested: logs.reduce((n, l) => n + (l.count_new || 0), 0),
+            dedupedTotal: logs.reduce((n, l) => n + (l.count_deduped || 0), 0),
+            failures: 0,
+          },
+          generatedAt: now,
+        },
+      };
+    }
+
+    // ingestion
+    const bySource = {};
+    for (const log of logs) {
+      if (!bySource[log.source_id]) {
+        bySource[log.source_id] = { sourceId: log.source_id, totalNew: 0, totalDeduped: 0, failures: 0, lastRun: null, lastStatus: null };
+      }
+      const s = bySource[log.source_id];
+      s.totalNew += log.count_new || 0;
+      s.totalDeduped += log.count_deduped || 0;
+      if (log.status === 'failure') s.failures++;
+      if (!s.lastRun || log.run_at > s.lastRun) { s.lastRun = log.run_at; s.lastStatus = log.status; }
+    }
+    return {
+      digest: {
+        type: 'ingestion',
+        summary: `${logs.length} ingestion log entries`,
+        sourceSummaries: Object.values(bySource),
+        recentLogs: logs.slice(0, 10),
+        generatedAt: now,
+      },
+    };
+  }
+
+  return apiFetch(`/digest?type=${encodeURIComponent(type)}`);
+}
+
+
+// ─── Export / Backup ──────────────────────────────────────────────────────────
+
+export async function triggerExport(format = 'json') {
+  if (isDemoMode()) {
+    const { opportunities } = getStore();
+    const filename = `job-search-export-${new Date().toISOString().slice(0, 10)}.${format}`;
+    let content, mimeType;
+    if (format === 'csv') {
+      const cols = ['id', 'title', 'company', 'location', 'lane', 'fit_score', 'recommended', 'status', 'approval_state', 'source', 'ingested_at'];
+      const esc = v => { const s = String(v ?? ''); return s.includes(',') ? `"${s.replace(/"/g, '""')}"` : s; };
+      content = [cols.join(','), ...opportunities.map(o => cols.map(c => esc(o[c])).join(','))].join('\n');
+      mimeType = 'text/csv';
+    } else {
+      content = JSON.stringify({ exportedAt: new Date().toISOString(), count: opportunities.length, opportunities }, null, 2);
+      mimeType = 'application/json';
+    }
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+    return { exported: true, count: opportunities.length, filename };
+  }
+  const res = await fetch(`${BASE}/export?format=${format}`);
+  if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`);
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const filename = match ? match[1] : `export.${format}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  return { exported: true, filename };
 }
 
 // ─── Reset Demo Data ──────────────────────────────────────────────────────────

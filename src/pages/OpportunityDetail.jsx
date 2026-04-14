@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext.jsx';
 import FitScoreBadge from '../components/FitScoreBadge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import LaneBadge from '../components/LaneBadge.jsx';
-import { approveOpportunity, updateOpportunity } from '../lib/api.js';
+import { approveOpportunity, updateOpportunity, fetchPrep } from '../lib/api.js';
 import { getResumeEmphasisLabel } from '../../netlify/functions/_shared/scoring.js';
 
 export default function OpportunityDetail() {
@@ -14,12 +14,29 @@ export default function OpportunityDetail() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState('');
+  const [prep, setPrep] = useState(null);
+  const [prepLoading, setPrepLoading] = useState(false);
+  const [prepOpen, setPrepOpen] = useState(false);
 
   const opp = state.opportunities.find(o => o.id === id);
 
   useEffect(() => {
     if (opp) setNotes(opp.notes || '');
   }, [opp?.id]);
+
+  const loadPrep = useCallback(async () => {
+    if (!opp || prepLoading) return;
+    setPrepLoading(true);
+    try {
+      const data = await fetchPrep(opp.id);
+      setPrep(data?.prep || null);
+      setPrepOpen(true);
+    } catch (e) {
+      notify(`Could not load prep package: ${e.message}`, 'error');
+    } finally {
+      setPrepLoading(false);
+    }
+  }, [opp, prepLoading, notify]);
 
   if (!opp) return (
     <div className="card card-pad">
@@ -81,6 +98,87 @@ export default function OpportunityDetail() {
             {opp.description && (
               <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--gray-700)', whiteSpace: 'pre-wrap', background: 'var(--gray-50)', borderRadius: 6, padding: 12 }}>
                 {opp.description}
+              </div>
+            )}
+          </div>
+
+          {/* Prep Package */}
+          <div className="card">
+            <div
+              className="card-header"
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+              onClick={() => { if (!prep) { loadPrep(); } else { setPrepOpen(p => !p); } }}
+              role="button"
+              aria-expanded={prepOpen}
+            >
+              <h2>📦 Preparation Package</h2>
+              <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+                {prepLoading ? 'Loading…' : prep ? (prepOpen ? '▲ Hide' : '▼ Show') : '▼ Generate'}
+              </span>
+            </div>
+            {prep && prepOpen && (
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Next Action */}
+                {prep.nextAction && (
+                  <div style={{ background: prep.nextAction.priority === 'high' ? '#eff6ff' : 'var(--gray-50)', borderLeft: `3px solid ${prep.nextAction.priority === 'high' ? 'var(--blue)' : 'var(--gray-300)'}`, borderRadius: 4, padding: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 4 }}>NEXT ACTION</div>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>{prep.nextAction.action}</div>
+                  </div>
+                )}
+
+                {/* Keyword Mirror */}
+                {prep.keywordMirrorList?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', marginBottom: 8 }}>KEYWORD MIRROR LIST</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {prep.keywordMirrorList.map((kw, i) => (
+                        <span key={i} style={{ fontSize: 12, background: 'var(--blue-light, #dbeafe)', color: 'var(--blue-dark, #1e40af)', borderRadius: 4, padding: '2px 8px' }}>{kw}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Resume / Summary Direction */}
+                {prep.summaryDirection && (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', marginBottom: 6 }}>SUMMARY DIRECTION</div>
+                    <div style={{ fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.6, background: 'var(--gray-50)', borderRadius: 6, padding: 10 }}>
+                      {prep.summaryDirection}
+                    </div>
+                  </div>
+                )}
+
+                {/* Proof Points */}
+                {prep.proofPointsToSurface?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', marginBottom: 6 }}>PROOF POINTS TO SURFACE</div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {prep.proofPointsToSurface.map((pp, i) => (
+                        <li key={i} style={{ fontSize: 13, color: 'var(--gray-700)', marginBottom: 6, lineHeight: 1.5 }}>{pp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Outreach Drafts */}
+                {prep.outreach && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {[
+                      { key: 'recruiterDraft', label: '📧 Recruiter Outreach Draft' },
+                      { key: 'hiringManagerDraft', label: '📧 Hiring Manager Outreach Draft' },
+                    ].map(({ key, label }) => (
+                      <div key={key}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', marginBottom: 6 }}>{label}</div>
+                        <pre style={{ fontSize: 12, color: 'var(--gray-700)', background: 'var(--gray-50)', borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.6, margin: 0, fontFamily: 'inherit' }}>
+                          {prep.outreach[key]}
+                        </pre>
+                      </div>
+                    ))}
+                    <div style={{ fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic' }}>
+                      ⚠ Outreach drafts require human review and personalisation before sending. Do NOT auto-send.
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -1,0 +1,76 @@
+{
+  "name": "01 — RSS Feed Intake (Every 2 Hours)",
+  "_comment": "ARCHITECTURE NOTE: n8n does NOT re-implement scoring, dedup, or classification. It only triggers the Netlify ingest-scheduled function which calls _shared/scoring.js and _shared/dedup.js. Set SITE_URL env var to your Netlify site URL.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "hours", "minutesInterval": 120 }] }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger (2h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/sources",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-sources",
+      "name": "Fetch Active Sources",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter to live-capable enabled RSS sources only.\n// Business logic stays in the API — this node only filters.\nconst sources = $input.first().json.sources || [];\nconst liveEnabled = $input.first().json.liveIntakeEnabled;\nif (!liveEnabled) {\n  console.log('Live intake kill switch is OFF — skipping all sources.');\n  return [];\n}\nconst rss = sources.filter(s => s.type === 'rss' && s.enabled && s.liveCapable);\nreturn rss.map(s => ({ json: s }));"
+      },
+      "id": "filter-rss-sources",
+      "name": "Filter: Live RSS Sources",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/ingest-scheduled",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify({ trigger: 'n8n', sourceId: $json.id }) }}",
+        "options": {}
+      },
+      "id": "trigger-ingest",
+      "name": "Trigger Scheduled Ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 300],
+      "notes": "The ingest-scheduled Netlify function handles all business logic including scoring, dedup, and logging. n8n only triggers it."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/webhooks",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify({ event: 'ingestion_complete', payload: { triggeredBy: 'n8n', runAt: new Date().toISOString() } }) }}",
+        "options": {}
+      },
+      "id": "notify-completion",
+      "name": "Fire ingestion_complete Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1080, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (2h)": { "main": [[{ "node": "Fetch Active Sources", "type": "main", "index": 0 }]] },
+    "Fetch Active Sources": { "main": [[{ "node": "Filter: Live RSS Sources", "type": "main", "index": 0 }]] },
+    "Filter: Live RSS Sources": { "main": [[{ "node": "Trigger Scheduled Ingest", "type": "main", "index": 0 }]] },
+    "Trigger Scheduled Ingest": { "main": [[{ "node": "Fire ingestion_complete Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
