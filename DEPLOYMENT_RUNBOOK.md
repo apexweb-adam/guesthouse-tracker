@@ -106,22 +106,28 @@ netlify deploy --prod
 
 **Kill switch:** Set `LIVE_INTAKE_ENABLED=false` and redeploy to immediately stop all automated intake.
 
-### First Live Source: SEEK RSS
+### First Live Source: Greenhouse (Recommended)
 
-The only RSS source to enable in Stage 1 is `src-rss-seek` (SEEK ICT/Full-Time RSS feed).
+**Greenhouse is the recommended first live source** (see `LIVE_ACTIVATION_RUNBOOK.md` for the complete one-source rollout checklist).
+
+Greenhouse is preferred over SEEK RSS because the API returns structured JSON with reliable job IDs, making dedup and Apply Pack URL flow more reliable.
 
 **Steps:**
-1. Confirm `LIVE_INTAKE_ENABLED=true` and `MAX_RECORDS_PER_RUN=50` are set
-2. In the Sources page, click **Enable** next to "SEEK RSS (Technical PM)"
-3. Trigger a manual test run via Netlify CLI: `netlify functions:invoke ingest-scheduled`
-4. Verify in the Sources page: Last Run timestamp updated, Imported count > 0, no failures
-5. Verify in the Approval Queue: new records appear with correct lane/score
-6. Check that generic Ops/PM roles are scored low and do NOT have `recommended=true`
-7. After 24h, check High Review % — if >50%, investigate SEEK feed URL relevance
+1. Confirm `LIVE_INTAKE_ENABLED=true`, `MAX_RECORDS_PER_RUN=50`, and `DISCOVERY_SECRET` are set
+2. Set `GREENHOUSE_BOARDS` to 2–3 company board tokens (e.g. `atlassian,servicenow`)
+3. In the Sources page, click **Enable** next to "Greenhouse Job Boards (configured companies)"
+4. Trigger a manual discovery run: `curl -X POST https://your-site/.netlify/functions/discover -H "X-Discovery-Secret: your-secret" -d '{}'`
+5. Verify in the Sources page: Last Run timestamp updated, Imported count > 0, no failures
+6. Verify in the Discovered Jobs view: new records appear with correct lane/score
+7. Check that generic Ops/PM roles score below 70 and are NOT recommended
+8. After verifying dedup (second run shows 0 new records), proceed to approve strong-fit records
+9. After 48h, check High Review % — if >50%, review the board token list
 
 **Do NOT enable yet:**
 - Email intake (`src-rss-linkedin-jobs`) — requires email forwarding setup
 - Multiple live sources simultaneously — enable one at a time
+
+See `LIVE_ACTIVATION_RUNBOOK.md` for a detailed activation checklist, verification steps, and rollback procedure.
 
 ---
 

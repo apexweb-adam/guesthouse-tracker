@@ -146,6 +146,7 @@ export const handler = async (event) => {
   const results = [];
   let totalDiscovered = 0;
   let totalIngested = 0;
+  let totalRecommended = 0; // count of ingested records with recommended=true (score >= 70)
 
   for (const source of sourcesToRun) {
     const sourceResult = {
@@ -157,35 +158,66 @@ export const handler = async (event) => {
     };
 
     try {
+      // Pre-validate source config so misconfigurations fail loudly
+      if (source.sourceFamily === 'greenhouse' && greenhouseBoards.length === 0) {
+        throw new Error('GREENHOUSE_BOARDS env var is empty — set at least one board token (e.g. GREENHOUSE_BOARDS=atlassian,servicenow)');
+      }
+      if (source.sourceFamily === 'lever' && leverBoards.length === 0) {
+        throw new Error('LEVER_BOARDS env var is empty — set at least one company slug (e.g. LEVER_BOARDS=atlassian,canva)');
+      }
+      if (source.sourceFamily === 'usajobs' && (!process.env.USAJOBS_API_KEY || !process.env.USAJOBS_USER_AGENT)) {
+        throw new Error('USAJOBS_API_KEY and USAJOBS_USER_AGENT env vars are required for USAJobs source');
+      }
+
       const jobs = await discoverJobsForSource(source, config);
       sourceResult.discovered = jobs.length;
       totalDiscovered += jobs.length;
 
       if (jobs.length > 0) {
         // processBatch handles scoring, dedup, and DB write
-        const ingestResult = await processBatch(jobs);
-        const ingested = ingestResult?.new || ingestResult?.ingested || 0;
-        sourceResult.ingested = ingested;
-        totalIngested += ingested;
-      }
+        const ingestResult = await processBatch(jobs, source.id);
+        const { inserted = [], deduped = [], errors: batchErrors = [], high_review = 0 } = ingestResult || {};
+        const ingested = inserted.length;
+        const deduped_count = deduped.length;
 
-      await logIngestion({
-        source_id: source.id,
-        source_name: source.name,
-        records_fetched: jobs.length,
-        new_records: sourceResult.ingested,
-        duplicates: sourceResult.discovered - sourceResult.ingested,
-        status: 'success',
-      });
+        sourceResult.ingested = ingested;
+        sourceResult.deduped = deduped_count;
+        sourceResult.high_review = high_review;
+        // Count recommended records (score >= 70) — used for new_strong_fit event
+        sourceResult.recommended = ingested - high_review;
+        totalIngested += ingested;
+        totalRecommended += Math.max(0, sourceResult.recommended);
+
+        await logIngestion({
+          source_id: source.id,
+          count_discovered: jobs.length,
+          count_new: ingested,
+          count_deduped: deduped_count,
+          count_high_review: high_review,
+          errors: batchErrors.map(e => e.error || String(e)),
+          status: batchErrors.length > 0 && ingested === 0 ? 'partial' : 'success',
+        });
+      } else {
+        await logIngestion({
+          source_id: source.id,
+          count_discovered: 0,
+          count_new: 0,
+          count_deduped: 0,
+          count_high_review: 0,
+          errors: [],
+          status: 'success',
+        });
+      }
     } catch (err) {
       sourceResult.error = err.message;
       await logIngestion({
         source_id: source.id,
-        source_name: source.name,
-        records_fetched: 0,
-        new_records: 0,
+        count_discovered: 0,
+        count_new: 0,
+        count_deduped: 0,
+        count_high_review: 0,
+        errors: [err.message],
         status: 'error',
-        error: err.message,
       }).catch(() => {});
     }
 
@@ -203,15 +235,14 @@ export const handler = async (event) => {
     timestamp: new Date().toISOString(),
   }).catch(() => {});
 
-  // new_strong_fit — fire once if any newly ingested records scored as recommended
-  // processBatch returns high_review but not yet the new strong-fit records;
-  // we fire a summary event if any records were ingested (scoring inside processBatch
-  // already ran — the consuming system can query the approval queue for details).
-  if (totalIngested > 0) {
+  // new_strong_fit — fire only when newly ingested records scored as recommended (score >= 70).
+  // Firing for every ingested record would generate noise from low-fit Ops/generic roles.
+  if (totalRecommended > 0) {
     await fireEvent('new_strong_fit', {
       context: 'discovery_run',
       new_records_ingested: totalIngested,
-      message: `${totalIngested} new job(s) discovered and queued for approval review.`,
+      new_strong_fit_count: totalRecommended,
+      message: `${totalRecommended} strong-fit job(s) discovered and queued for approval review.`,
       timestamp: new Date().toISOString(),
     }).catch(() => {});
   }
@@ -225,6 +256,7 @@ export const handler = async (event) => {
       sources_run: sourcesToRun.length,
       total_discovered: totalDiscovered,
       total_ingested: totalIngested,
+      total_recommended: totalRecommended,
       results,
     }),
   };

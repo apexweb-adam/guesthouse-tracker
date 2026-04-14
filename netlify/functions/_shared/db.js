@@ -206,7 +206,11 @@ export async function processBatch(rawJobs, sourceId) {
 
   for (const raw of rawJobs) {
     try {
-      const hash = generateDedupHash(raw);
+      const hash = generateDedupHash({
+        title: raw.title,
+        company: raw.company,
+        url: raw.url || raw.canonical_job_url || '',
+      });
       if (existingHashes.includes(hash)) {
         deduped.push(raw);
         continue;

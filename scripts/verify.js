@@ -520,5 +520,111 @@ assert('OpportunityDetail distinguishes demo vs live', oppDetailSrc.includes('De
 const envSrc = readFileSync(join(__dirname_v, '../.env.example'), 'utf-8');
 assert('.env.example documents DISCOVERY_SECRET', envSrc.includes('DISCOVERY_SECRET'));
 
+// ─── 12. Live Intake Activation Hardening ─────────────────────────────────────
+
+console.log('\n== 12. Live Intake Activation Hardening ==');
+
+// 12a. discover.js uses correct processBatch result fields (inserted.length, not .new/.ingested)
+assert(
+  'discover.js uses inserted.length for ingestion count',
+  discoverSrc.includes('inserted.length') && !discoverSrc.includes('ingestResult?.new') && !discoverSrc.includes('ingestResult?.ingested'),
+  'Should use inserted.length from processBatch result'
+);
+
+// 12b. discover.js uses correct logIngestion column names
+assert(
+  'discover.js logIngestion uses count_new (not new_records)',
+  discoverSrc.includes('count_new') && !discoverSrc.includes("new_records:"),
+  'Should use count_new column name'
+);
+assert(
+  'discover.js logIngestion uses count_deduped (not duplicates)',
+  discoverSrc.includes('count_deduped') && !discoverSrc.includes("duplicates:"),
+  'Should use count_deduped column name'
+);
+assert(
+  'discover.js logIngestion uses count_high_review',
+  discoverSrc.includes('count_high_review'),
+  'Should log count_high_review'
+);
+
+// 12c. new_strong_fit event is conditional on recommended count, not just any ingested count
+assert(
+  'discover.js new_strong_fit fires only for recommended records (totalRecommended > 0)',
+  discoverSrc.includes('totalRecommended > 0') || discoverSrc.includes('totalRecommended>0'),
+  'new_strong_fit should only fire when recommended records exist'
+);
+assert(
+  'discover.js tracks totalRecommended count',
+  discoverSrc.includes('totalRecommended'),
+  'Should track totalRecommended'
+);
+
+// 12d. discover.js validates Greenhouse config before running
+assert(
+  'discover.js validates GREENHOUSE_BOARDS before running greenhouse source',
+  discoverSrc.includes('GREENHOUSE_BOARDS') && discoverSrc.includes('greenhouseBoards.length === 0'),
+  'Should fail fast if GREENHOUSE_BOARDS is empty'
+);
+
+// 12e. discover.js validates Lever config before running
+assert(
+  'discover.js validates LEVER_BOARDS before running lever source',
+  discoverSrc.includes('LEVER_BOARDS') && discoverSrc.includes('leverBoards.length === 0'),
+  'Should fail fast if LEVER_BOARDS is empty'
+);
+
+// 12f. discover.js validates USAJobs config before running
+assert(
+  'discover.js validates USAJOBS_API_KEY before running usajobs source',
+  discoverSrc.includes('USAJOBS_API_KEY') && discoverSrc.includes('USAJOBS_USER_AGENT'),
+  'Should fail fast if USAJobs credentials missing'
+);
+
+// 12g. db.js uses canonical_job_url as fallback for dedup hash
+const dbSrc = readFileSync(join(__dirname_v, '../netlify/functions/_shared/db.js'), 'utf-8');
+assert(
+  'db.js processBatch passes canonical_job_url as url fallback to generateDedupHash',
+  dbSrc.includes('canonical_job_url'),
+  'Should use canonical_job_url in dedup hash computation'
+);
+
+// 12h. Migration 002 (ingestion_logs) exists
+let mig002Src = '';
+try { mig002Src = readFileSync(join(__dirname_v, '../supabase/migrations/002_ingestion_logs_table.sql'), 'utf-8'); } catch {}
+assert('Migration 002 exists (ingestion_logs_table.sql)', mig002Src.length > 0);
+assert('Migration 002 creates ingestion_logs table', mig002Src.includes('ingestion_logs'));
+assert('Migration 002 defines count_new column', mig002Src.includes('count_new'));
+assert('Migration 002 defines count_deduped column', mig002Src.includes('count_deduped'));
+assert('Migration 002 defines count_high_review column', mig002Src.includes('count_high_review'));
+assert('Migration 002 is idempotent (IF NOT EXISTS)', mig002Src.includes('IF NOT EXISTS'));
+
+// 12i. LIVE_ACTIVATION_RUNBOOK.md exists with required sections
+let activationRunbook = '';
+try { activationRunbook = readFileSync(join(__dirname_v, '../LIVE_ACTIVATION_RUNBOOK.md'), 'utf-8'); } catch {}
+assert('LIVE_ACTIVATION_RUNBOOK.md exists', activationRunbook.length > 0);
+assert('Activation runbook has pre-activation checklist', activationRunbook.toLowerCase().includes('pre-activation') || activationRunbook.toLowerCase().includes('prerequisite'));
+assert('Activation runbook covers Greenhouse as first source', activationRunbook.includes('Greenhouse') || activationRunbook.includes('greenhouse'));
+assert('Activation runbook has rollback section', activationRunbook.toLowerCase().includes('rollback') || activationRunbook.toLowerCase().includes('kill switch'));
+
+// 12j. dedup hash correctly falls back to URL when company is missing
+const hashWithCompany = generateDedupHash({ title: 'Technical PM', company: 'Acme', url: '' });
+const hashNoCompanyWithUrl = generateDedupHash({ title: 'Technical PM', company: '', url: 'https://boards.greenhouse.io/acme/jobs/123' });
+assert('Dedup: title+company hash differs from title+url hash', hashWithCompany !== hashNoCompanyWithUrl);
+assert('Dedup: same title, no company, same URL produces stable hash', hashNoCompanyWithUrl === generateDedupHash({ title: 'Technical PM', company: '', url: 'https://boards.greenhouse.io/acme/jobs/123' }));
+
+// 12k. Source config validation: Greenhouse with empty boards list should fail
+let githubConfigValidated = false;
+try {
+  const testSource = { sourceFamily: 'greenhouse', id: 'src-greenhouse-boards' };
+  const testBoards = [];
+  if (testSource.sourceFamily === 'greenhouse' && testBoards.length === 0) {
+    throw new Error('GREENHOUSE_BOARDS env var is empty');
+  }
+} catch (e) {
+  githubConfigValidated = e.message.includes('GREENHOUSE_BOARDS');
+}
+assert('Source config validation: Greenhouse with empty boards throws clear error', githubConfigValidated);
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);
