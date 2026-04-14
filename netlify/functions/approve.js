@@ -3,11 +3,13 @@
  *
  * Approval gate — all human decisions go through here.
  * Preserves full audit trail: original recommendation, human decision, override reason.
+ * On approval, automatically generates Apply Pack and transitions status to apply_pack_generated.
  *
  * POST { id, action: 'approve'|'reject'|'override', reason?, overrideFields? }
  */
 
 import { getOpportunity, updateOpportunity } from './_shared/db.js';
+import { generateApplyPack } from './_shared/applyPack.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -60,6 +62,16 @@ export const handler = async (event) => {
       if (overrideFields.resume_emphasis) {
         updates.resume_emphasis = overrideFields.resume_emphasis;
         humanOverride.resume_emphasis_override = overrideFields.resume_emphasis;
+      }
+      // Auto-generate Apply Pack immediately on approval
+      try {
+        const oppForPack = { ...opp, ...updates, approval_state: 'approved' };
+        const applyPack = generateApplyPack(oppForPack);
+        updates.apply_pack = applyPack;
+        updates.status = 'apply_pack_generated';
+      } catch (packErr) {
+        // Pack generation failure should not block approval
+        console.warn('[approve] Apply Pack generation failed (non-fatal):', packErr.message);
       }
     }
 

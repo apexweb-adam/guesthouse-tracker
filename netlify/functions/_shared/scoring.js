@@ -456,3 +456,124 @@ export function getResumeEmphasisLabel(emphasis) {
   };
   return map[emphasis] || emphasis;
 }
+
+// ─── Resume Versions ──────────────────────────────────────────────────────────
+
+/**
+ * Locked resume versions for Sample Candidate.
+ * Only these versions are valid recommendations.
+ */
+export const RESUME_VERSIONS = {
+  TPM: 'TPM-BASE-01',
+  DELIVERY: 'DEL-BASE-01',
+  OPS: 'OPS-COND-01',
+  MASTER: 'MASTER-01',
+};
+
+export const RESUME_VERSION_LABELS = {
+  [RESUME_VERSIONS.TPM]: 'Technical Project Manager — Base',
+  [RESUME_VERSIONS.DELIVERY]: 'Delivery Manager — Base',
+  [RESUME_VERSIONS.OPS]: 'Operations Manager — Conditional',
+  [RESUME_VERSIONS.MASTER]: 'Master Resume (all-lane)',
+};
+
+/**
+ * Recommend the best resume version for an opportunity.
+ * Returns { version, confidence: 'high'|'medium'|'low', reason }.
+ *
+ * Rules (mirrors the candidate truth hierarchy):
+ * - TPM-BASE-01 : TPM lane, any score; or MASTER when score is borderline
+ * - DEL-BASE-01 : delivery_manager lane, score >= 60
+ * - OPS-COND-01 : ops_manager lane (conditional — must have technical-ops signals)
+ * - MASTER-01   : only when fit is genuinely multi-lane or score is ambiguous
+ */
+export function recommendResumeVersion(lane, score = 0, signals = []) {
+  // TPM is always primary — strong evidence
+  if (lane === LANES.TPM && score >= 80) {
+    return {
+      version: RESUME_VERSIONS.TPM,
+      confidence: 'high',
+      reason: `Strong TPM fit (score ${score}). TPM-BASE-01 leads with technical delivery, SDLC ownership, and stakeholder management. Do not dilute with ops or governance framing.`,
+    };
+  }
+  if (lane === LANES.TPM && score >= 60) {
+    return {
+      version: RESUME_VERSIONS.TPM,
+      confidence: 'medium',
+      reason: `Moderate TPM fit (score ${score}). TPM-BASE-01 is still the correct base. Review description for technical delivery emphasis before submitting.`,
+    };
+  }
+  if (lane === LANES.TPM) {
+    return {
+      version: RESUME_VERSIONS.MASTER,
+      confidence: 'low',
+      reason: `Weak TPM signals (score ${score}). MASTER-01 provides broader coverage; however, revisit whether this role is worth pursuing given low fit.`,
+    };
+  }
+
+  // Delivery Manager — secondary
+  if (lane === LANES.DELIVERY_MANAGER && score >= 70) {
+    return {
+      version: RESUME_VERSIONS.DELIVERY,
+      confidence: 'high',
+      reason: `Strong Delivery Manager fit (score ${score}). DEL-BASE-01 emphasises agile delivery cadence, sprint ownership, and team outcomes — the core ask for this role.`,
+    };
+  }
+  if (lane === LANES.DELIVERY_MANAGER && score >= 55) {
+    return {
+      version: RESUME_VERSIONS.DELIVERY,
+      confidence: 'medium',
+      reason: `Moderate Delivery Manager fit (score ${score}). DEL-BASE-01 is correct; verify that agile/sprint delivery is central to the role before submitting.`,
+    };
+  }
+  if (lane === LANES.DELIVERY_MANAGER) {
+    return {
+      version: RESUME_VERSIONS.MASTER,
+      confidence: 'low',
+      reason: `Weak Delivery Manager signals (score ${score}). Using MASTER-01 for broader coverage. Check if TPM-BASE-01 might actually be a better fit given the description.`,
+    };
+  }
+
+  // Ops Manager — conditional only
+  if (lane === LANES.OPS_MANAGER && score >= 65) {
+    const hasTechOpsSignal = signals.some(s =>
+      s.includes('readiness') || s.includes('compliance') || s.includes('tech-ops') || s.includes('technical')
+    );
+    if (hasTechOpsSignal) {
+      return {
+        version: RESUME_VERSIONS.OPS,
+        confidence: 'high',
+        reason: `Qualified Ops Manager role (score ${score}) with confirmed technical-ops signals. OPS-COND-01 emphasises readiness, compliance, and operational technical track record.`,
+      };
+    }
+    return {
+      version: RESUME_VERSIONS.OPS,
+      confidence: 'medium',
+      reason: `Ops Manager fit (score ${score}) without explicit technical-ops signals in scoring. OPS-COND-01 is the correct version; verify readiness/compliance scope is dominant before submitting.`,
+    };
+  }
+  if (lane === LANES.OPS_MANAGER) {
+    return {
+      version: RESUME_VERSIONS.MASTER,
+      confidence: 'low',
+      reason: `Weak Ops Manager fit (score ${score}). This role may be too generic. MASTER-01 provides broad coverage but approach with caution — the role may not align with Candidate's target.`,
+    };
+  }
+
+  // Program Manager — selective
+  if (lane === LANES.PROGRAM_MANAGER && score >= 70) {
+    return {
+      version: RESUME_VERSIONS.MASTER,
+      confidence: 'medium',
+      reason: `Qualified Program Manager fit (score ${score}). MASTER-01 covers governance and portfolio scope. TPM-BASE-01 is not recommended for governance-heavy PgM roles.`,
+    };
+  }
+
+  // All other cases — generic, other, low fit
+  return {
+    version: RESUME_VERSIONS.MASTER,
+    confidence: 'low',
+    reason: `Low fit or generic lane (${lane}, score ${score}). MASTER-01 is the fallback but consider whether this role warrants application at all.`,
+  };
+}
+

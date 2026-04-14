@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import ApprovalQueue from './pages/ApprovalQueue.jsx';
 import Tracker from './pages/Tracker.jsx';
 import OpportunityDetail from './pages/OpportunityDetail.jsx';
+import ApplyPack from './pages/ApplyPack.jsx';
 import Sources from './pages/Sources.jsx';
 import Import from './pages/Import.jsx';
 import Reports from './pages/Reports.jsx';
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
       { path: 'queue', element: <ApprovalQueue /> },
       { path: 'tracker', element: <Tracker /> },
       { path: 'opportunity/:id', element: <OpportunityDetail /> },
+      { path: 'apply-pack/:id', element: <ApplyPack /> },
       { path: 'sources', element: <Sources /> },
       { path: 'import', element: <Import /> },
       { path: 'reports', element: <Reports /> },

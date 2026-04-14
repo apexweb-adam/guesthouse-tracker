@@ -208,7 +208,140 @@ const largeSource = Array.from({ length: 80 }, (_, i) => ({ title: `Job ${i}`, c
 const capped = largeSource.slice(0, MAX_RECORDS_PER_RUN);
 assert('MAX_RECORDS_PER_RUN cap applied correctly (80→50)', capped.length === MAX_RECORDS_PER_RUN, `length=${capped.length}`);
 
-// ─── 6. Summary ──────────────────────────────────────────────────────────────
+// ─── 6. Apply Pack — Resume Recommendation Engine ────────────────────────────
+
+import {
+  RESUME_VERSIONS,
+  recommendResumeVersion,
+} from '../netlify/functions/_shared/scoring.js';
+import {
+  generateApplyPack,
+  applyResumeOverride,
+  regenerateApplyPack,
+} from '../netlify/functions/_shared/applyPack.js';
+
+console.log('\n== 6. Apply Pack — Resume Recommendation ==');
+
+// 6a. TPM role → TPM-BASE-01, high confidence
+const tpmRec = recommendResumeVersion(LANES.TPM, 91, ['title: TPM exact/partial match', 'tool/method: agile']);
+assert('TPM strong fit → TPM-BASE-01', tpmRec.version === RESUME_VERSIONS.TPM, tpmRec.version);
+assert('TPM strong fit → confidence=high', tpmRec.confidence === 'high', tpmRec.confidence);
+
+// 6b. Delivery Manager role → DEL-BASE-01
+const delRec = recommendResumeVersion(LANES.DELIVERY_MANAGER, 78, ['agile delivery', 'sprint planning']);
+assert('Delivery Manager strong fit → DEL-BASE-01', delRec.version === RESUME_VERSIONS.DELIVERY, delRec.version);
+assert('Delivery Manager strong fit → confidence=high', delRec.confidence === 'high', delRec.confidence);
+
+// 6c. Ops Manager (conditional) → OPS-COND-01 with tech signals
+const opsRec = recommendResumeVersion(LANES.OPS_MANAGER, 68, ['technical readiness', 'compliance']);
+assert('Ops Manager (technical signals) → OPS-COND-01', opsRec.version === RESUME_VERSIONS.OPS, opsRec.version);
+
+// 6d. Ops Manager without tech signals → OPS-COND-01 medium confidence
+const opsNoTech = recommendResumeVersion(LANES.OPS_MANAGER, 66, []);
+assert('Ops Manager (no tech signals) → OPS-COND-01, medium confidence', opsNoTech.version === RESUME_VERSIONS.OPS && opsNoTech.confidence === 'medium', `v=${opsNoTech.version} c=${opsNoTech.confidence}`);
+
+// 6e. Weak Ops role (low score) → MASTER-01
+const weakOps = recommendResumeVersion(LANES.OPS_MANAGER, 40, []);
+assert('Weak Ops Manager → MASTER-01', weakOps.version === RESUME_VERSIONS.MASTER, weakOps.version);
+
+// 6f. Generic PM → MASTER-01, low confidence
+const genericRec = recommendResumeVersion(LANES.GENERIC_PM, 32, []);
+assert('Generic PM → MASTER-01', genericRec.version === RESUME_VERSIONS.MASTER, genericRec.version);
+assert('Generic PM → confidence=low', genericRec.confidence === 'low', genericRec.confidence);
+
+// 6g. Delivery weak fit → MASTER-01
+const delWeak = recommendResumeVersion(LANES.DELIVERY_MANAGER, 40, []);
+assert('Weak Delivery Manager → MASTER-01', delWeak.version === RESUME_VERSIONS.MASTER, delWeak.version);
+
+console.log('\n== 7. Apply Pack Generation ==');
+
+// 7a. Cannot generate pack for non-approved opportunity
+const unapproved = { id: 'u1', title: 'TPM', approval_state: 'pending', lane: LANES.TPM, fit_score: 90, fit_signals: [] };
+let threw = false;
+try { generateApplyPack(unapproved); } catch { threw = true; }
+assert('generateApplyPack throws for non-approved opportunity', threw);
+
+// 7b. Generates pack for approved TPM opportunity
+const approvedTPM = {
+  id: 't1', title: 'Senior Technical Project Manager', company: 'ANZ', lane: LANES.TPM,
+  fit_score: 91, fit_signals: ['title: TPM exact/partial match', 'tool/method: agile'],
+  recommended: true, description: 'Lead technical delivery of digital banking platform projects. SDLC from requirements through deployment. Agile/scrum. PMP preferred.',
+  approval_state: 'approved', status: 'approved',
+};
+const pack1 = generateApplyPack(approvedTPM);
+assert('Apply Pack generated for approved TPM role', !!pack1, 'pack was null/undefined');
+assert('Pack recommended_resume_version = TPM-BASE-01', pack1.recommended_resume_version === RESUME_VERSIONS.TPM, pack1.recommended_resume_version);
+assert('Pack recommendation_confidence = high', pack1.recommendation_confidence === 'high', pack1.recommendation_confidence);
+assert('Pack has keyword_mirror_list', pack1.keyword_mirror_list?.length > 0, String(pack1.keyword_mirror_list?.length));
+assert('Pack has apply_checklist', pack1.apply_checklist?.length > 0, String(pack1.apply_checklist?.length));
+assert('Pack has recruiter_outreach_draft', typeof pack1.recruiter_outreach_draft === 'string' && pack1.recruiter_outreach_draft.length > 20);
+assert('Pack has hiring_manager_outreach_draft', typeof pack1.hiring_manager_outreach_draft === 'string' && pack1.hiring_manager_outreach_draft.length > 20);
+assert('Pack has suggested_follow_up_date', /^\d{4}-\d{2}-\d{2}$/.test(pack1.suggested_follow_up_date), pack1.suggested_follow_up_date);
+assert('Pack has pack_version=1', pack1.pack_version === 1, String(pack1.pack_version));
+assert('Pack has generated_at', !!pack1.generated_at);
+assert('Pack role_snapshot frozen', pack1.role_snapshot?.title === approvedTPM.title, pack1.role_snapshot?.title);
+assert('Pack original_system_recommendation preserved', pack1.original_system_recommendation === RESUME_VERSIONS.TPM, pack1.original_system_recommendation);
+assert('Pack resume_version_override is null', pack1.resume_version_override === null);
+
+// 7c. Approved Delivery Manager role → DEL-BASE-01
+const approvedDM = {
+  id: 'd1', title: 'Delivery Manager', company: 'CBA', lane: LANES.DELIVERY_MANAGER,
+  fit_score: 78, fit_signals: ['agile delivery', 'sprint planning'],
+  recommended: true, description: 'Agile delivery cadence. Sprint planning, retros. Release management.',
+  approval_state: 'approved', status: 'approved',
+};
+const packDM = generateApplyPack(approvedDM);
+assert('Delivery Manager role → DEL-BASE-01', packDM.recommended_resume_version === RESUME_VERSIONS.DELIVERY, packDM.recommended_resume_version);
+
+console.log('\n== 8. Apply Pack Override + Auditability ==');
+
+// 8a. Override preserves original recommendation
+const overridden = applyResumeOverride(pack1, RESUME_VERSIONS.DELIVERY, 'Role requires strong delivery framing');
+assert('Override sets resume_version_override', overridden.resume_version_override === RESUME_VERSIONS.DELIVERY, overridden.resume_version_override);
+assert('Override preserves original_system_recommendation', overridden.original_system_recommendation === RESUME_VERSIONS.TPM, overridden.original_system_recommendation);
+assert('Override sets override reason', overridden.resume_version_override_reason === 'Role requires strong delivery framing');
+assert('Override sets override timestamp', !!overridden.resume_version_override_at);
+
+// 8b. Invalid override version throws
+let invalidThrew = false;
+try { applyResumeOverride(pack1, 'FAKE-VERSION', 'test'); } catch { invalidThrew = true; }
+assert('Override with invalid version throws', invalidThrew);
+
+// 8c. Regenerate preserves override history and bumps version
+const regen = regenerateApplyPack(approvedTPM, overridden);
+assert('Regenerated pack version bumped', regen.pack_version === 2, String(regen.pack_version));
+assert('Regenerated pack preserves resume_version_override', regen.resume_version_override === RESUME_VERSIONS.DELIVERY, regen.resume_version_override);
+assert('Regenerated pack preserves override reason', regen.resume_version_override_reason === 'Role requires strong delivery framing');
+assert('Regenerated pack has fresh generated content', regen.keyword_mirror_list?.length > 0);
+
+// 8d. Regenerate without prior override produces clean pack
+const regenClean = regenerateApplyPack(approvedTPM, pack1);
+assert('Regenerated clean pack has no override', regenClean.resume_version_override === null);
+assert('Regenerated clean pack bumps version', regenClean.pack_version === 2, String(regenClean.pack_version));
+
+console.log('\n== 9. Apply Workflow Status Progression ==');
+
+// 9a. Valid transitions
+const VALID_STATUSES = ['approved', 'apply_pack_generated', 'ready_to_apply', 'applied', 'follow_up_1', 'follow_up_2', 'interviewing', 'offer', 'rejected', 'ghosted', 'withdrawn'];
+assert('Apply workflow includes apply_pack_generated', VALID_STATUSES.includes('apply_pack_generated'));
+assert('Apply workflow includes ready_to_apply', VALID_STATUSES.includes('ready_to_apply'));
+assert('Apply workflow includes follow_up_1 and follow_up_2', VALID_STATUSES.includes('follow_up_1') && VALID_STATUSES.includes('follow_up_2'));
+assert('Apply workflow includes withdrawn', VALID_STATUSES.includes('withdrawn'));
+
+// 9b. Apply Pack does not bypass approval gate
+const pendingOpp = { id: 'p1', approval_state: 'pending', lane: LANES.TPM, fit_score: 85, fit_signals: [] };
+let approvalGateHeld = false;
+try { generateApplyPack(pendingOpp); } catch { approvalGateHeld = true; }
+assert('Apply Pack generation blocked for pending opportunity', approvalGateHeld);
+
+// 9c. Rejected opportunity cannot get pack
+const rejectedOpp = { id: 'r1', approval_state: 'rejected', lane: LANES.TPM, fit_score: 85, fit_signals: [] };
+let rejectedBlocked = false;
+try { generateApplyPack(rejectedOpp); } catch { rejectedBlocked = true; }
+assert('Apply Pack generation blocked for rejected opportunity', rejectedBlocked);
+
+// ─── 10. Summary ─────────────────────────────────────────────────────────────
 
 console.log(`\n== Result: ${passed} passed, ${failed} failed ==`);
 if (failed > 0) process.exit(1);
+

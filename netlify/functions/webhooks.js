@@ -33,6 +33,9 @@ const VALID_EVENTS = [
   'weekly_summary',
   'source_failure',
   'ingestion_complete',
+  'apply_pack_generated',
+  'strong_fit_ready_to_apply',
+  'apply_status_changed',
 ];
 
 function json(statusCode, body) {

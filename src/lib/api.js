@@ -9,6 +9,7 @@
 import { scoreOpportunity, getRecommendation, LANE_CONFIG } from '../../netlify/functions/_shared/scoring.js';
 import { generateDedupHash } from '../../netlify/functions/_shared/dedup.js';
 import { evaluateStaleness, scanForStale, computeNextAction } from '../../netlify/functions/_shared/stale.js';
+import { generateApplyPack, applyResumeOverride, regenerateApplyPack } from '../../netlify/functions/_shared/applyPack.js';
 import { DEFAULT_SOURCES } from '../../netlify/functions/_shared/sources.js';
 import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
@@ -168,6 +169,17 @@ export async function approveOpportunity(id, action, reason = '', overrideFields
       last_action_date: now,
       ...overrideFields,
     };
+    // Auto-generate Apply Pack on approval
+    if (action === 'approve') {
+      try {
+        const oppForPack = { ...opp, ...updates, approval_state: 'approved' };
+        const pack = generateApplyPack(oppForPack);
+        updates.apply_pack = pack;
+        updates.status = 'apply_pack_generated';
+      } catch (e) {
+        console.warn('[api] Apply Pack generation failed (non-fatal):', e.message);
+      }
+    }
     mutateStore(s => {
       const idx = s.opportunities.findIndex(o => o.id === id);
       if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], ...updates };
@@ -454,4 +466,105 @@ export async function triggerExport(format = 'json') {
 
 export function resetDemoData() {
   localStorage.removeItem(STORE_KEY);
+}
+
+// ─── Apply Pack ───────────────────────────────────────────────────────────────
+
+export async function fetchApplyPack(id) {
+  if (isDemoMode()) {
+    const { opportunities } = getStore();
+    const opp = opportunities.find(o => o.id === id);
+    if (!opp) throw new Error('Opportunity not found');
+    if (opp.apply_pack) return { apply_pack: opp.apply_pack, opportunity: opp };
+    if (opp.approval_state !== 'approved') {
+      throw new Error('Apply Pack requires approval. Approve this opportunity first.');
+    }
+    // Auto-generate if approved but pack not yet on record
+    const pack = generateApplyPack(opp);
+    mutateStore(s => {
+      const idx = s.opportunities.findIndex(o => o.id === id);
+      if (idx >= 0) s.opportunities[idx] = {
+        ...s.opportunities[idx],
+        apply_pack: pack,
+        status: 'apply_pack_generated',
+      };
+    });
+    return { apply_pack: pack, opportunity: { ...opp, apply_pack: pack, status: 'apply_pack_generated' }, generated: true };
+  }
+  return apiFetch(`/apply-pack?id=${encodeURIComponent(id)}`);
+}
+
+export async function regenerateApplyPackApi(id) {
+  if (isDemoMode()) {
+    const { opportunities } = getStore();
+    const opp = opportunities.find(o => o.id === id);
+    if (!opp) throw new Error('Opportunity not found');
+    if (opp.approval_state !== 'approved') throw new Error('Cannot regenerate: opportunity not approved');
+    const fresh = regenerateApplyPack(opp, opp.apply_pack);
+    mutateStore(s => {
+      const idx = s.opportunities.findIndex(o => o.id === id);
+      if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], apply_pack: fresh };
+    });
+    return { apply_pack: fresh };
+  }
+  return apiFetch('/apply-pack', { method: 'POST', body: JSON.stringify({ id, action: 'regenerate' }) });
+}
+
+export async function overrideResumeVersion(id, overrideVersion, overrideReason = '') {
+  if (isDemoMode()) {
+    const { opportunities } = getStore();
+    const opp = opportunities.find(o => o.id === id);
+    if (!opp || !opp.apply_pack) throw new Error('No Apply Pack found for this opportunity');
+    const updated_pack = applyResumeOverride(opp.apply_pack, overrideVersion, overrideReason);
+    mutateStore(s => {
+      const idx = s.opportunities.findIndex(o => o.id === id);
+      if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], apply_pack: updated_pack };
+    });
+    return { apply_pack: updated_pack };
+  }
+  return apiFetch('/apply-pack', {
+    method: 'POST',
+    body: JSON.stringify({ id, action: 'override_resume', overrideVersion, overrideReason }),
+  });
+}
+
+export async function updateChecklistItem(id, itemId, done) {
+  if (isDemoMode()) {
+    const { opportunities } = getStore();
+    const opp = opportunities.find(o => o.id === id);
+    if (!opp || !opp.apply_pack) throw new Error('No Apply Pack found');
+    const updated_pack = {
+      ...opp.apply_pack,
+      apply_checklist: opp.apply_pack.apply_checklist.map(item =>
+        item.id === itemId ? { ...item, done: !!done } : item
+      ),
+    };
+    mutateStore(s => {
+      const idx = s.opportunities.findIndex(o => o.id === id);
+      if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], apply_pack: updated_pack };
+    });
+    return { apply_pack: updated_pack };
+  }
+  return apiFetch('/apply-pack', {
+    method: 'POST',
+    body: JSON.stringify({ id, action: 'update_checklist', itemId, done }),
+  });
+}
+
+export async function updateApplyStatus(id, status) {
+  if (isDemoMode()) {
+    const now = new Date().toISOString();
+    const statusUpdates = { status, last_action_date: now };
+    if (status === 'applied') statusUpdates.applied_date = now;
+    mutateStore(s => {
+      const idx = s.opportunities.findIndex(o => o.id === id);
+      if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], ...statusUpdates };
+    });
+    const { opportunities } = getStore();
+    return { opportunity: opportunities.find(o => o.id === id) };
+  }
+  return apiFetch('/apply-pack', {
+    method: 'POST',
+    body: JSON.stringify({ id, action: 'update_status', status }),
+  });
 }

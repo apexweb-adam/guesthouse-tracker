@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext.jsx';
 import FitScoreBadge from '../components/FitScoreBadge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
@@ -74,7 +74,14 @@ export default function OpportunityDetail() {
 
   return (
     <div>
-      <button className="btn btn-secondary btn-sm" style={{ marginBottom: 16 }} onClick={() => nav(-1)}>← Back</button>
+      <div className="flex gap-2" style={{ marginBottom: 16 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => nav(-1)}>← Back</button>
+        {opp.approval_state === 'approved' && (
+          <Link to={`/apply-pack/${id}`} className="btn btn-primary btn-sm">
+            📦 {opp.apply_pack ? 'View Apply Pack' : 'Generate Apply Pack'}
+          </Link>
+        )}
+      </div>
 
       <div className="detail-grid">
         {/* Main Column */}

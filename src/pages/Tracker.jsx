@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import LaneBadge from '../components/LaneBadge.jsx';
@@ -89,6 +89,11 @@ export default function Tracker() {
                   <td style={{ padding: '10px 12px' }}>
                     <StatusBadge status={o.status} />
                     {o.stale_flag && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 2 }}>⏳ stale</div>}
+                    {o.approval_state === 'approved' && (
+                      <Link to={`/apply-pack/${o.id}`} style={{ display: 'block', fontSize: 10, color: 'var(--blue)', marginTop: 3 }}>
+                        📦 {o.apply_pack ? 'Apply Pack' : 'Generate Pack'}
+                      </Link>
+                    )}
                   </td>
                   <td style={{ padding: '10px 12px' }}>
                     <select
@@ -98,7 +103,7 @@ export default function Tracker() {
                       onChange={e => handleStatusChange(o, e.target.value)}
                       style={{ padding: '3px 6px', fontSize: 12 }}
                     >
-                      {['discovered','queued','approved','applied','interviewing','offer','rejected','stale','ghosted'].map(s => (
+                      {['discovered','queued','approved','apply_pack_generated','ready_to_apply','applied','follow_up_1','follow_up_2','interviewing','offer','rejected','stale','ghosted','withdrawn'].map(s => (
                         <option key={s} value={s}>{s}</option>
                       ))}
                     </select>
