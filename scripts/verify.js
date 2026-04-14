@@ -419,5 +419,106 @@ assert('All demo records have source_family=demo', allDemoFamily);
 
 // ─── Summary ─────────────────────────────────────────────────────────────────
 
-console.log(`\n== Result: ${passed} passed, ${failed} failed ==`);
+// ─── 11. Production Hardening — Auth, Schema Fields, Events, Profile ──────────
+
+console.log('\n== 11. Production Hardening ==');
+
+// 11a. discover.js is auth-protected — check isAuthorized logic manually by
+//      inspecting the module source rather than importing the handler (avoids env deps).
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+const __dirname_v = dirname(fileURLToPath(import.meta.url));
+const discoverSrc = readFileSync(join(__dirname_v, '../netlify/functions/discover.js'), 'utf-8');
+assert('discover.js contains isAuthorized function', discoverSrc.includes('function isAuthorized('));
+assert('discover.js checks Authorization header', discoverSrc.includes('Authorization') || discoverSrc.includes('authorization'));
+assert('discover.js checks X-Discovery-Secret header', discoverSrc.includes('x-discovery-secret'));
+assert('discover.js returns 401 on auth failure', discoverSrc.includes('statusCode: 401'));
+
+// 11b. /discover fires discovery_run_complete event
+assert('discover.js fires discovery_run_complete event', discoverSrc.includes('discovery_run_complete'));
+
+// 11c. /discover fires new_strong_fit event
+assert('discover.js fires new_strong_fit event', discoverSrc.includes('new_strong_fit'));
+
+// 11d. approve.js fires apply_pack_generated event
+const approveSrc = readFileSync(join(__dirname_v, '../netlify/functions/approve.js'), 'utf-8');
+assert('approve.js fires apply_pack_generated event', approveSrc.includes('apply_pack_generated'));
+
+// 11e. approve.js fires strong_fit_ready_to_apply event
+assert('approve.js fires strong_fit_ready_to_apply event', approveSrc.includes('strong_fit_ready_to_apply'));
+
+// 11f. approve.js uses threshold check before strong_fit event
+assert('approve.js uses fit_score threshold for strong_fit event', approveSrc.includes('fit_score') && approveSrc.includes('>= 75'));
+
+// 11g. prep.js exports fireEvent
+const prepSrc = readFileSync(join(__dirname_v, '../netlify/functions/_shared/prep.js'), 'utf-8');
+assert('prep.js exports fireEvent', prepSrc.includes('export async function fireEvent('));
+
+// 11h. fireEvent is safe if no URL configured
+assert('fireEvent returns early if no WEBHOOK_URL', prepSrc.includes('if (!url) return'));
+
+// 11i. Supabase migration SQL exists and covers required columns
+const migSrc = readFileSync(join(__dirname_v, '../supabase/migrations/001_discovery_fields.sql'), 'utf-8');
+assert('Migration adds canonical_job_url', migSrc.includes('canonical_job_url'));
+assert('Migration adds application_url', migSrc.includes('application_url'));
+assert('Migration adds source_family', migSrc.includes('source_family'));
+assert('Migration adds source_job_id', migSrc.includes('source_job_id'));
+assert('Migration adds is_demo_record', migSrc.includes('is_demo_record'));
+assert('Migration adds discovered_at', migSrc.includes('discovered_at'));
+assert('Migration is idempotent (IF NOT EXISTS)', migSrc.includes('IF NOT EXISTS'));
+
+// 11j. n8n workflow 05 exists and includes DISCOVERY_SECRET
+const n8nSrc = readFileSync(join(__dirname_v, '../n8n/workflows/05-job-discovery.json'), 'utf-8');
+const n8nWorkflow = JSON.parse(n8nSrc);
+assert('n8n workflow 05 exists', !!n8nWorkflow.name);
+assert('n8n workflow 05 references /discover endpoint', n8nSrc.includes('/discover'));
+assert('n8n workflow 05 uses DISCOVERY_SECRET', n8nSrc.includes('DISCOVERY_SECRET'));
+assert('n8n workflow 05 has manual trigger', n8nSrc.includes('manualTrigger'));
+assert('n8n workflow 05 has schedule trigger', n8nSrc.includes('scheduleTrigger'));
+
+// 11k. Discovered.jsx page exists and references triggerDiscover
+const discoveredPageSrc = readFileSync(join(__dirname_v, '../src/pages/Discovered.jsx'), 'utf-8');
+assert('Discovered.jsx exists', !!discoveredPageSrc);
+assert('Discovered.jsx imports triggerDiscover', discoveredPageSrc.includes('triggerDiscover'));
+assert('Discovered.jsx shows demo badge', discoveredPageSrc.includes('DEMO'));
+assert('Discovered.jsx has approve/reject actions', discoveredPageSrc.includes('onApprove') && discoveredPageSrc.includes('onReject'));
+assert('Discovered.jsx has Open Posting link', discoveredPageSrc.includes('Open Posting'));
+
+// 11l. DiscoveryProfile.jsx page exists
+const profilePageSrc = readFileSync(join(__dirname_v, '../src/pages/DiscoveryProfile.jsx'), 'utf-8');
+assert('DiscoveryProfile.jsx exists', !!profilePageSrc);
+assert('DiscoveryProfile.jsx references includeTitleKeywords', profilePageSrc.includes('includeTitleKeywords'));
+assert('DiscoveryProfile.jsx references excludeTitleKeywords', profilePageSrc.includes('excludeTitleKeywords'));
+assert('DiscoveryProfile.jsx references enabledSourceFamilies', profilePageSrc.includes('enabledSourceFamilies'));
+assert('DiscoveryProfile.jsx excludes LinkedIn from source families', !profilePageSrc.includes('linkedin') && !profilePageSrc.includes('LinkedIn automation'));
+
+// 11m. App.jsx registers /discover route
+const appSrc = readFileSync(join(__dirname_v, '../src/App.jsx'), 'utf-8');
+assert('App.jsx registers /discover route', appSrc.includes("path: 'discover'"));
+assert('App.jsx registers /discover/profile route', appSrc.includes("path: 'discover/profile'"));
+
+// 11n. Sidebar has Discovered Jobs link
+const sidebarSrc = readFileSync(join(__dirname_v, '../src/components/Sidebar.jsx'), 'utf-8');
+assert('Sidebar has Discovered Jobs link', sidebarSrc.includes('Discovered Jobs'));
+assert('Sidebar shows discoveredCount badge', sidebarSrc.includes('discoveredCount'));
+
+// 11o. api.js exports triggerDiscover, fetchDiscoveryProfile, saveDiscoveryProfile
+const apiSrc = readFileSync(join(__dirname_v, '../src/lib/api.js'), 'utf-8');
+assert('api.js exports triggerDiscover', apiSrc.includes('export async function triggerDiscover('));
+assert('api.js exports fetchDiscoveryProfile', apiSrc.includes('export async function fetchDiscoveryProfile('));
+assert('api.js exports saveDiscoveryProfile', apiSrc.includes('export async function saveDiscoveryProfile('));
+
+// 11p. OpportunityDetail has discovery provenance block
+const oppDetailSrc = readFileSync(join(__dirname_v, '../src/pages/OpportunityDetail.jsx'), 'utf-8');
+assert('OpportunityDetail shows discovery provenance block', oppDetailSrc.includes('Discovery provenance'));
+assert('OpportunityDetail shows source_family', oppDetailSrc.includes('source_family'));
+assert('OpportunityDetail shows source_job_id', oppDetailSrc.includes('source_job_id'));
+assert('OpportunityDetail distinguishes demo vs live', oppDetailSrc.includes('Demo') && oppDetailSrc.includes('Live discovered'));
+
+// 11q. env.example documents DISCOVERY_SECRET
+const envSrc = readFileSync(join(__dirname_v, '../.env.example'), 'utf-8');
+assert('.env.example documents DISCOVERY_SECRET', envSrc.includes('DISCOVERY_SECRET'));
+
+console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

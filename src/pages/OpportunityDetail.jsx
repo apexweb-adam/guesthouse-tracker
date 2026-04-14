@@ -131,13 +131,56 @@ export default function OpportunityDetail() {
                 </span>
               )}
             </div>
-            {/* Source meta */}
-            {opp.source_family && opp.source_family !== 'demo' && (
-              <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 8 }}>
-                Source family: {opp.source_family}
-                {opp.source_job_id ? ` · Job ID: ${opp.source_job_id}` : ''}
+            {/* Source / Provenance Audit Block */}
+            <div style={{
+              background: 'var(--gray-50)',
+              border: '1px solid var(--gray-200)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              marginBottom: 12,
+              fontSize: 12,
+              color: 'var(--gray-600)',
+            }}>
+              <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13, color: '#1e3a5f' }}>
+                🔎 Discovery provenance
               </div>
-            )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
+                <span><strong>Record type:</strong> {opp.is_demo_record ? '🧪 Demo' : '🟢 Live discovered'}</span>
+                {opp.source_family && <span><strong>Source family:</strong> {opp.source_family}</span>}
+                {opp.source_job_id && <span><strong>Source job ID:</strong> {opp.source_job_id}</span>}
+                {opp.discovery_source_id && <span><strong>Source ID:</strong> {opp.discovery_source_id}</span>}
+                {opp.discovered_at && (
+                  <span><strong>Discovered:</strong> {new Date(opp.discovered_at).toLocaleString()}</span>
+                )}
+                {opp.ingested_at && !opp.discovered_at && (
+                  <span><strong>Ingested:</strong> {new Date(opp.ingested_at).toLocaleString()}</span>
+                )}
+                {opp.canonical_job_url && (
+                  <span style={{ gridColumn: '1 / -1' }}>
+                    <strong>Canonical URL:</strong>{' '}
+                    {opp.is_demo_record
+                      ? <em style={{ color: '#9ca3af' }}>{opp.canonical_job_url} (demo — not live)</em>
+                      : <a href={opp.canonical_job_url} target="_blank" rel="noopener noreferrer"
+                           style={{ color: '#2563eb', wordBreak: 'break-all' }}>
+                           {opp.canonical_job_url}
+                         </a>
+                    }
+                  </span>
+                )}
+                {opp.application_url && opp.application_url !== opp.canonical_job_url && (
+                  <span style={{ gridColumn: '1 / -1' }}>
+                    <strong>Apply URL:</strong>{' '}
+                    {opp.is_demo_record
+                      ? <em style={{ color: '#9ca3af' }}>{opp.application_url} (demo)</em>
+                      : <a href={opp.application_url} target="_blank" rel="noopener noreferrer"
+                           style={{ color: '#2563eb', wordBreak: 'break-all' }}>
+                           {opp.application_url}
+                         </a>
+                    }
+                  </span>
+                )}
+              </div>
+            </div>
             {opp.description && (
               <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--gray-700)', whiteSpace: 'pre-wrap', background: 'var(--gray-50)', borderRadius: 6, padding: 12 }}>
                 {opp.description}

@@ -568,3 +568,97 @@ export async function updateApplyStatus(id, status) {
     body: JSON.stringify({ id, action: 'update_status', status }),
   });
 }
+
+// ─── Discovery Trigger ─────────────────────────────────────────────────────
+/**
+ * Trigger a job discovery run via POST /discover.
+ * Requires the DISCOVERY_SECRET env var to be configured server-side.
+ * The secret is passed via the UI only in demo mode (no-op) or via a
+ * server-to-server call in live mode.
+ *
+ * @param {object} opts
+ * @param {string} [opts.sourceId]        — run a single source
+ * @param {string} [opts.discoverySecret] — caller must pass DISCOVERY_SECRET
+ */
+export async function triggerDiscover({ sourceId, discoverySecret } = {}) {
+  if (isDemoMode()) {
+    return {
+      ok: true,
+      mode: 'demo',
+      message: 'Discovery skipped in demo mode.',
+      discovered: 0,
+      ingested: 0,
+    };
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (discoverySecret) headers['X-Discovery-Secret'] = discoverySecret;
+  const res = await fetch(`${BASE}/discover`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(sourceId ? { sourceId } : {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Discovery failed (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+
+// ─── Discovery Profile ────────────────────────────────────────────────────
+const PROFILE_STORAGE_KEY = 'discovery_profile_v1';
+
+/**
+ * Fetch the active discovery profile.
+ * In demo/live mode this reads from localStorage (user-editable) and falls
+ * back to the default server profile definition.
+ *
+ * Returns the current profile object.
+ */
+export async function fetchDiscoveryProfile() {
+  // Always use localStorage — profile is UI-editable and persisted locally.
+  // Server-side DEFAULT_DISCOVERY_PROFILE is the fallback if no saved version.
+  try {
+    const stored = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  // Return the hard-coded defaults (mirrors DEFAULT_DISCOVERY_PROFILE in sources.js)
+  return {
+    includeTitleKeywords: [
+      'technical project manager',
+      'it project manager',
+      'senior project manager',
+      'senior technical project manager',
+      'delivery manager',
+      'technical delivery manager',
+      'programme manager',
+      'program manager',
+    ],
+    excludeTitleKeywords: [
+      'junior', 'graduate', 'assistant', 'coordinator', 'entry level',
+      'marketing', 'sales', 'hr', 'human resources', 'change manager',
+      'construction', 'civil', 'mining',
+    ],
+    excludeDomainKeywords: [
+      'construction', 'civil engineering', 'mining', 'manufacturing',
+      'retail operations', 'fmcg', 'logistics operations',
+    ],
+    locationPreferences: ['sydney', 'australia', 'remote'],
+    remotePreference: 'hybrid',
+    salaryFloorAUD: null,
+    maxRecordsPerRun: 50,
+    enabledSourceFamilies: ['greenhouse', 'lever', 'usajobs', 'seek', 'rss'],
+  };
+}
+
+/**
+ * Persist a discovery profile update to localStorage.
+ * @param {object} profile — updated profile object
+ */
+export async function saveDiscoveryProfile(profile) {
+  try {
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    return { saved: true };
+  } catch (err) {
+    throw new Error(`Could not save profile: ${err.message}`);
+  }
+}

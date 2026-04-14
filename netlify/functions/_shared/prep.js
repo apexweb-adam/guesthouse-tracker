@@ -213,3 +213,35 @@ export function generatePrepPackage(opp) {
     generatedAt: new Date().toISOString(),
   };
 }
+
+// ─── Outbound Event Dispatcher ────────────────────────────────────────────────
+/**
+ * Fire an outbound webhook event to the configured destination.
+ *
+ * Uses the same env var convention as webhooks.js:
+ *   WEBHOOK_URL_<EVENT_UPPER>  — per-event destination
+ *   WEBHOOK_URL               — catch-all destination
+ *   WEBHOOK_SECRET            — optional X-Webhook-Secret header
+ *
+ * Safe by default: if no URL is configured, does nothing (no throw).
+ * Callers should .catch(() => {}) to suppress any network errors.
+ *
+ * @param {string} eventName - e.g. 'discovery_run_complete', 'apply_pack_generated'
+ * @param {object} payload   - event-specific data
+ */
+export async function fireEvent(eventName, payload = {}) {
+  if (typeof process === 'undefined') return; // browser-safe no-op
+  const eventKey = eventName.toUpperCase().replace(/-/g, '_');
+  const url = process.env[`WEBHOOK_URL_${eventKey}`] || process.env.WEBHOOK_URL;
+  if (!url) return; // no destination configured — safe no-op
+
+  const secret = process.env.WEBHOOK_SECRET;
+  const headers = { 'Content-Type': 'application/json' };
+  if (secret) headers['X-Webhook-Secret'] = secret;
+
+  await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ event: eventName, payload, fired_at: new Date().toISOString() }),
+  });
+}

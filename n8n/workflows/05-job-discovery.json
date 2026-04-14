@@ -1,0 +1,185 @@
+{
+  "name": "05 — Job Discovery Run (Scheduled + Manual)",
+  "_comment": "ARCHITECTURE NOTE: n8n does NOT re-implement scoring, dedup, classification, or discovery profile logic. It only triggers POST /discover on the Netlify function. Set SITE_URL and DISCOVERY_SECRET env vars in n8n. DISCOVERY_SECRET must match the server env var of the same name.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "minutesInterval": 360
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger (Every 6h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [200, 480]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/discover",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Discovery-Secret",
+              "value": "={{ $env.DISCOVERY_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "{}",
+        "options": {
+          "timeout": 60000,
+          "fullResponse": true,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "id": "trigger-discover",
+      "name": "POST /discover",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 390]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the discovery result. All scoring/dedup logic ran inside the function.\n// This node only logs — it does not re-implement any business logic.\nconst res = $input.first();\nconst status = res.json?.statusCode || 200;\nconst body = typeof res.json?.body === 'string' ? JSON.parse(res.json.body) : (res.json || {});\n\nif (status === 401) {\n  console.error('[discovery] UNAUTHORIZED — check DISCOVERY_SECRET env var in n8n and Netlify');\n  return [{ json: { ok: false, error: 'unauthorized', status } }];\n}\n\nif (status !== 200 || body.ok === false) {\n  console.warn('[discovery] Run skipped or failed:', body.message || body.error || JSON.stringify(body));\n  return [{ json: { ok: false, message: body.message || body.error, status } }];\n}\n\nif (body.mode === 'demo') {\n  console.log('[discovery] Demo mode — no real discovery ran.');\n  return [{ json: { ok: true, mode: 'demo' } }];\n}\n\nconsole.log(\n  `[discovery] Run complete: ${body.sources_run} source(s), ` +\n  `${body.total_discovered} discovered, ${body.total_ingested} ingested`\n);\n\nreturn [{ json: body }];"
+      },
+      "id": "log-result",
+      "name": "Log Discovery Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 390]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.total_ingested }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-new-jobs",
+      "name": "Any New Jobs?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 390]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/digest?type=approval",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-approval-queue",
+      "name": "Fetch Approval Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Forward the discovery_run_complete event summary to webhooks.\n// The /webhooks function dispatches to WEBHOOK_URL or WEBHOOK_URL_DISCOVERY_RUN_COMPLETE.\nconst body = $input.first().json;\nreturn [{ json: {\n  event: 'discovery_run_complete',\n  payload: {\n    sources_run: body.sources_run,\n    total_discovered: body.total_discovered,\n    total_ingested: body.total_ingested,\n    timestamp: new Date().toISOString()\n  }\n}}];"
+      },
+      "id": "build-event-payload",
+      "name": "Build Event Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 480]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/webhooks",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "dispatch-webhook",
+      "name": "Dispatch /webhooks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1550, 480]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Every 6h)": {
+      "main": [[{ "node": "POST /discover", "type": "main", "index": 0 }]]
+    },
+    "Manual Trigger": {
+      "main": [[{ "node": "POST /discover", "type": "main", "index": 0 }]]
+    },
+    "POST /discover": {
+      "main": [[{ "node": "Log Discovery Result", "type": "main", "index": 0 }]]
+    },
+    "Log Discovery Result": {
+      "main": [[{ "node": "Any New Jobs?", "type": "main", "index": 0 }]]
+    },
+    "Any New Jobs?": {
+      "main": [
+        [{ "node": "Fetch Approval Queue", "type": "main", "index": 0 }],
+        [{ "node": "Build Event Payload", "type": "main", "index": 0 }]
+      ]
+    },
+    "Any New Jobs? (false)": {
+      "main": [[{ "node": "Build Event Payload", "type": "main", "index": 0 }]]
+    },
+    "Build Event Payload": {
+      "main": [[{ "node": "Dispatch /webhooks", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_env_vars_required": {
+    "SITE_URL": "Your Netlify site URL, e.g. https://your-app.netlify.app",
+    "DISCOVERY_SECRET": "Must match DISCOVERY_SECRET env var set in Netlify — required for /discover auth"
+  },
+  "_notes": [
+    "This workflow fires every 6 hours. Adjust the schedule in 'Schedule Trigger (Every 6h)' as needed.",
+    "Manual trigger is available for on-demand discovery runs from the n8n UI.",
+    "DISCOVERY_SECRET is passed as X-Discovery-Secret header — must match server env var.",
+    "All scoring, dedup, and classification happen inside the Netlify function. n8n only triggers it.",
+    "If /discover returns 401, check DISCOVERY_SECRET in both n8n and Netlify environments.",
+    "If discovery is disabled (LIVE_INTAKE_ENABLED != true), the function returns ok:false with a message — n8n logs and continues.",
+    "Combine with workflow 02 (approval digest) to notify when the queue grows after a discovery run."
+  ]
+}

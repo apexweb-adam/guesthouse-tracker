@@ -27,9 +27,32 @@ import { isLiveIntakeEnabled, canSourceRunLive, DEFAULT_SOURCES, mergeWithDefaul
 import { discoverJobsForSource, normaliseJob } from './_shared/jobFinder.js';
 import { DEFAULT_DISCOVERY_PROFILE } from './_shared/sources.js';
 import { listSources, processBatch, logIngestion, isDemoMode } from './_shared/db.js';
+import { fireEvent } from './_shared/prep.js';
+
+/**
+ * Verify the DISCOVERY_SECRET header.
+ * In demo mode the secret check is skipped (no real sources run anyway).
+ *
+ * Callers (n8n, cron, CI) must send:
+ *   Authorization: Bearer <DISCOVERY_SECRET>
+ * OR
+ *   X-Discovery-Secret: <DISCOVERY_SECRET>
+ */
+function isAuthorized(event) {
+  const secret = process.env.DISCOVERY_SECRET;
+  // If no secret is configured the endpoint is considered restricted — reject all.
+  // (Set DISCOVERY_SECRET=your-secret in your Netlify env before enabling.)
+  if (!secret) return false;
+  const authHeader = event.headers?.authorization || event.headers?.Authorization || '';
+  const secretHeader = event.headers?.['x-discovery-secret'] || '';
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7).trim() === secret;
+  }
+  return secretHeader === secret;
+}
 
 export const handler = async (event) => {
-  // Demo mode guard
+  // Demo mode guard — secret not required in demo (nothing real runs)
   if (isDemoMode()) {
     return {
       statusCode: 200,
@@ -46,6 +69,17 @@ export const handler = async (event) => {
 
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'POST required' }) };
+  }
+
+  // Auth check — reject unauthorized callers
+  if (!isAuthorized(event)) {
+    return {
+      statusCode: 401,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: 'Unauthorized. Set DISCOVERY_SECRET and send it as: Authorization: Bearer <secret> or X-Discovery-Secret: <secret>',
+      }),
+    };
   }
 
   // Global kill switch
@@ -156,6 +190,30 @@ export const handler = async (event) => {
     }
 
     results.push(sourceResult);
+  }
+
+  // ── Fire events ─────────────────────────────────────────────────────────────
+
+  // discovery_run_complete — always fire when any sources ran
+  await fireEvent('discovery_run_complete', {
+    sources_run: sourcesToRun.length,
+    total_discovered: totalDiscovered,
+    total_ingested: totalIngested,
+    results,
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
+
+  // new_strong_fit — fire once if any newly ingested records scored as recommended
+  // processBatch returns high_review but not yet the new strong-fit records;
+  // we fire a summary event if any records were ingested (scoring inside processBatch
+  // already ran — the consuming system can query the approval queue for details).
+  if (totalIngested > 0) {
+    await fireEvent('new_strong_fit', {
+      context: 'discovery_run',
+      new_records_ingested: totalIngested,
+      message: `${totalIngested} new job(s) discovered and queued for approval review.`,
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
   }
 
   return {

@@ -10,6 +10,7 @@
 
 import { getOpportunity, updateOpportunity } from './_shared/db.js';
 import { generateApplyPack } from './_shared/applyPack.js';
+import { fireEvent } from './_shared/prep.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -69,6 +70,31 @@ export const handler = async (event) => {
         const applyPack = generateApplyPack(oppForPack);
         updates.apply_pack = applyPack;
         updates.status = 'apply_pack_generated';
+
+        // Fire apply_pack_generated event
+        await fireEvent('apply_pack_generated', {
+          opportunity_id: id,
+          title: opp.title,
+          company: opp.company,
+          lane: opp.lane,
+          fit_score: opp.fit_score,
+          resume_version: applyPack.recommended_resume_version,
+          canonical_job_url: opp.canonical_job_url || null,
+          timestamp: now,
+        }).catch(() => {});
+
+        // Fire strong_fit_ready_to_apply if fit score is high
+        if ((opp.fit_score || 0) >= 75 && opp.recommended) {
+          await fireEvent('strong_fit_ready_to_apply', {
+            opportunity_id: id,
+            title: opp.title,
+            company: opp.company,
+            lane: opp.lane,
+            fit_score: opp.fit_score,
+            canonical_job_url: opp.canonical_job_url || null,
+            timestamp: now,
+          }).catch(() => {});
+        }
       } catch (packErr) {
         // Pack generation failure should not block approval
         console.warn('[approve] Apply Pack generation failed (non-fatal):', packErr.message);

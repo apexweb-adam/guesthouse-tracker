@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext.jsx';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: '📊', end: true },
+  { to: '/discover', label: 'Discovered Jobs', icon: '🔍', badge: 'discovered' },
   { to: '/queue', label: 'Approval Queue', icon: '✅', badge: 'queue' },
   { to: '/tracker', label: 'Tracker', icon: '📋' },
   { to: '/sources', label: 'Sources', icon: '📡' },
@@ -15,6 +16,10 @@ export default function Sidebar() {
   const { state } = useApp();
   const queueCount = state.opportunities.filter(
     o => o.approval_state === 'pending' && !['rejected','ghosted','stale'].includes(o.status)
+  ).length;
+
+  const discoveredCount = state.opportunities.filter(
+    o => ['discovered', 'queued'].includes(o.status) && o.approval_state === 'pending'
   ).length;
 
   return (
@@ -32,6 +37,9 @@ export default function Sidebar() {
             <span>{n.label}</span>
             {n.badge === 'queue' && queueCount > 0 && (
               <span className="nav-badge">{queueCount}</span>
+            )}
+            {n.badge === 'discovered' && discoveredCount > 0 && (
+              <span className="nav-badge">{discoveredCount}</span>
             )}
           </NavLink>
         ))}

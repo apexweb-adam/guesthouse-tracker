@@ -6,6 +6,8 @@ import Sidebar from './components/Sidebar.jsx';
 import Notification from './components/Notification.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import ApprovalQueue from './pages/ApprovalQueue.jsx';
+import Discovered from './pages/Discovered.jsx';
+import DiscoveryProfile from './pages/DiscoveryProfile.jsx';
 import Tracker from './pages/Tracker.jsx';
 import OpportunityDetail from './pages/OpportunityDetail.jsx';
 import ApplyPack from './pages/ApplyPack.jsx';
@@ -79,6 +81,8 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Dashboard /> },
       { path: 'queue', element: <ApprovalQueue /> },
+      { path: 'discover', element: <Discovered /> },
+      { path: 'discover/profile', element: <DiscoveryProfile /> },
       { path: 'tracker', element: <Tracker /> },
       { path: 'opportunity/:id', element: <OpportunityDetail /> },
       { path: 'apply-pack/:id', element: <ApplyPack /> },
