@@ -92,15 +92,51 @@ export default function OpportunityDetail() {
               <LaneBadge lane={opp.lane} />
               <StatusBadge status={opp.status} />
               {opp.approval_state === 'approved' && <span className="badge" style={{ background: 'var(--green-light)', color: 'var(--green)' }}>✓ Approved</span>}
+              {opp.is_demo_record && (
+                <span className="badge" style={{ background: '#fef3c7', color: '#92400e', fontWeight: 600, fontSize: 11 }}>
+                  DEMO
+                </span>
+              )}
             </div>
             <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 4 }}>{opp.title}</h1>
             <div style={{ fontSize: 14, color: 'var(--gray-600)', marginBottom: 12 }}>
               {opp.company}{opp.location ? ` · ${opp.location}` : ''}
             </div>
-            {opp.url && (
-              <a href={opp.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm" style={{ marginBottom: 12 }}>
-                View Original Posting ↗
-              </a>
+            {/* URL buttons — real canonical link + separate apply URL if distinct */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+              {(opp.canonical_job_url || opp.url) && !opp.is_demo_record && (
+                <a
+                  href={opp.canonical_job_url || opp.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-ghost btn-sm"
+                >
+                  📄 Open Original Posting ↗
+                </a>
+              )}
+              {opp.application_url && opp.application_url !== (opp.canonical_job_url || opp.url) && !opp.is_demo_record && (
+                <a
+                  href={opp.application_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: 'var(--green)' }}
+                >
+                  ✅ Open Apply URL ↗
+                </a>
+              )}
+              {opp.is_demo_record && (
+                <span className="btn btn-ghost btn-sm" style={{ opacity: 0.5, cursor: 'default', fontStyle: 'italic' }}>
+                  📄 Demo record — no live posting URL
+                </span>
+              )}
+            </div>
+            {/* Source meta */}
+            {opp.source_family && opp.source_family !== 'demo' && (
+              <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 8 }}>
+                Source family: {opp.source_family}
+                {opp.source_job_id ? ` · Job ID: ${opp.source_job_id}` : ''}
+              </div>
             )}
             {opp.description && (
               <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--gray-700)', whiteSpace: 'pre-wrap', background: 'var(--gray-50)', borderRadius: 6, padding: 12 }}>

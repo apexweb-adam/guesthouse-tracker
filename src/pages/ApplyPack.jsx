@@ -189,7 +189,12 @@ export default function ApplyPack() {
       opportunity: {
         title: opportunity.title,
         company: opportunity.company,
-        url: opportunity.url,
+        location: opportunity.location,
+        canonical_job_url: opportunity.canonical_job_url || opportunity.url || null,
+        application_url: opportunity.application_url || null,
+        source_family: opportunity.source_family || null,
+        source_job_id: opportunity.source_job_id || null,
+        is_demo_record: opportunity.is_demo_record || false,
         lane: opportunity.lane,
         fit_score: opportunity.fit_score,
         status: opportunity.status,
@@ -271,11 +276,34 @@ export default function ApplyPack() {
         <div style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 8 }}>
           {opportunity?.company}{opportunity?.location ? ` · ${opportunity.location}` : ''}
         </div>
-        {opportunity?.url && (
-          <a href={opportunity.url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">
-            View Posting ↗
-          </a>
-        )}
+        {/* Real URL buttons */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+          {(opportunity?.canonical_job_url || opportunity?.url) && !opportunity?.is_demo_record && (
+            <a
+              href={opportunity.canonical_job_url || opportunity.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-ghost btn-sm"
+            >
+              📄 Open Original Posting ↗
+            </a>
+          )}
+          {opportunity?.application_url && opportunity.application_url !== (opportunity?.canonical_job_url || opportunity?.url) && !opportunity?.is_demo_record && (
+            <a
+              href={opportunity.application_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary btn-sm"
+            >
+              ✅ Open Apply URL ↗
+            </a>
+          )}
+          {opportunity?.is_demo_record && (
+            <span style={{ fontSize: 12, color: 'var(--amber)', fontStyle: 'italic' }}>
+              ⚠ Demo record — no live application URL
+            </span>
+          )}
+        </div>
         <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6 }}>
           Pack generated {new Date(pack.generated_at).toLocaleString()}
           {pack.pack_version > 1 && ` · Last regenerated ${new Date(pack.last_regenerated_at).toLocaleString()}`}

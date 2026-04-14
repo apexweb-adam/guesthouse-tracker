@@ -36,6 +36,7 @@ const VALID_EVENTS = [
   'apply_pack_generated',
   'strong_fit_ready_to_apply',
   'apply_status_changed',
+  'discovery_run_complete',
 ];
 
 function json(statusCode, body) {

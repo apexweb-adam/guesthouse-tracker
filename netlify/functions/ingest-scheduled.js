@@ -17,7 +17,8 @@
 
 import { schedule } from '@netlify/functions';
 import { listSources, processBatch, logIngestion, isDemoMode } from './_shared/db.js';
-import { canSourceRunLive, SOURCE_TYPES, mergeWithDefaults } from './_shared/sources.js';
+import { canSourceRunLive, SOURCE_TYPES, mergeWithDefaults, DEFAULT_DISCOVERY_PROFILE } from './_shared/sources.js';
+import { discoverJobsForSource } from './_shared/jobFinder.js';
 
 const MAX_RECORDS_PER_RUN = parseInt(process.env.MAX_RECORDS_PER_RUN || '50', 10);
 
@@ -71,16 +72,28 @@ async function runIngestion() {
     return;
   }
 
+  // Resolve job-finder config from env vars
+  const config = {
+    greenhouseBoards: (process.env.GREENHOUSE_BOARDS || '').split(',').map(s => s.trim()).filter(Boolean),
+    leverBoards: (process.env.LEVER_BOARDS || '').split(',').map(s => s.trim()).filter(Boolean),
+    usajobsKeyword: process.env.USAJOBS_KEYWORD || 'technical project manager',
+    maxResults: MAX_RECORDS_PER_RUN,
+    discoveryProfile: DEFAULT_DISCOVERY_PROFILE,
+  };
+
   for (const source of liveSources) {
     const startedAt = new Date().toISOString();
     let jobs = [];
     let fetchError = null;
 
     try {
-      if (source.type === SOURCE_TYPES.RSS) {
+      if (source.sourceFamily && source.sourceFamily !== 'rss') {
+        // Use the structured job-finder adapter for ATS/API sources
+        jobs = await discoverJobsForSource(source, config);
+      } else if (source.type === SOURCE_TYPES.RSS) {
+        // Legacy RSS fetcher — preserve backward compat
         jobs = await fetchRSSJobs(source);
       }
-      // Additional source types (API, email) would be handled here
     } catch (err) {
       fetchError = err.message;
     }

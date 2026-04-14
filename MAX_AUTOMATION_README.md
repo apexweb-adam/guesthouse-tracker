@@ -16,6 +16,13 @@
 | Source failure alerting | n8n workflow 03 → `webhooks` endpoint → Zapier/email |
 | Weekly conversion summary | `/digest?type=weekly` + n8n workflow 04 (Monday 09:00) |
 | Preparation package generation | `/prep?id=<id>` endpoint + `_shared/prep.js` |
+| **Real job discovery — Greenhouse** | **`discover.js` + `_shared/jobFinder.js` → Greenhouse public boards API (no auth required)** |
+| **Real job discovery — Lever** | **`discover.js` + `_shared/jobFinder.js` → Lever public postings API (no auth required)** |
+| **Real job discovery — USAJobs** | **`discover.js` + `_shared/jobFinder.js` → USAJobs REST API (requires USAJOBS_API_KEY)** |
+| **Real job discovery — RSS/Atom** | **`ingest-scheduled.js` → RSS/Atom feeds (SEEK, APSJobs) with `jobFinder.fetchRSSFeed()`** |
+| **Discovery profile filtering** | **`_shared/sources.js` → `passesDiscoveryProfile()` — title include/exclude, domain exclude, pre-score filter** |
+| **canonical_job_url + application_url stored** | **On every discovered opportunity — `_shared/jobFinder.normaliseJob()`** |
+| **Demo record isolation** | **All demo records have `is_demo_record: true`, `source_family: 'demo'`, no example.com URLs** |
 | **Apply Pack generation (auto on approval)** | **`approve.js` → `_shared/applyPack.js` — generated immediately when role is approved** |
 | **Resume version recommendation** | **`_shared/scoring.js` → `recommendResumeVersion()` — TPM-BASE-01 / DEL-BASE-01 / OPS-COND-01 / MASTER-01** |
 | **Keyword mirror list** | **`_shared/prep.js` → `extractKeywords()` (bigram + unigram frequency)** |
@@ -25,7 +32,7 @@
 | **Bullet emphasis notes** | **`_shared/applyPack.js` — 5 lane-specific resume bullet guidance notes** |
 | Outbound webhook dispatch | `/webhooks` endpoint (fired by n8n, consumed by Zapier) |
 | Export / backup trigger | `/export?format=json|csv` endpoint + UI buttons on Reports page |
-| **Apply Pack JSON export** | **`/apply-pack/:id` page → Export Pack JSON button** |
+| **Apply Pack JSON export** | **`/apply-pack/:id` page → Export Pack JSON button (includes canonical_job_url)** |
 | Reports page | `/reports` — live digests, funnel, export buttons |
 
 ## What still requires human approval
@@ -34,7 +41,7 @@
 |---|---|
 | Opportunity approval (approve/reject) | Core product constraint — no role bypasses the approval queue |
 | Apply Pack is only generated AFTER approval | The approval gate blocks the pack — pending/rejected roles cannot get a pack |
-| Application submission | Must not be automated — human sends every application |
+| Application submission | Must not be automated — human sends every application via "Open Apply URL ↗" |
 | Outreach sending | Recruiter and hiring manager drafts are generated but never auto-sent |
 | Resume customisation | Keyword mirror + emphasis direction are generated; human applies them to resume files |
 | Resume source file editing | The system never edits, mutates, sample-resume.pdf/.pdf resume files |
@@ -43,14 +50,75 @@
 ## The apply flow (find → score → approve → prepare → apply → track)
 
 ```
-1. DISCOVER   Job ingested → scored → classified → deduplicated
-2. QUEUE      Recommended jobs enter approval queue
+1. DISCOVER   Job found via Greenhouse / Lever / USAJobs / RSS — canonical_job_url stored
+2. QUEUE      Recommended jobs enter approval queue (profile-filtered, scored, classified)
 3. APPROVE    Human approves or rejects each role
 4. PACK READY Apply Pack auto-generated: resume recommendation + checklist + keywords + outreach drafts
-5. PREPARE    Human tailors resume using the pack, reviews outreach drafts
-6. APPLY      Human submits application manually
+5. PREPARE    Human tailors resume using the pack — "Open Original Posting" + "Open Apply URL" buttons ready
+6. APPLY      Human submits application manually via the original posting URL
 7. TRACK      Status updated: follow_up_1 → follow_up_2 → interviewing → offer/rejected/ghosted
 ```
+
+## Real Job Finder
+
+The system discovers real jobs from governed structured sources. No scraping, no automation, no LinkedIn.
+
+### Supported source families
+
+| Source family | How it works | Auth |
+|---|---|---|
+| `greenhouse` | Greenhouse public boards JSON API — `boards-api.greenhouse.io/v1/boards/{token}/jobs` | None (public) |
+| `lever` | Lever public postings JSON API — `api.lever.co/v0/postings/{slug}` | None (public) |
+| `usajobs` | USAJobs REST API — `data.usajobs.gov/api/search` | USAJOBS_API_KEY required |
+| `seek` | SEEK RSS/Atom feed | None (public) |
+| `apsjobs` | Australian Public Service Jobs RSS | None (public) |
+| `rss` | Any approved RSS/Atom feed | None |
+| `linkedin` | NOT automated. Email intake only — no browser automation, no scraping. | N/A |
+
+### env vars required per source family
+
+```
+GREENHOUSE_BOARDS=telstra,anz,atlassian      # comma-separated board tokens
+LEVER_BOARDS=canva,xero,atlassian            # comma-separated company slugs
+USAJOBS_API_KEY=your-key                     # from developer.usajobs.gov
+USAJOBS_USER_AGENT=your-registered-email     # must match API key registration
+LIVE_INTAKE_ENABLED=true                     # global kill switch — must be true
+```
+
+### Discovery profile (Candidate's filter)
+
+Before scoring, every discovered job is filtered by `passesDiscoveryProfile()` in `_shared/sources.js`.
+
+- **Include titles**: Technical Project Manager, IT Project Manager, Delivery Manager, Senior Project Manager, Programme Manager
+- **Exclude titles**: junior, graduate, assistant, coordinator, entry level, marketing, sales, HR, change manager
+- **Exclude domains**: construction, civil engineering, mining, manufacturing, retail operations, FMCG
+
+This ensures the approval queue is high-signal before scoring even runs.
+
+### Real URL model
+
+Every discovered job stores:
+
+| Field | Meaning |
+|---|---|
+| `canonical_job_url` | The canonical link to the original job posting |
+| `application_url` | The apply link (may differ from canonical, e.g. ATS redirect) |
+| `source_job_id` | The unique job ID from the source ATS/feed |
+| `source_family` | `greenhouse`, `lever`, `usajobs`, `seek`, `rss`, etc. |
+| `is_demo_record` | `false` for all discovered jobs; `true` for demo seed records only |
+
+### Demo mode vs live mode
+
+| Behaviour | Demo mode | Live mode |
+|---|---|---|
+| Source of jobs | Pre-seeded demo records in `demoData.js` | Real discovered jobs from approved sources |
+| `is_demo_record` | `true` — all demo records | `false` — all discovered jobs |
+| URLs | Real company careers pages (no example.com) — clearly labeled as demo | Real canonical_job_url and application_url from source |
+| "Open Original Posting" | Disabled — demo label shown | Enabled — opens real posting |
+| Discovery runs | Skipped | Enabled when `LIVE_INTAKE_ENABLED=true` |
+
+Demo records are permanently labeled and isolated. The UI shows a `DEMO` badge and disables posting links.
+Demo records will never show `example.com` links — they use real careers page URLs as reference.
 
 ## Apply Pack contents
 
@@ -71,6 +139,11 @@
 | `pack_version` | Increments on regeneration |
 | `resume_version_override` | Null unless human overrides; override reason + timestamp preserved |
 | `original_system_recommendation` | Never overwritten — always the system's original pick |
+
+The Apply Pack page includes:
+- **📄 Open Original Posting ↗** — opens `canonical_job_url` in new tab
+- **✅ Open Apply URL ↗** — opens `application_url` if distinct from canonical
+- Demo records show a warning instead: no live application URL
 
 ## Resume version hierarchy
 

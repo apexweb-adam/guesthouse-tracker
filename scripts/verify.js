@@ -8,6 +8,8 @@
 import { scoreOpportunity, classifyLane, LANES } from '../netlify/functions/_shared/scoring.js';
 import { generateDedupHash, checkDuplicate, partitionByDedup } from '../netlify/functions/_shared/dedup.js';
 import { evaluateStaleness, scanForStale } from '../netlify/functions/_shared/stale.js';
+import { passesDiscoveryProfile, DEFAULT_DISCOVERY_PROFILE, SOURCE_FAMILIES } from '../netlify/functions/_shared/sources.js';
+import { normaliseJob, stripHtml } from '../netlify/functions/_shared/jobFinder.js';
 
 let passed = 0;
 let failed = 0;
@@ -340,8 +342,82 @@ let rejectedBlocked = false;
 try { generateApplyPack(rejectedOpp); } catch { rejectedBlocked = true; }
 assert('Apply Pack generation blocked for rejected opportunity', rejectedBlocked);
 
-// ─── 10. Summary ─────────────────────────────────────────────────────────────
+// ─── 10. Real Job Finder + URL Model ─────────────────────────────────────────
+
+console.log('\n== 10. Real Job Finder + URL Model ==');
+
+// 10a. normaliseJob always sets is_demo_record: false
+const norm = normaliseJob({
+  title: 'Senior Technical Project Manager',
+  company: 'Acme Corp',
+  description: 'Lead delivery of platform projects.',
+  location: 'Sydney, NSW',
+  canonical_job_url: 'https://boards.greenhouse.io/acme/jobs/12345',
+  application_url: 'https://boards.greenhouse.io/acme/jobs/12345#app',
+  source_job_id: '12345',
+  source_family: SOURCE_FAMILIES.GREENHOUSE,
+  source_id: 'src-greenhouse-boards',
+});
+assert('normaliseJob sets is_demo_record=false', norm.is_demo_record === false, String(norm.is_demo_record));
+assert('normaliseJob preserves canonical_job_url', norm.canonical_job_url === 'https://boards.greenhouse.io/acme/jobs/12345');
+assert('normaliseJob preserves application_url', norm.application_url === 'https://boards.greenhouse.io/acme/jobs/12345#app');
+assert('normaliseJob preserves source_family', norm.source_family === SOURCE_FAMILIES.GREENHOUSE, norm.source_family);
+assert('normaliseJob preserves source_job_id', norm.source_job_id === '12345');
+
+// 10b. normaliseJob handles missing URLs gracefully
+const normNoUrl = normaliseJob({ title: 'PM', company: 'X', description: '', location: '' });
+assert('normaliseJob handles missing canonical_job_url', normNoUrl.canonical_job_url === null);
+assert('normaliseJob handles missing application_url', normNoUrl.application_url === null);
+
+// 10c. Demo data records must be labeled is_demo_record=true
+const { DEMO_OPPORTUNITIES } = await import('../src/lib/demoData.js');
+const demoRecordsLabeled = DEMO_OPPORTUNITIES.every(d => d.is_demo_record === true);
+assert('All demo records have is_demo_record=true', demoRecordsLabeled);
+
+// 10d. Demo data must NOT contain example.com URLs
+const noExampleCom = DEMO_OPPORTUNITIES.every(d =>
+  !d.url?.includes('example.com') &&
+  !d.canonical_job_url?.includes('example.com') &&
+  !d.application_url?.includes('example.com')
+);
+assert('No demo record contains example.com URL', noExampleCom);
+
+// 10e. Discovery profile includes correct priority titles
+const profile = DEFAULT_DISCOVERY_PROFILE;
+const hasTPM = profile.includeTitleKeywords.some(kw => kw.toLowerCase().includes('technical project manager'));
+const hasDM = profile.includeTitleKeywords.some(kw => kw.toLowerCase().includes('delivery manager'));
+assert('Discovery profile includes Technical Project Manager', hasTPM);
+assert('Discovery profile includes Delivery Manager', hasDM);
+
+// 10f. passesDiscoveryProfile correctly filters out excluded titles
+const juniorJob = { title: 'Junior Project Manager', description: 'Agile delivery, technical scrum', location: 'Sydney' };
+assert('Discovery profile rejects junior title', !passesDiscoveryProfile(juniorJob, profile));
+
+// 10g. passesDiscoveryProfile accepts strong TPM title
+const tpmJob = { title: 'Senior Technical Project Manager', description: 'Lead delivery of cloud migration programme.', location: 'Sydney' };
+assert('Discovery profile accepts Senior TPM title', passesDiscoveryProfile(tpmJob, profile));
+
+// 10h. passesDiscoveryProfile excludes out-of-scope domains
+const constructionJob = { title: 'Senior Project Manager', description: 'construction project civil engineering infrastructure site works', location: 'Sydney' };
+assert('Discovery profile excludes construction domain keyword', !passesDiscoveryProfile(constructionJob, profile));
+
+// 10i. stripHtml removes tags and decodes entities
+const stripped = stripHtml('<p>Lead <strong>technical</strong> delivery &amp; SDLC ownership.</p>');
+assert('stripHtml removes HTML tags', !stripped.includes('<p>') && !stripped.includes('<strong>'));
+assert('stripHtml decodes &amp;', stripped.includes('&'));
+
+// 10j. Source families are correctly defined
+assert('SOURCE_FAMILIES.GREENHOUSE defined', SOURCE_FAMILIES.GREENHOUSE === 'greenhouse');
+assert('SOURCE_FAMILIES.LEVER defined', SOURCE_FAMILIES.LEVER === 'lever');
+assert('SOURCE_FAMILIES.USAJOBS defined', SOURCE_FAMILIES.USAJOBS === 'usajobs');
+assert('SOURCE_FAMILIES.DEMO defined', SOURCE_FAMILIES.DEMO === 'demo');
+assert('LinkedIn is not a source family that enables automation', SOURCE_FAMILIES.LINKEDIN === 'linkedin');
+
+// 10k. Demo records all have source_family='demo'
+const allDemoFamily = DEMO_OPPORTUNITIES.every(d => d.source_family === 'demo');
+assert('All demo records have source_family=demo', allDemoFamily);
+
+// ─── Summary ─────────────────────────────────────────────────────────────────
 
 console.log(`\n== Result: ${passed} passed, ${failed} failed ==`);
 if (failed > 0) process.exit(1);
-
