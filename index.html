@@ -9,16 +9,33 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <title>Job Search OS</title>
+    <style>
+      #app-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background: #f9fafb;
+        font-family: system-ui, sans-serif;
+        color: #6b7280;
+        font-size: 14px;
+      }
+      .noscript-message {
+        padding: 40px;
+        text-align: center;
+        font-family: system-ui, sans-serif;
+      }
+    </style>
   </head>
   <body>
     <div id="root">
       <!-- Loading fallback — replaced by React on mount -->
-      <div id="app-loading" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f9fafb;font-family:system-ui,sans-serif;color:#6b7280;font-size:14px;">
+      <div id="app-loading">
         Loading Job Search OS…
       </div>
     </div>
     <noscript>
-      <div style="padding:40px;text-align:center;font-family:system-ui,sans-serif;">
+      <div class="noscript-message">
         JavaScript is required to run Job Search OS.
       </div>
     </noscript>
