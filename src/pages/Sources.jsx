@@ -64,6 +64,7 @@ export default function Sources() {
                 <th>Last Run</th>
                 <th>Imported</th>
                 <th>Deduped</th>
+                <th>High Review</th>
                 <th>Failures</th>
                 <th>Toggle</th>
               </tr>
@@ -74,6 +75,11 @@ export default function Sources() {
                   <td>
                     <div className="font-medium">{src.name}</div>
                     <div style={{ fontSize: 11, color: 'var(--gray-400)', maxWidth: 280, whiteSpace: 'normal' }}>{src.description}</div>
+                    {src.noisy_warning && (
+                      <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600, marginTop: 2 }}>
+                        ⚠ Noisy source — &gt;50% low-fit records. Review signal quality before continuing.
+                      </div>
+                    )}
                   </td>
                   <td style={{ fontSize: 12 }}>{src.type}</td>
                   <td>
@@ -96,6 +102,9 @@ export default function Sources() {
                   </td>
                   <td style={{ fontSize: 12 }}>{src.total_imported || 0}</td>
                   <td style={{ fontSize: 12 }}>{src.total_deduped || 0}</td>
+                  <td style={{ fontSize: 12, color: src.total_high_review > 0 ? 'var(--amber)' : 'inherit' }}>
+                    {src.total_high_review || 0}
+                  </td>
                   <td style={{ fontSize: 12, color: src.total_failures > 0 ? 'var(--red)' : 'inherit' }}>
                     {src.total_failures || 0}
                   </td>

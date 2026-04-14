@@ -159,8 +159,18 @@ export async function logIngestion(log) {
     ...log,
   };
   if (sb) {
-    const { data, error } = await sb.from('ingestion_logs').insert(record).select().single();
-    if (error) throw error;
+    let { data, error } = await sb.from('ingestion_logs').insert(record).select().single();
+    if (error) {
+      // Graceful fallback: if count_high_review column does not exist yet (migration pending),
+      // retry without that field so other logging is not disrupted.
+      if (error.code === '42703' && 'count_high_review' in record) {
+        const { count_high_review, ...safeRecord } = record;
+        const result = await sb.from('ingestion_logs').insert(safeRecord).select().single();
+        if (result.error) throw result.error;
+        return result.data;
+      }
+      throw error;
+    }
     return data;
   }
   _demo.ingestion_logs.unshift(record);
@@ -192,6 +202,7 @@ export async function processBatch(rawJobs, sourceId) {
   const inserted = [];
   const deduped = [];
   const errors = [];
+  let high_review = 0;
 
   for (const raw of rawJobs) {
     try {
@@ -201,6 +212,7 @@ export async function processBatch(rawJobs, sourceId) {
         continue;
       }
       const scoring = scoreOpportunity(raw.title, raw.description, raw.seniority);
+      if (!scoring.recommended) high_review++;
       const rec = {
         ...raw,
         source: sourceId,
@@ -222,5 +234,5 @@ export async function processBatch(rawJobs, sourceId) {
     }
   }
 
-  return { inserted, deduped, errors };
+  return { inserted, deduped, errors, high_review };
 }

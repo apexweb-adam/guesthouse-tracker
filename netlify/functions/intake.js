@@ -54,13 +54,14 @@ export const handler = async (event) => {
       });
     }
 
-    const { inserted, deduped, errors } = await processBatch(jobs, source);
+    const { inserted, deduped, errors, high_review } = await processBatch(jobs, source);
 
     const logEntry = await logIngestion({
       source_id: source,
       count_discovered: jobs.length,
       count_deduped: deduped.length,
       count_new: inserted.length,
+      count_high_review: high_review,
       errors: errors.map(e => e.error || String(e)),
       status: errors.length > 0 && inserted.length === 0 ? 'failure' : errors.length > 0 ? 'partial' : 'success',
     });

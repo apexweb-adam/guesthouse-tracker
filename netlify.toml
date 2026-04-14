@@ -5,7 +5,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  VITE_DEMO_MODE = "true"
+  # VITE_DEMO_MODE is NOT set here so production deploys default to live mode.
+  # For demo/preview deploys, set VITE_DEMO_MODE=true in Netlify UI or a deploy context.
 
 [[redirects]]
   from = "/*"

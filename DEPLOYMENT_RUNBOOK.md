@@ -78,12 +78,13 @@ In your Supabase SQL Editor, run the SQL from `DEPLOYMENT_DECISION.md` (Supabase
 
 In Netlify UI → Site settings → Environment variables, add:
 
-| Variable | Value |
-|---|---|
-| `VITE_DEMO_MODE` | `false` |
-| `SUPABASE_URL` | `https://your-project.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | your service role key |
-| `LIVE_INTAKE_ENABLED` | `false` (keep OFF until sources verified) |
+| Variable | Value | Notes |
+|---|---|---|
+| `VITE_DEMO_MODE` | `false` | Enables live backend mode |
+| `SUPABASE_URL` | `https://your-project.supabase.co` | From Supabase project settings |
+| `SUPABASE_SERVICE_ROLE_KEY` | your service role key | Server-side only — never expose in frontend |
+| `LIVE_INTAKE_ENABLED` | `false` | Keep OFF until sources verified |
+| `MAX_RECORDS_PER_RUN` | `50` | Conservative cap per scheduled run |
 
 ### 3d. Redeploy
 
@@ -98,11 +99,29 @@ netlify deploy --prod
 > **WARNING:** Only enable after you have verified your RSS/API sources return valid structured data.
 
 1. Set `LIVE_INTAKE_ENABLED=true` in Netlify environment variables
-2. Go to Sources page → enable individual RSS/API sources
+2. Go to Sources page → enable individual RSS/API sources (start with `src-rss-seek` only)
 3. The scheduled function (`ingest-scheduled`) runs every 2 hours automatically
-4. Monitor the Sources page for ingestion health and failure counts
+4. Monitor the Sources page for ingestion health, failure counts, and High Review percentage
+5. If a source shows a "Noisy source" warning (>50% low-fit records), disable it and review
 
 **Kill switch:** Set `LIVE_INTAKE_ENABLED=false` and redeploy to immediately stop all automated intake.
+
+### First Live Source: SEEK RSS
+
+The only RSS source to enable in Stage 1 is `src-rss-seek` (SEEK ICT/Full-Time RSS feed).
+
+**Steps:**
+1. Confirm `LIVE_INTAKE_ENABLED=true` and `MAX_RECORDS_PER_RUN=50` are set
+2. In the Sources page, click **Enable** next to "SEEK RSS (Technical PM)"
+3. Trigger a manual test run via Netlify CLI: `netlify functions:invoke ingest-scheduled`
+4. Verify in the Sources page: Last Run timestamp updated, Imported count > 0, no failures
+5. Verify in the Approval Queue: new records appear with correct lane/score
+6. Check that generic Ops/PM roles are scored low and do NOT have `recommended=true`
+7. After 24h, check High Review % — if >50%, investigate SEEK feed URL relevance
+
+**Do NOT enable yet:**
+- Email intake (`src-rss-linkedin-jobs`) — requires email forwarding setup
+- Multiple live sources simultaneously — enable one at a time
 
 ---
 
@@ -163,6 +182,8 @@ Body: { "source": "src-rss-seek", "sourceType": "rss", "jobs": [...] }
 
 ## 8. Verification Checklist
 
+### 8a. Demo Mode / Baseline
+
 After deployment, verify:
 
 - [ ] Site loads in browser
@@ -177,6 +198,40 @@ After deployment, verify:
 - [ ] TPM roles score higher than generic ops roles (verify in tracker)
 - [ ] Stale opportunity flagged in demo data (Zip Co / demo-9)
 - [ ] Audit trail visible after approve/reject
+
+### 8b. Production Persistence (run `node scripts/verify.js` locally first)
+
+- [ ] `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` set in Netlify UI
+- [ ] `VITE_DEMO_MODE=false` set in Netlify UI
+- [ ] Redeploy — header shows NO demo badge
+- [ ] Create a manual opportunity → appears in Supabase `opportunities` table
+- [ ] Approve the opportunity → `approval_state` = `approved` in Supabase
+- [ ] Update status (e.g., `applied`) → `status` and `last_action_date` updated in Supabase
+- [ ] Reload page — data persists (not lost on reload)
+
+### 8c. Live Intake — One Source (SEEK RSS)
+
+- [ ] `LIVE_INTAKE_ENABLED=true` set in Netlify UI
+- [ ] `MAX_RECORDS_PER_RUN=50` set in Netlify UI
+- [ ] Run `netlify functions:invoke ingest-scheduled` — exits without error
+- [ ] Sources page: `src-rss-seek` shows Last Run timestamp and Imported count
+- [ ] Approval Queue: new records from SEEK appear with `approval_state=pending`
+- [ ] Run `ingest-scheduled` a second time — no new records inserted (dedup working)
+- [ ] Verify at least one generic Ops/PM record is scored low and NOT recommended
+- [ ] Verify no record was auto-approved (all approval_state = `pending`)
+- [ ] Sources page: High Review count populated after sufficient runs
+
+### 8d. Safety / Kill Switch
+
+- [ ] Set `LIVE_INTAKE_ENABLED=false` → `netlify functions:invoke ingest-scheduled` logs "No live-capable sources enabled" and exits cleanly
+- [ ] Manual intake and CSV still work with `LIVE_INTAKE_ENABLED=false`
+- [ ] Stale scan runs independently of `LIVE_INTAKE_ENABLED`
+
+### 8e. Scheduled Jobs
+
+- [ ] Stale scan (`stale-scan-scheduled`) runs without errors: `netlify functions:invoke stale-scan-scheduled`
+- [ ] After stale scan, opportunities with `status=applied` older than 21 days get `stale_flag=true`
+- [ ] Stale scan does NOT auto-change status — only flags for human review
 
 ---
 

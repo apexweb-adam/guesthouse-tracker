@@ -265,6 +265,8 @@ export async function fetchSources() {
           total_imported: sLogs.reduce((n, l) => n + (l.count_new || 0), 0),
           total_deduped: sLogs.reduce((n, l) => n + (l.count_deduped || 0), 0),
           total_failures: sLogs.filter(l => l.status === 'failure').length,
+          total_high_review: sLogs.reduce((n, l) => n + (l.count_high_review || 0), 0),
+          noisy_warning: false,
         };
       }),
       liveIntakeEnabled: false,

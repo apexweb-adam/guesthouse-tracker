@@ -114,6 +114,7 @@ create table ingestion_logs (
   count_discovered integer default 0,
   count_deduped integer default 0,
   count_new integer default 0,
+  count_high_review integer default 0,
   errors jsonb,
   status text default 'success'
 );
@@ -125,3 +126,13 @@ alter table ingestion_logs enable row level security;
 
 -- Service role bypasses RLS — no additional policies needed for function access
 ```
+
+### Supabase Migration (if upgrading an existing schema)
+
+If you already ran the initial schema, add the `count_high_review` column:
+
+```sql
+alter table ingestion_logs add column if not exists count_high_review integer default 0;
+```
+
+The application is defensive — if this column does not exist yet, `logIngestion` will fall back and write the log without it.

@@ -7,12 +7,19 @@
  * This function orchestrates but does NOT re-implement scoring logic.
  * All scoring happens via processBatch in db.js which calls scoring.js.
  *
+ * Safety controls:
+ *   - LIVE_INTAKE_ENABLED must be "true" (global kill switch)
+ *   - Per-source enabled flag must be true
+ *   - MAX_RECORDS_PER_RUN cap applied per source (default: 50)
+ *
  * Schedule: every 2 hours (configurable via netlify.toml)
  */
 
 import { schedule } from '@netlify/functions';
 import { listSources, processBatch, logIngestion, isDemoMode } from './_shared/db.js';
 import { canSourceRunLive, SOURCE_TYPES, mergeWithDefaults } from './_shared/sources.js';
+
+const MAX_RECORDS_PER_RUN = parseInt(process.env.MAX_RECORDS_PER_RUN || '50', 10);
 
 async function fetchRSSJobs(source) {
   if (!source.url) return [];
@@ -84,23 +91,33 @@ async function runIngestion() {
         count_discovered: 0,
         count_deduped: 0,
         count_new: 0,
+        count_high_review: 0,
         errors: fetchError ? [fetchError] : ['No jobs returned from source'],
         status: fetchError ? 'failure' : 'success',
       });
       continue;
     }
 
-    const { inserted, deduped, errors } = await processBatch(jobs, source.id);
+    // Apply per-run safety cap
+    const discovered = jobs.length;
+    const capped = jobs.length > MAX_RECORDS_PER_RUN;
+    if (capped) {
+      console.log(`[ingest-scheduled] ${source.name}: capping ${jobs.length} records to ${MAX_RECORDS_PER_RUN} (MAX_RECORDS_PER_RUN)`);
+      jobs = jobs.slice(0, MAX_RECORDS_PER_RUN);
+    }
+
+    const { inserted, deduped, errors, high_review } = await processBatch(jobs, source.id);
     await logIngestion({
       source_id: source.id,
-      count_discovered: jobs.length,
+      count_discovered: discovered,
       count_deduped: deduped.length,
       count_new: inserted.length,
+      count_high_review: high_review,
       errors: errors.map(e => e.error || String(e)),
       status: errors.length > 0 && inserted.length === 0 ? 'failure' : errors.length > 0 ? 'partial' : 'success',
     });
 
-    console.log(`[ingest-scheduled] ${source.name}: ${inserted.length} new, ${deduped.length} deduped`);
+    console.log(`[ingest-scheduled] ${source.name}: ${inserted.length} new, ${deduped.length} deduped, ${high_review} high-review (low-fit)`);
   }
 }
 

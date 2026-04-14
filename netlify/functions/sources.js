@@ -35,6 +35,11 @@ export const handler = async (event) => {
         const totalImported = sourceLogs.reduce((n, l) => n + (l.count_new || 0), 0);
         const totalDeduped = sourceLogs.reduce((n, l) => n + (l.count_deduped || 0), 0);
         const totalFailures = sourceLogs.filter(l => l.status === 'failure').length;
+        const totalHighReview = sourceLogs.reduce((n, l) => n + (l.count_high_review || 0), 0);
+
+        // Noisy source: >50% of imported records are low-fit (not recommended),
+        // only flagged when there is meaningful sample size (>= 10 imported).
+        const noisyWarning = totalImported >= 10 && (totalHighReview / totalImported) > 0.5;
 
         return {
           ...s,
@@ -43,6 +48,8 @@ export const handler = async (event) => {
           total_imported: totalImported,
           total_deduped: totalDeduped,
           total_failures: totalFailures,
+          total_high_review: totalHighReview,
+          noisy_warning: noisyWarning,
           recent_log: lastLog,
         };
       });

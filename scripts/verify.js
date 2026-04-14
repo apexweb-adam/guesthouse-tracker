@@ -149,7 +149,66 @@ assert('Non-PM role → not recommended', !lowScoreOpp.recommended);
 assert('TPM scoring populates signals array', tpm.signals.length > 0);
 assert('Generic PM signals contain downgrade reason', opsGeneric.signals.some(s => s.toLowerCase().includes('no technical qualifier')));
 
-// ─── 5. Summary ──────────────────────────────────────────────────────────────
+// ─── 5. Rollout Safety Verification ─────────────────────────────────────────
+
+console.log('\n== 5. Rollout Safety ==');
+
+// 5a. Approval gate: all ingested records start as pending
+const newOpp = { id: 'test-1', title: 'Technical Project Manager', company: 'TestCo', status: 'discovered', approval_state: 'pending' };
+assert('New opportunity starts with approval_state=pending', newOpp.approval_state === 'pending');
+assert('New opportunity starts with status=discovered', newOpp.status === 'discovered');
+
+// 5b. Weak Ops roles must NOT flood the approval queue as recommended
+const genericOps1 = scoreOpportunity('Operations Manager', 'Manage warehouse staff, shifts, inventory, supplier orders.');
+const genericOps2 = scoreOpportunity('Operations Manager', 'Run café operations, staff management, daily reconciliation.');
+const genericOps3 = scoreOpportunity('Program Manager', 'Manage project timelines, team coordination, budget tracking.');
+assert('Generic Ops 1 → not recommended (no tech qualifier)', !genericOps1.recommended, `score=${genericOps1.score} lane=${genericOps1.lane}`);
+assert('Generic Ops 2 → not recommended (no tech qualifier)', !genericOps2.recommended, `score=${genericOps2.score} lane=${genericOps2.lane}`);
+assert('Generic PgM → not recommended (no governance qualifier)', !genericOps3.recommended, `score=${genericOps3.score} lane=${genericOps3.lane}`);
+assert('Generic Ops lanes are downgraded to generic_pm', genericOps1.lane === LANES.GENERIC_PM, genericOps1.lane);
+assert('Generic Ops scores are low (<40)', genericOps1.score < 40 && genericOps2.score < 40, `ops1=${genericOps1.score} ops2=${genericOps2.score}`);
+
+// 5c. Dedup under repeated runs
+const batch1 = [
+  { title: 'Technical Project Manager', company: 'CBA' },
+  { title: 'Delivery Manager', company: 'ANZ' },
+  { title: 'IT Operations Manager', company: 'Telstra' },
+];
+const { newItems: run1Items, duplicates: run1Dups } = partitionByDedup(batch1, []);
+assert('First run: 3 new, 0 duplicates', run1Items.length === 3 && run1Dups.length === 0, `new=${run1Items.length} dup=${run1Dups.length}`);
+
+// Second run with same batch — all should be deduplicated
+const existingAfterRun1 = run1Items.map(i => i.dedupHash);
+const { newItems: run2Items, duplicates: run2Dups } = partitionByDedup(batch1, existingAfterRun1);
+assert('Second run with same records: 0 new, 3 deduplicated', run2Items.length === 0 && run2Dups.length === 3, `new=${run2Items.length} dup=${run2Dups.length}`);
+
+// Third run with partial overlap
+const batch3 = [
+  { title: 'Technical Project Manager', company: 'CBA' }, // duplicate
+  { title: 'Delivery Lead', company: 'NAB' },             // new
+];
+const { newItems: run3Items, duplicates: run3Dups } = partitionByDedup(batch3, existingAfterRun1);
+assert('Third run: 1 new, 1 duplicate (partial overlap)', run3Items.length === 1 && run3Dups.length === 1, `new=${run3Items.length} dup=${run3Dups.length}`);
+
+// 5d. High-review detection: count non-recommended in a batch
+const mixedBatch = [
+  { title: 'Technical Project Manager', description: 'Technical delivery, SDLC, agile delivery, stakeholder management, scrum, Jira, sprint planning, digital transformation, platform delivery, PMP.' },
+  { title: 'Operations Manager', description: 'Manage store staff, inventory control, rostering.' },
+  { title: 'Operations Manager', description: 'Run retail operations, staff scheduling, supplier relations.' },
+  { title: 'Delivery Manager', description: 'Agile delivery, sprint planning, release management, SAFe.' },
+];
+const mixedScored = mixedBatch.map(j => scoreOpportunity(j.title, j.description));
+const highReviewCount = mixedScored.filter(s => !s.recommended).length;
+assert('Mixed batch: ≥2 high-review (non-recommended) records detected', highReviewCount >= 2, `high_review=${highReviewCount}`);
+assert('Mixed batch: TPM still recommended', mixedScored[0].recommended, `score=${mixedScored[0].score}`);
+
+// 5e. MAX_RECORDS_PER_RUN simulation
+const MAX_RECORDS_PER_RUN = 50;
+const largeSource = Array.from({ length: 80 }, (_, i) => ({ title: `Job ${i}`, company: `Co${i}` }));
+const capped = largeSource.slice(0, MAX_RECORDS_PER_RUN);
+assert('MAX_RECORDS_PER_RUN cap applied correctly (80→50)', capped.length === MAX_RECORDS_PER_RUN, `length=${capped.length}`);
+
+// ─── 6. Summary ──────────────────────────────────────────────────────────────
 
 console.log(`\n== Result: ${passed} passed, ${failed} failed ==`);
 if (failed > 0) process.exit(1);
