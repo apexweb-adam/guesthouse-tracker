@@ -1567,5 +1567,83 @@ assert('Section 19: Approval gate intact — high readiness score does not bypas
   return classifyReadinessGroup(highReadinessButPending) !== READINESS_GROUPS.READY_TO_APPLY;
 })());
 
+// ─── 20. Readiness-History Live Endpoint + Full Traceability Pass ─────────────
+
+console.log('\n== 20. Readiness-History Live Endpoint + Full Traceability Pass ==');
+
+import { readFileSync as readFileSync20, existsSync as existsSync20 } from 'fs';
+import { join as join20, dirname as dirname20 } from 'path';
+import { fileURLToPath as fileURLToPath20 } from 'url';
+const __dirname_v20 = dirname20(fileURLToPath20(import.meta.url));
+
+// 20a. readiness-history.js endpoint exists
+let rhEndpointSrc20 = '';
+try { rhEndpointSrc20 = readFileSync20(join20(__dirname_v20, '../netlify/functions/readiness-history.js'), 'utf-8'); } catch {}
+assert('readiness-history.js endpoint exists', rhEndpointSrc20.length > 0);
+assert('readiness-history endpoint supports GET', rhEndpointSrc20.includes("'GET'") || rhEndpointSrc20.includes('"GET"'));
+assert('readiness-history endpoint supports POST', rhEndpointSrc20.includes("'POST'") || rhEndpointSrc20.includes('"POST"'));
+assert('readiness-history endpoint calls listReadinessHistory', rhEndpointSrc20.includes('listReadinessHistory'));
+assert('readiness-history endpoint calls insertReadinessHistory', rhEndpointSrc20.includes('insertReadinessHistory'));
+assert('readiness-history endpoint imports from db.js', rhEndpointSrc20.includes("'./_shared/db.js'") || rhEndpointSrc20.includes('"_shared/db.js"'));
+
+// 20b. api.js exports fetchReadinessHistory (async live endpoint path)
+const apiSrc20 = readFileSync20(join20(__dirname_v20, '../src/lib/api.js'), 'utf-8');
+assert('api.js exports fetchReadinessHistory', apiSrc20.includes('export async function fetchReadinessHistory'));
+assert('fetchReadinessHistory uses isDemoMode check', apiSrc20.includes('isDemoMode') && apiSrc20.includes('fetchReadinessHistory'));
+assert('fetchReadinessHistory falls back to getReadinessHistory in demo mode', (() => {
+  const fnBody = apiSrc20.slice(apiSrc20.indexOf('export async function fetchReadinessHistory'));
+  return fnBody.includes('getReadinessHistory');
+})());
+assert('fetchReadinessHistory calls readiness-history endpoint in live mode', (() => {
+  const fnBody = apiSrc20.slice(apiSrc20.indexOf('export async function fetchReadinessHistory'));
+  return fnBody.includes('readiness-history');
+})());
+
+// 20c. OpportunityDetail uses fetchReadinessHistory (async live timeline)
+const oppDetailSrc20 = readFileSync20(join20(__dirname_v20, '../src/pages/OpportunityDetail.jsx'), 'utf-8');
+assert('OpportunityDetail imports fetchReadinessHistory', oppDetailSrc20.includes('fetchReadinessHistory'));
+assert('OpportunityDetail ReadinessTimeline uses useEffect + async fetch', (() => {
+  return oppDetailSrc20.includes('fetchReadinessHistory') && oppDetailSrc20.includes('useEffect');
+})());
+assert('OpportunityDetail ReadinessTimeline has loading state', oppDetailSrc20.includes('setLoading') || oppDetailSrc20.includes('loading'));
+
+// 20d. opportunities.js PATCH records status_changed history for generic status updates
+const oppsFnSrc20 = readFileSync20(join20(__dirname_v20, '../netlify/functions/opportunities.js'), 'utf-8');
+assert('opportunities.js PATCH captures prevStatus for history', oppsFnSrc20.includes('prevStatusForHistory'));
+assert('opportunities.js PATCH records status_changed on generic PATCH', (() => {
+  return oppsFnSrc20.includes('prevStatusForHistory') && oppsFnSrc20.includes("'status_changed'");
+})());
+
+// 20e. db.js has both insertReadinessHistory and listReadinessHistory
+const dbSrc20 = readFileSync20(join20(__dirname_v20, '../netlify/functions/_shared/db.js'), 'utf-8');
+assert('db.js insertReadinessHistory exists', dbSrc20.includes('export async function insertReadinessHistory'));
+assert('db.js listReadinessHistory exists', dbSrc20.includes('export async function listReadinessHistory'));
+assert('db.js listReadinessHistory reads from readiness_history table', dbSrc20.includes("'readiness_history'") || dbSrc20.includes('"readiness_history"'));
+
+// 20f. approve.js and opportunities.js both import insertReadinessHistory
+const approveSrc20 = readFileSync20(join20(__dirname_v20, '../netlify/functions/approve.js'), 'utf-8');
+assert('approve.js imports insertReadinessHistory from db.js', approveSrc20.includes('insertReadinessHistory'));
+assert('approve.js records approval_state_changed', approveSrc20.includes("'approval_state_changed'"));
+assert('opportunities.js imports insertReadinessHistory from db.js', oppsFnSrc20.includes('insertReadinessHistory'));
+
+// 20g. Verify readiness-history endpoint handler structure
+assert('readiness-history endpoint has handler export', rhEndpointSrc20.includes('export const handler') || rhEndpointSrc20.includes('export default'));
+assert('readiness-history handles OPTIONS (CORS)', rhEndpointSrc20.includes('OPTIONS'));
+
+// 20h. TPM hierarchy and approval gate still intact
+const tpmCheck20 = scoreOpportunity('Senior Technical Project Manager', 'Lead cross-functional delivery teams. SDLC, Agile, Jira, stakeholder alignment, PMP.');
+assert('Section 20: TPM hierarchy intact', tpmCheck20.lane === LANES.TPM);
+assert('Section 20: Approval gate intact — fetching history does not bypass approval', (() => {
+  const highReadinessPending = {
+    approval_state: 'pending',
+    status: 'discovered',
+    pack_readiness_score: 100,
+    application_url: 'https://example.com/apply',
+    fit_score: 95,
+    recommended: true,
+  };
+  return classifyReadinessGroup(highReadinessPending) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext.jsx';
 import FitScoreBadge from '../components/FitScoreBadge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import LaneBadge from '../components/LaneBadge.jsx';
-import { approveOpportunity, updateOpportunity, fetchPrep, updateApplyUrl, getReadinessHistory } from '../lib/api.js';
+import { approveOpportunity, updateOpportunity, fetchPrep, updateApplyUrl, getReadinessHistory, fetchReadinessHistory } from '../lib/api.js';
 import { getResumeEmphasisLabel } from '../../netlify/functions/_shared/scoring.js';
 
 export default function OpportunityDetail() {
@@ -409,8 +409,24 @@ export default function OpportunityDetail() {
 }
 
 function ReadinessTimeline({ opportunityId }) {
-  const history = getReadinessHistory(opportunityId, 20);
-  if (!history || history.length === 0) return null;
+  const [history, setHistory] = useState(() => getReadinessHistory(opportunityId, 20));
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchReadinessHistory(opportunityId, 20).then(entries => {
+      if (!cancelled) {
+        setHistory(entries);
+        setLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [opportunityId]);
+
+  if (!loading && (!history || history.length === 0)) return null;
 
   const EVENT_LABELS = {
     approval_state_changed: { icon: '✅', label: 'Approval changed' },
@@ -423,6 +439,7 @@ function ReadinessTimeline({ opportunityId }) {
   return (
     <div className="card card-pad">
       <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>🕐 Activity Timeline</h3>
+      {loading && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>Loading…</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {history.map(entry => {
           const meta = EVENT_LABELS[entry.event_type] || { icon: '•', label: entry.event_type };

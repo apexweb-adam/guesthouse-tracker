@@ -371,3 +371,54 @@ The service worker cache name was bumped to `job-search-os-shell-v2` to ensure o
 5. Activate the workflow
 
 n8n **does not** re-implement scoring, classification, or discovery profile logic. It only triggers API endpoints.
+
+---
+
+## Live Readiness History Endpoint (v6.0)
+
+A dedicated Netlify function provides server-side read/write access to readiness history:
+
+- **GET** `/.netlify/functions/readiness-history?id=<opportunity_id>&limit=50`
+  — returns `{ entries, count }` with all history events for that opportunity, newest first
+- **POST** `/.netlify/functions/readiness-history` with `{ opportunity_id, event_type, payload }`
+  — write a history event from client code (production mode; demo mode stays localStorage-only)
+
+The `ReadinessTimeline` component in `OpportunityDetail` now uses `fetchReadinessHistory()` from `api.js`, which:
+- In **production** mode: calls the live endpoint above
+- In **demo** mode: falls back to localStorage via `getReadinessHistory()`
+- On any fetch error: falls back silently to localStorage
+
+### Generic PATCH history coverage
+
+The `/opportunities` PATCH handler now also records `status_changed` events whenever a direct `status` field is updated via the generic update path — not just via the URL-advance path. This closes the audit gap for tracker status drags and manual field updates.
+
+---
+
+## Automation-Readiness Status
+
+The system is now ready to activate structured job discovery automation. Pre-flight checklist:
+
+| Item | Status |
+|---|---|
+| Readiness history wired on all mutation paths | ✅ |
+| Live `/readiness-history` endpoint deployed | ✅ |
+| OpportunityDetail timeline fetches from live DB | ✅ |
+| Generic PATCH status changes recorded | ✅ |
+| Service worker offline fallback active | ✅ |
+| Tracker readiness-group filter available | ✅ |
+| n8n workflow files in `n8n/workflows/` | ✅ |
+| Approval gate enforced (no bypass) | ✅ |
+| Structured sources only (no scraping) | ✅ |
+| Demo mode isolated from live data | ✅ |
+
+**Next steps to activate live discovery:**
+1. Set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` in Netlify env
+2. Set `DISCOVERY_SECRET` to a long random string
+3. Set `GREENHOUSE_BOARDS` to one or more board slugs (e.g. `acme,beta-corp`)
+4. Set `LIVE_INTAKE_ENABLED=true`
+5. Run migration 004 (`supabase/migrations/004_readiness_history.sql`) against your DB
+6. Import n8n workflows and set `SITE_URL` + `DISCOVERY_SECRET` env vars
+7. Activate the discovery workflow in n8n
+8. Monitor `/logs` and the Readiness Panel in Reports for first intake results
+
+See `LIVE_ACTIVATION_RUNBOOK.md` for detailed steps and rollback instructions.

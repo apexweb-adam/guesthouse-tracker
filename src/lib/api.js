@@ -1039,6 +1039,7 @@ export function recordReadinessHistory(opportunityId, eventType, payload = {}) {
 
 /**
  * Get readiness history for a specific opportunity or all opportunities.
+ * Synchronous — reads from localStorage only (demo mode or local cache).
  *
  * @param {string|null} opportunityId - if null, returns all history
  * @param {number} limit - max entries to return
@@ -1050,4 +1051,29 @@ export function getReadinessHistory(opportunityId = null, limit = 50) {
     ? history.filter(e => e.opportunity_id === opportunityId)
     : history;
   return filtered.slice(0, limit);
+}
+
+/**
+ * Fetch readiness history from the live API endpoint (production mode) or fall
+ * back to localStorage (demo mode).  Always async — use this in React components.
+ *
+ * @param {string|null} opportunityId - filter to a specific opportunity, or null for all
+ * @param {number} limit - max entries to return
+ * @returns {Promise<Array>} history entries sorted newest first
+ */
+export async function fetchReadinessHistory(opportunityId = null, limit = 50) {
+  if (isDemoMode()) {
+    return getReadinessHistory(opportunityId, limit);
+  }
+  try {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (opportunityId) qs.set('id', opportunityId);
+    const res = await fetch(`${BASE}/readiness-history?${qs}`);
+    if (!res.ok) throw new Error(`readiness-history ${res.status}`);
+    const data = await res.json();
+    return data.entries || [];
+  } catch (err) {
+    console.warn('[api] fetchReadinessHistory fell back to localStorage:', err.message);
+    return getReadinessHistory(opportunityId, limit);
+  }
 }

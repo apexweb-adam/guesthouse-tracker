@@ -111,6 +111,17 @@ export const handler = async (event) => {
       }
       if (!Object.keys(safe).length) return json(400, { error: 'No valid fields to update' });
 
+      // Capture old status before update (for status_changed history event)
+      let prevStatusForHistory = null;
+      if (safe.status) {
+        try {
+          const existingOpp = await (await import('./_shared/db.js')).getOpportunity(id);
+          if (existingOpp && existingOpp.status !== safe.status) {
+            prevStatusForHistory = existingOpp.status;
+          }
+        } catch { /* non-fatal */ }
+      }
+
       const updated = await updateOpportunity(id, safe);
 
       // Record readiness history for apply URL addition (non-fatal)
@@ -125,6 +136,14 @@ export const handler = async (event) => {
             pack_readiness_score: safe.apply_pack.pack_readiness_score,
           }).catch(() => {});
         }
+      }
+
+      // Record status_changed history for direct status updates (non-fatal)
+      if (prevStatusForHistory !== null) {
+        await insertReadinessHistory(id, 'status_changed', {
+          from: prevStatusForHistory,
+          to: safe.status,
+        }).catch(() => {});
       }
 
       return json(200, { opportunity: updated });
