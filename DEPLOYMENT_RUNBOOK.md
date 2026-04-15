@@ -263,3 +263,79 @@ In the browser console or the Import page:
 localStorage.removeItem('job-search-os-v1');
 location.reload();
 ```
+
+---
+
+## 11. Apply Pack Automation Layer (v3.0.0)
+
+### What is Automated Now
+
+After approval, the system immediately:
+1. Generates the Apply Pack (`apply_pack_generated` status)
+2. Sets `needs_apply_url` if the role is manual external with no apply URL
+3. Fires `apply_pack_generated` webhook event
+4. Fires `strong_fit_ready_to_apply` webhook event if fit_score ≥ 75 and `recommended=true`
+
+### Copy-Ready Blocks
+
+The Apply Pack now includes two copy-ready draft assets:
+
+**`copy_ready_summary_block`**
+- A draft resume summary paragraph aligned to the specific lane and role
+- Includes lane framing, key skills from JD, and role-specific context
+- Always marked `[DRAFT — review and personalise before use]`
+- NOT a final statement — requires human review and personalisation
+
+**`copy_ready_resume_emphasis_block`**
+- A formatted list of lead-with themes and proof points
+- Structured as "LEAD-WITH THEMES" and "SURFACE THESE PROOF POINTS"
+- Always marked `[DRAFT — direction for tailoring, not fabricated claims]`
+- Designed to be copied into an editing workflow or notes
+
+Access these in the **✍ Copy-Ready** tab of the Apply Pack page.
+
+### Pack Readiness Score
+
+A `Pack Readiness %` is computed and shown in the Apply Pack action bar.  
+Factors: resume recommendation present, keywords, proof points, copy-ready blocks, apply URL, checklist progress, outreach draft.
+
+### Human-Friendly Export
+
+Two export options are available in the Apply Pack action bar:
+- **📄 Export Text Pack** — downloads a human-readable `.txt` file with all pack content (role header, URLs, resume recommendation, summary block, emphasis block, keywords, proof points, outreach drafts, checklist, follow-up date)
+- **⬇ Export Pack JSON** — downloads the full machine-readable JSON pack
+
+### Workflow Status Progression
+
+```
+pending → approved → needs_apply_url (manual external, no URL) → ready_to_prepare
+                   → apply_pack_generated (URL present)        → ready_to_apply → applied → follow_up_1 → ...
+```
+
+To advance from `needs_apply_url`: add the official apply URL via the banner in ApplyPack.jsx or OpportunityDetail.jsx. Status advances automatically to `apply_pack_generated`.
+
+### Events Fired
+
+| Event | When |
+|-------|------|
+| `apply_pack_generated` | Every approval that generates a pack |
+| `strong_fit_ready_to_apply` | Approval where fit_score ≥ 75 and recommended=true |
+| `new_strong_fit` | Discovery run finds a strong-fit opportunity |
+
+Configure destinations via `WEBHOOK_URL` (catch-all) or `WEBHOOK_URL_<EVENT_NAME>` env vars.
+
+### What Still Requires Manual Action
+
+- Resume tailoring (system provides direction, not final file edits)
+- Personalising outreach drafts (review required before sending)
+- Selecting and submitting the application (never automated)
+- Verifying the apply URL is the correct ATS link
+- Replacing `[bracketed]` placeholders in copy-ready blocks
+
+### Pack Regeneration
+
+Pack can be regenerated via the **🔄 Regenerate Pack** button when status is `apply_pack_generated`, `ready_to_apply`, or `approved`. Regeneration:
+- Preserves resume version override history
+- Preserves checklist done-state
+- Records new `pack_version` and `last_regenerated_at`
+- Records whether apply URL was missing at generation time (`apply_url_missing_at_generation`)

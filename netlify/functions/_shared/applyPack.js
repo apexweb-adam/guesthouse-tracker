@@ -25,7 +25,7 @@ import { generatePrepPackage } from './prep.js';
 
 // ─── System version stamp ─────────────────────────────────────────────────────
 
-export const APPLY_PACK_SYSTEM_VERSION = '2.0.0';
+export const APPLY_PACK_SYSTEM_VERSION = '3.0.0';
 
 // ─── Checklist Generator ─────────────────────────────────────────────────────
 
@@ -138,6 +138,92 @@ const BULLET_EMPHASIS = {
   ],
 };
 
+// ─── Copy-Ready Content Generators ───────────────────────────────────────────
+
+/**
+ * Generate a copy-ready resume summary block.
+ *
+ * This is a draft-ready paragraph aligned to the specific lane and role.
+ * It is intended to be copied, reviewed, and personalised before use.
+ * It is NOT a finished, final-truth statement — always review before submitting.
+ *
+ * @param {object} opp - opportunity record
+ * @param {string[]} topKeywords - top keywords from JD
+ * @returns {string} copy-ready summary draft
+ */
+export function generateCopyReadySummaryBlock(opp, topKeywords = []) {
+  const laneConfig = LANE_CONFIG[opp.lane] || LANE_CONFIG[LANES.OTHER];
+  const laneLabel = laneConfig.label;
+  const company = opp.company || '[Company]';
+  const title = opp.title || '[Role Title]';
+  const kwSnippet = topKeywords.slice(0, 4).join(', ') || 'technical delivery, stakeholder management';
+
+  const SUMMARIES = {
+    [LANES.TPM]: `Technical Project Manager and delivery leader with [X]+ years of experience owning end-to-end SDLC for complex technical programmes. Proven track record of bridging engineering, product, and business stakeholders to deliver scalable platforms on time and within scope. Brings hands-on ${kwSnippet} expertise. Immediately interested in the ${title} role at ${company}.`,
+    [LANES.DELIVERY_MANAGER]: `Delivery Manager with [X]+ years of Agile and SAFe delivery leadership across cross-functional squads. Experienced in sprint planning, release management, and continuous improvement frameworks. Brings strong ${kwSnippet} background. Interested in applying this experience to the ${title} role at ${company}.`,
+    [LANES.OPS_MANAGER]: `Technical Operations Manager with [X]+ years of experience governing ITSM, compliance, and operational readiness programmes in complex technical environments. Track record of maintaining service stability and driving audit-readiness. Brings ${kwSnippet} expertise to the ${title} role at ${company}.`,
+    [LANES.PROGRAM_MANAGER]: `Programme Manager and governance leader with [X]+ years of managing enterprise-scale programmes across multiple workstreams. Experienced in PMO governance, portfolio risk management, and executive stakeholder reporting. Brings ${kwSnippet} background to the ${title} role at ${company}.`,
+    [LANES.GENERIC_PM]: `Project Manager with a cross-functional delivery background and experience in ${kwSnippet}. Interested in the ${title} role at ${company}. Note: Review lane fit before applying.`,
+    [LANES.OTHER]: `Experienced professional with background in ${kwSnippet}. Interested in the ${title} role at ${company}. Note: Role fit is outside primary target lanes — review carefully.`,
+  };
+
+  const draft = SUMMARIES[opp.lane] || SUMMARIES[LANES.OTHER];
+  return `[DRAFT — review and personalise before use]\n\n${draft}`;
+}
+
+/**
+ * Generate a copy-ready resume emphasis block.
+ *
+ * This is a formatted list of specific lead-with themes and proof points,
+ * intended to be copied into notes or an editing workflow.
+ * It is NOT fabricated claims — it is direction for which real experience to surface.
+ *
+ * @param {object} opp - opportunity record
+ * @param {string[]} bulletEmphasisNotes - the lane-specific bullet emphasis notes
+ * @param {string[]} proofPoints - selected proof points
+ * @returns {string} copy-ready emphasis block
+ */
+export function generateCopyReadyResumeEmphasisBlock(opp, bulletEmphasisNotes = [], proofPoints = []) {
+  const laneConfig = LANE_CONFIG[opp.lane] || LANE_CONFIG[LANES.OTHER];
+  const laneLabel = laneConfig.label;
+
+  const emphasisLines = bulletEmphasisNotes.slice(0, 5).map((note, i) => `  ${i + 1}. ${note}`).join('\n');
+  const proofLines = proofPoints.slice(0, 4).map((pp, i) => `  ${String.fromCharCode(65 + i)}. ${pp}`).join('\n');
+
+  return [
+    `[DRAFT — direction for tailoring, not fabricated claims]`,
+    ``,
+    `Resume Emphasis for ${laneLabel} (${opp.fit_score ? `fit score: ${opp.fit_score}` : 'score pending'}):`,
+    ``,
+    `LEAD-WITH THEMES:`,
+    emphasisLines || '  (No emphasis notes available for this lane)',
+    ``,
+    `SURFACE THESE PROOF POINTS:`,
+    proofLines || '  (No proof points available for this lane)',
+    ``,
+    `Note: Replace bracketed placeholders with your real experience.`,
+  ].join('\n');
+}
+
+/**
+ * Compute a pack readiness score (0–100).
+ *
+ * Indicates how complete and actionable the Apply Pack is.
+ * Higher = more ready to move to application.
+ */
+export function computePackReadinessScore(opp, pack) {
+  let score = 0;
+  if (pack.recommended_resume_version) score += 20;
+  if ((pack.keyword_mirror_list || []).length >= 5) score += 15;
+  if ((pack.proof_points_to_surface || []).length >= 3) score += 15;
+  if (pack.copy_ready_summary_block) score += 15;
+  if (pack.copy_ready_resume_emphasis_block) score += 10;
+  if (opp.application_url) score += 15;
+  if ((pack.apply_checklist || []).some(c => c.done)) score += 5;
+  if (pack.recruiter_outreach_draft) score += 5;
+  return Math.min(100, score);
+}
+
 // ─── Main Apply Pack Generator ────────────────────────────────────────────────
 
 /**
@@ -206,6 +292,13 @@ export function generateApplyPack(opp) {
     bullet_emphasis_notes: bulletEmphasisNotes,
     recruiter_outreach_draft: prep.outreach.recruiterDraft,
     hiring_manager_outreach_draft: prep.outreach.hiringManagerDraft,
+
+    // Copy-ready blocks — draft-ready content, review before use
+    copy_ready_summary_block: generateCopyReadySummaryBlock(opp, prep.keywordMirrorList),
+    copy_ready_resume_emphasis_block: generateCopyReadyResumeEmphasisBlock(
+      opp, bulletEmphasisNotes, prep.proofPointsToSurface
+    ),
+    apply_url_missing_at_generation: !(opp.application_url || '').trim(),
 
     // Workflow
     apply_checklist: applyChecklist,

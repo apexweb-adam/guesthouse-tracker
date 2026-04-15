@@ -13,6 +13,7 @@ import {
   updateApplyUrl,
 } from '../lib/api.js';
 import { RESUME_VERSIONS, RESUME_VERSION_LABELS } from '../../netlify/functions/_shared/scoring.js';
+import { computePackReadinessScore } from '../../netlify/functions/_shared/applyPack.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -214,6 +215,115 @@ export default function ApplyPack() {
     notify('Apply Pack exported.', 'success');
   };
 
+  const handlePrintExport = () => {
+    if (!pack || !opportunity) return;
+    const lines = [];
+    const sep = '='.repeat(60);
+    const sub = '-'.repeat(40);
+    lines.push(sep);
+    lines.push(`APPLY PACK — ${opportunity.title}`);
+    lines.push(`Company: ${opportunity.company || '—'}`);
+    if (opportunity.location) lines.push(`Location: ${opportunity.location}`);
+    lines.push(`Lane: ${opportunity.lane || '—'}  |  Fit Score: ${opportunity.fit_score ?? '—'}`);
+    lines.push(`Status: ${opportunity.status || '—'}`);
+    lines.push(`Pack version: ${pack.pack_version || 1}  |  Generated: ${pack.generated_at ? new Date(pack.generated_at).toLocaleDateString() : '—'}`);
+    if (opportunity.canonical_job_url || opportunity.url) {
+      lines.push(`Original Posting: ${opportunity.canonical_job_url || opportunity.url}`);
+    }
+    if (opportunity.application_url) {
+      lines.push(`Apply URL: ${opportunity.application_url}`);
+    } else {
+      lines.push(`Apply URL: ⚠ MISSING — find official ATS/careers link before applying`);
+    }
+    lines.push(sep);
+    lines.push('');
+    lines.push('RECOMMENDED RESUME VERSION');
+    lines.push(sub);
+    lines.push(`${pack.recommended_resume_version || '—'} (${RESUME_VERSION_LABELS[pack.recommended_resume_version] || ''})`);
+    lines.push(`Confidence: ${(pack.recommendation_confidence || '').toUpperCase()}`);
+    if (pack.recommendation_reason) lines.push(`Reason: ${pack.recommendation_reason}`);
+    if (pack.resume_version_override) {
+      lines.push(`⚠ Override: ${pack.resume_version_override}`);
+      lines.push(`Override reason: ${pack.resume_version_override_reason || '—'}`);
+      lines.push(`Original system recommendation: ${pack.original_system_recommendation}`);
+    }
+    lines.push('');
+    if (pack.copy_ready_summary_block) {
+      lines.push('COPY-READY SUMMARY BLOCK');
+      lines.push(sub);
+      lines.push(pack.copy_ready_summary_block);
+      lines.push('');
+    }
+    if (pack.copy_ready_resume_emphasis_block) {
+      lines.push('COPY-READY RESUME EMPHASIS BLOCK');
+      lines.push(sub);
+      lines.push(pack.copy_ready_resume_emphasis_block);
+      lines.push('');
+    }
+    if (pack.keyword_mirror_list?.length) {
+      lines.push('KEYWORD MIRROR LIST');
+      lines.push(sub);
+      lines.push(pack.keyword_mirror_list.join(', '));
+      lines.push('');
+    }
+    if (pack.proof_points_to_surface?.length) {
+      lines.push('PROOF POINTS TO SURFACE');
+      lines.push(sub);
+      pack.proof_points_to_surface.forEach((pp, i) => lines.push(`${i + 1}. ${pp}`));
+      lines.push('');
+    }
+    if (pack.summary_direction) {
+      lines.push('SUMMARY DIRECTION');
+      lines.push(sub);
+      lines.push(pack.summary_direction);
+      lines.push('');
+    }
+    if (pack.bullet_emphasis_notes?.length) {
+      lines.push('BULLET EMPHASIS NOTES');
+      lines.push(sub);
+      pack.bullet_emphasis_notes.forEach((n, i) => lines.push(`${i + 1}. ${n}`));
+      lines.push('');
+    }
+    if (pack.recruiter_outreach_draft) {
+      lines.push('RECRUITER OUTREACH DRAFT');
+      lines.push(sub);
+      lines.push(pack.recruiter_outreach_draft);
+      lines.push('');
+    }
+    if (pack.hiring_manager_outreach_draft) {
+      lines.push('HIRING MANAGER OUTREACH DRAFT');
+      lines.push(sub);
+      lines.push(pack.hiring_manager_outreach_draft);
+      lines.push('');
+    }
+    if (pack.apply_checklist?.length) {
+      lines.push('APPLY CHECKLIST');
+      lines.push(sub);
+      pack.apply_checklist.forEach(item => {
+        lines.push(`[${item.done ? 'x' : ' '}] ${item.step}`);
+      });
+      lines.push('');
+    }
+    if (pack.suggested_follow_up_date) {
+      lines.push(`Suggested follow-up date: ${pack.suggested_follow_up_date}`);
+      lines.push('');
+    }
+    lines.push(sep);
+    lines.push('⚠ All drafted content requires human review before use.');
+    lines.push('Do NOT auto-submit applications or outreach.');
+    lines.push(sep);
+
+    const text = lines.join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const dlUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = dlUrl;
+    a.download = `apply-pack-${opportunity.company || 'export'}-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(dlUrl);
+    notify('Apply Pack exported as text file.', 'success');
+  };
+
   if (loading) {
     return (
       <div className="card card-pad" style={{ color: 'var(--gray-500)', fontSize: 13 }}>
@@ -244,9 +354,11 @@ export default function ApplyPack() {
   const checklist = pack.apply_checklist || [];
   const doneCount = checklist.filter(c => c.done).length;
   const allDone = doneCount === checklist.length && checklist.length > 0;
+  const packReadiness = computePackReadinessScore(opportunity || {}, pack);
 
   const TABS = [
     { id: 'overview', label: '📋 Overview' },
+    { id: 'copyready', label: '✍ Copy-Ready' },
     { id: 'resume', label: '📄 Resume' },
     { id: 'outreach', label: '📧 Outreach' },
     { id: 'checklist', label: `✅ Checklist (${doneCount}/${checklist.length})` },
@@ -364,7 +476,7 @@ export default function ApplyPack() {
       )}
 
       {/* Action bar */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         {(opportunity?.status === 'apply_pack_generated' || opportunity?.status === 'needs_apply_url') && (
           <button className="btn btn-primary btn-sm" disabled={saving}
             onClick={() => handleStatusChange('ready_to_apply')}>
@@ -394,7 +506,19 @@ export default function ApplyPack() {
             🔄 Regenerate Pack
           </button>
         )}
+        <button className="btn btn-ghost btn-sm" onClick={handlePrintExport}>📄 Export Text Pack</button>
         <button className="btn btn-ghost btn-sm" onClick={handleExport}>⬇ Export Pack JSON</button>
+        {/* Pack readiness indicator */}
+        {packReadiness !== undefined && (
+          <span style={{
+            marginLeft: 'auto', fontSize: 11, fontWeight: 600,
+            color: packReadiness >= 80 ? 'var(--green)' : packReadiness >= 50 ? 'var(--amber)' : 'var(--gray-500)',
+            background: packReadiness >= 80 ? '#f0fdf4' : packReadiness >= 50 ? '#fffbeb' : 'var(--gray-50)',
+            borderRadius: 4, padding: '2px 8px', border: '1px solid currentColor',
+          }}>
+            Pack Readiness: {packReadiness}%
+          </span>
+        )}
       </div>
 
       {/* Tabs */}
@@ -526,6 +650,83 @@ export default function ApplyPack() {
               </div>
             </Section>
           )}
+        </div>
+      )}
+
+      {/* ── COPY-READY TAB ── */}
+      {activeTab === 'copyready' && (
+        <div>
+          <div style={{
+            background: '#eff6ff', border: '1px solid var(--blue)', borderRadius: 8,
+            padding: 12, marginBottom: 14, fontSize: 12, color: '#1e40af', lineHeight: 1.6,
+          }}>
+            ✍ <strong>Copy-Ready Blocks</strong> — These are draft-ready assets aligned to this role and lane.
+            Copy, review, and personalise before use. They are NOT finished statements —
+            they are starting points that save you the blank-page problem.
+          </div>
+
+          {pack.copy_ready_summary_block && (
+            <Section
+              title="COPY-READY SUMMARY BLOCK"
+              actionSlot={<CopyButton text={pack.copy_ready_summary_block} label="📋 Copy Summary" />}
+            >
+              <pre style={{
+                fontSize: 13, color: 'var(--gray-800)', background: '#f0fdf4',
+                borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.7,
+                margin: 0, fontFamily: 'inherit', border: '1px solid var(--green)',
+              }}>
+                {pack.copy_ready_summary_block}
+              </pre>
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
+                Replace [X], [bracketed], and [Company] placeholders with your real experience before using.
+              </div>
+            </Section>
+          )}
+
+          {pack.copy_ready_resume_emphasis_block && (
+            <Section
+              title="COPY-READY RESUME EMPHASIS BLOCK"
+              actionSlot={<CopyButton text={pack.copy_ready_resume_emphasis_block} label="📋 Copy Emphasis" />}
+            >
+              <pre style={{
+                fontSize: 13, color: 'var(--gray-800)', background: '#fffbeb',
+                borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.7,
+                margin: 0, fontFamily: 'inherit', border: '1px solid #fde68a',
+              }}>
+                {pack.copy_ready_resume_emphasis_block}
+              </pre>
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
+                Use this as your editing checklist — these are themes and proof points to surface, not fabricated claims.
+              </div>
+            </Section>
+          )}
+
+          {/* Quick-access copies */}
+          <Section title="QUICK COPY ACCESS">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {pack.keyword_mirror_list?.length > 0 && (
+                <CopyButton text={pack.keyword_mirror_list.join(', ')} label="📋 Copy Keywords" />
+              )}
+              {pack.recruiter_outreach_draft && (
+                <CopyButton text={pack.recruiter_outreach_draft} label="📧 Copy Recruiter Outreach" />
+              )}
+              {pack.hiring_manager_outreach_draft && (
+                <CopyButton text={pack.hiring_manager_outreach_draft} label="📧 Copy HM Outreach" />
+              )}
+              {pack.summary_direction && (
+                <CopyButton text={pack.summary_direction} label="📋 Copy Summary Direction" />
+              )}
+            </div>
+          </Section>
+
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary btn-sm" onClick={handlePrintExport}>
+              📄 Export Full Text Pack
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={handleExport}>
+              ⬇ Export JSON Pack
+            </button>
+          </div>
         </div>
       )}
 

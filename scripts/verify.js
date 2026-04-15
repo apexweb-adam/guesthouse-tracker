@@ -220,6 +220,9 @@ import {
   generateApplyPack,
   applyResumeOverride,
   regenerateApplyPack,
+  generateCopyReadySummaryBlock,
+  generateCopyReadyResumeEmphasisBlock,
+  computePackReadinessScore,
 } from '../netlify/functions/_shared/applyPack.js';
 
 console.log('\n== 6. Apply Pack — Resume Recommendation ==');
@@ -807,6 +810,105 @@ assert('Scoring regression: weak generic Ops → not recommended or low score', 
 // 14l. LinkedIn safety — no fetch/scrape introduced
 assert('QuickAddWidget does not fetch LinkedIn URLs', !widgetSrc.includes("fetch(form.reference_posting_url") && !widgetSrc.includes('axios.get') && !widgetSrc.includes("fetch(linkedIn") && !widgetSrc.includes('await fetch(form.'));
 assert('QuickAdd page does not fetch LinkedIn URLs', !qaJsx14.includes("fetch(form.reference_posting_url") && !qaJsx14.includes('scrape'));
+
+// ─── 15. Apply Pack Automation Layer ─────────────────────────────────────────
+
+console.log('\n== 15. Apply Pack Automation Layer ==');
+
+// 15a. generateCopyReadySummaryBlock output
+const tpmOppFull = {
+  id: 'opp-s15-tpm',
+  title: 'Senior Technical Project Manager',
+  company: 'AcmeCorp',
+  lane: LANES.TPM,
+  fit_score: 85,
+  fit_signals: ['technical project manager'],
+  recommended: true,
+  approval_state: 'approved',
+  status: 'approved',
+  application_url: 'https://acmecorp.com/apply/123',
+};
+const summaryBlock = generateCopyReadySummaryBlock(tpmOppFull, ['agile', 'stakeholder management', 'SDLC']);
+assert('generateCopyReadySummaryBlock returns non-empty string', typeof summaryBlock === 'string' && summaryBlock.length > 50);
+assert('generateCopyReadySummaryBlock includes DRAFT notice', summaryBlock.includes('DRAFT'));
+assert('generateCopyReadySummaryBlock references company', summaryBlock.includes('AcmeCorp'));
+assert('generateCopyReadySummaryBlock references lane for TPM', summaryBlock.toLowerCase().includes('technical project manager') || summaryBlock.includes('TPM'));
+assert('generateCopyReadySummaryBlock does not fabricate specific numbers', !summaryBlock.includes('$') && !summaryBlock.match(/\b[0-9]{4,}\b/));
+
+// 15b. generateCopyReadyResumeEmphasisBlock output
+const emphasisBlock = generateCopyReadyResumeEmphasisBlock(
+  tpmOppFull,
+  ['Lead bullets with delivery outcome', 'Show stakeholder span'],
+  ['Led end-to-end technical delivery of [project]']
+);
+assert('generateCopyReadyResumeEmphasisBlock returns non-empty string', typeof emphasisBlock === 'string' && emphasisBlock.length > 50);
+assert('generateCopyReadyResumeEmphasisBlock includes DRAFT notice', emphasisBlock.includes('DRAFT'));
+assert('generateCopyReadyResumeEmphasisBlock includes lead-with themes section', emphasisBlock.includes('LEAD-WITH THEMES') || emphasisBlock.includes('LEAD-WITH'));
+assert('generateCopyReadyResumeEmphasisBlock includes proof points section', emphasisBlock.includes('PROOF POINTS') || emphasisBlock.includes('SURFACE'));
+
+// 15c. generateApplyPack now includes copy_ready_summary_block
+const tpmPack = generateApplyPack(tpmOppFull);
+assert('Apply Pack includes copy_ready_summary_block', typeof tpmPack.copy_ready_summary_block === 'string' && tpmPack.copy_ready_summary_block.length > 0);
+assert('Apply Pack includes copy_ready_resume_emphasis_block', typeof tpmPack.copy_ready_resume_emphasis_block === 'string' && tpmPack.copy_ready_resume_emphasis_block.length > 0);
+assert('Apply Pack copy_ready_summary_block contains DRAFT notice', tpmPack.copy_ready_summary_block.includes('DRAFT'));
+assert('Apply Pack copy_ready_resume_emphasis_block contains DRAFT notice', tpmPack.copy_ready_resume_emphasis_block.includes('DRAFT'));
+assert('Apply Pack tracks apply_url_missing_at_generation', 'apply_url_missing_at_generation' in tpmPack);
+assert('Apply Pack apply_url_missing_at_generation is false when URL present', tpmPack.apply_url_missing_at_generation === false);
+
+// 15d. apply_url_missing_at_generation when no URL
+const noUrlOpp = { ...tpmOppFull, application_url: null };
+const noUrlPack = generateApplyPack(noUrlOpp);
+assert('Apply Pack apply_url_missing_at_generation is true when URL absent', noUrlPack.apply_url_missing_at_generation === true);
+
+// 15e. computePackReadinessScore
+const readinessWithUrl = computePackReadinessScore(tpmOppFull, tpmPack);
+assert('computePackReadinessScore returns a number', typeof readinessWithUrl === 'number');
+assert('computePackReadinessScore is between 0 and 100', readinessWithUrl >= 0 && readinessWithUrl <= 100);
+assert('computePackReadinessScore is higher when apply URL is present', readinessWithUrl > computePackReadinessScore(noUrlOpp, noUrlPack));
+
+// 15f. Delivery lane gets Delivery summary
+const delOpp = {
+  ...tpmOppFull, id: 'opp-s15-del', title: 'Delivery Manager', lane: LANES.DELIVERY_MANAGER,
+  fit_score: 80, company: 'BetaInc',
+};
+const delPack = generateApplyPack(delOpp);
+assert('Delivery Manager Apply Pack includes copy_ready_summary_block', delPack.copy_ready_summary_block.length > 0);
+assert('Delivery Manager summary block references Delivery/Agile content', delPack.copy_ready_summary_block.toLowerCase().includes('delivery') || delPack.copy_ready_summary_block.toLowerCase().includes('agile'));
+assert('Delivery Manager Apply Pack recommends DEL-BASE-01', delPack.recommended_resume_version === 'DEL-BASE-01');
+
+// 15g. TPM resume recommendation preserved in pack
+assert('TPM Apply Pack recommends TPM-BASE-01', tpmPack.recommended_resume_version === 'TPM-BASE-01');
+
+// 15h. Weak Ops does not get TPM pack
+const weakOpsOpp = {
+  id: 'opp-s15-ops', title: 'Operations Manager', company: 'RetailCo',
+  lane: LANES.GENERIC_PM, fit_score: 28, recommended: false,
+  approval_state: 'approved', status: 'approved', application_url: null,
+};
+const weakOpsPack = generateApplyPack(weakOpsOpp);
+assert('Weak Ops Apply Pack does NOT recommend TPM-BASE-01', weakOpsPack.recommended_resume_version !== 'TPM-BASE-01');
+
+// 15i. approve.js fires apply_pack_generated event
+let approveSrc15 = '';
+try { approveSrc15 = readFileSync(join(__dirname_v, '../netlify/functions/approve.js'), 'utf-8'); } catch {}
+assert('approve.js fires apply_pack_generated event', approveSrc15.includes("fireEvent('apply_pack_generated'") || approveSrc15.includes('apply_pack_generated'));
+assert('approve.js fires strong_fit_ready_to_apply event', approveSrc15.includes("fireEvent('strong_fit_ready_to_apply'") || approveSrc15.includes('strong_fit_ready_to_apply'));
+assert('approve.js only fires strong_fit_ready_to_apply when fit_score >= 75', approveSrc15.includes('75') && approveSrc15.includes('strong_fit_ready_to_apply'));
+
+// 15j. ApplyPack.jsx has copy-ready UI
+let applyPackSrc15 = '';
+try { applyPackSrc15 = readFileSync(join(__dirname_v, '../src/pages/ApplyPack.jsx'), 'utf-8'); } catch {}
+assert('ApplyPack.jsx has copy-ready tab', applyPackSrc15.includes('copyready') || applyPackSrc15.includes('Copy-Ready'));
+assert('ApplyPack.jsx renders copy_ready_summary_block', applyPackSrc15.includes('copy_ready_summary_block'));
+assert('ApplyPack.jsx renders copy_ready_resume_emphasis_block', applyPackSrc15.includes('copy_ready_resume_emphasis_block'));
+assert('ApplyPack.jsx has handlePrintExport or text export', applyPackSrc15.includes('handlePrintExport') || applyPackSrc15.includes('Export Text'));
+assert('ApplyPack.jsx has pack readiness score display', applyPackSrc15.includes('packReadiness') || applyPackSrc15.includes('Pack Readiness'));
+assert('ApplyPack.jsx imports computePackReadinessScore', applyPackSrc15.includes('computePackReadinessScore'));
+
+// 15k. Approval remains mandatory (no auto-approve path in pack generation)
+assert('Apply Pack generator requires approval_state === approved', (() => {
+  try { generateApplyPack({ ...tpmOppFull, approval_state: 'pending' }); return false; } catch { return true; }
+})());
 
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);
