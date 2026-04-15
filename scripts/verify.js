@@ -1712,11 +1712,22 @@ assert('scripts/check-live.sh checks /opportunities endpoint', checkLiveSrc21.in
 
 // 21g. LIVE_ACTIVATION_RUNBOOK.md completeness
 assert('LIVE_ACTIVATION_RUNBOOK.md covers migrations', runbookSrc21.includes('Migration') || runbookSrc21.includes('migration'));
+assert('LIVE_ACTIVATION_RUNBOOK.md documents all 4 migration files', runbookSrc21.includes('001_discovery_fields') && runbookSrc21.includes('002_ingestion_logs') && runbookSrc21.includes('003_user_preferences') && runbookSrc21.includes('004_readiness_history'));
+assert('LIVE_ACTIVATION_RUNBOOK.md has SQL verification for readiness_history', runbookSrc21.includes('readiness_history'));
+assert('LIVE_ACTIVATION_RUNBOOK.md has SQL verification for user_preferences', runbookSrc21.includes('user_preferences'));
 assert('LIVE_ACTIVATION_RUNBOOK.md documents DISCOVERY_SECRET', runbookSrc21.includes('DISCOVERY_SECRET'));
 assert('LIVE_ACTIVATION_RUNBOOK.md documents GREENHOUSE_BOARDS', runbookSrc21.includes('GREENHOUSE_BOARDS'));
 assert('LIVE_ACTIVATION_RUNBOOK.md documents kill switch / rollback', runbookSrc21.includes('Kill Switch') || runbookSrc21.includes('kill switch') || runbookSrc21.includes('Rollback'));
 assert('LIVE_ACTIVATION_RUNBOOK.md documents curl command for manual run', runbookSrc21.includes('curl') && runbookSrc21.includes('/discover'));
 assert('LIVE_ACTIVATION_RUNBOOK.md documents LIVE_INTAKE_ENABLED', runbookSrc21.includes('LIVE_INTAKE_ENABLED'));
+assert('LIVE_ACTIVATION_RUNBOOK.md has dedup success definition', runbookSrc21.includes('total_ingested: 0') || runbookSrc21.includes('total_ingested=0'));
+assert('LIVE_ACTIVATION_RUNBOOK.md has dedup failure definition', runbookSrc21.includes('dedup') && (runbookSrc21.includes('failure') || runbookSrc21.includes('broken')));
+assert('LIVE_ACTIVATION_RUNBOOK.md has n8n per-workflow checklist for 05-job-discovery', runbookSrc21.includes('05-job-discovery.json'));
+assert('LIVE_ACTIVATION_RUNBOOK.md has n8n per-workflow checklist for 06-daily-approval-digest', runbookSrc21.includes('06-daily-approval-digest.json'));
+assert('LIVE_ACTIVATION_RUNBOOK.md has n8n per-workflow checklist for 07-weekly-readiness-summary', runbookSrc21.includes('07-weekly-readiness-summary.json'));
+assert('LIVE_ACTIVATION_RUNBOOK.md has go/no-go criteria', runbookSrc21.includes('Go / No-Go') || runbookSrc21.includes('GO') || runbookSrc21.includes('NO-GO'));
+assert('LIVE_ACTIVATION_RUNBOOK.md documents n8n stop n8n scheduled discovery', runbookSrc21.includes('inactive') || runbookSrc21.includes('deactivat') || runbookSrc21.includes('Stop n8n'));
+assert('LIVE_ACTIVATION_RUNBOOK.md safe delete pattern only targets pending records', runbookSrc21.includes("approval_state = 'pending'") || runbookSrc21.includes("approval_state='pending'"));
 
 // 21h. Hierarchy guard
 const tpmCheck21 = scoreOpportunity('Technical Project Manager', 'Lead SDLC delivery. Agile, Jira, stakeholder management, program delivery.');
