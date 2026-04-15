@@ -721,5 +721,92 @@ const hashC = generateDedupHash({ title: 'Technical PM', company: 'Atlassian', u
 // So same title+company at different URLs deduplicates correctly (they're the same role at the same company).
 assert('Quick Add dedup: same title+company, different URL → same hash (title+company key wins)', hashA === hashC);
 
+// ─── Section 14: UX + Workflow Layer — Handoff, needs_apply_url, Compact Widget ──
+
+console.log('\n─── Section 14: UX + Workflow Layer ───────────────────────────────────────');
+
+// 14a. needs_apply_url status exists in StatusBadge
+let statusBadgeSrc = '';
+try { statusBadgeSrc = readFileSync(join(__dirname_v, '../src/components/StatusBadge.jsx'), 'utf-8'); } catch {}
+assert('StatusBadge.jsx includes needs_apply_url label', statusBadgeSrc.includes('needs_apply_url'));
+
+// 14b. Tracker status dropdown includes needs_apply_url
+let trackerSrc = '';
+try { trackerSrc = readFileSync(join(__dirname_v, '../src/pages/Tracker.jsx'), 'utf-8'); } catch {}
+assert('Tracker.jsx status dropdown includes needs_apply_url', trackerSrc.includes('needs_apply_url'));
+
+// 14c. api.js exports updateApplyUrl
+assert('api.js exports updateApplyUrl', apiSrc.includes('export async function updateApplyUrl'));
+assert('api.js updateApplyUrl advances status from needs_apply_url → apply_pack_generated', apiSrc.includes("needs_apply_url") && apiSrc.includes('apply_pack_generated'));
+assert('api.js updateApplyUrl updates application_url field', apiSrc.includes("application_url: applicationUrl"));
+assert('api.js updateApplyUrl sets apply_pack_missing_url: false', apiSrc.includes('apply_pack_missing_url: false'));
+
+// 14d. api.js approveOpportunity sets needs_apply_url when manual_external + no apply URL
+assert('api.js approveOpportunity sets needs_apply_url for manual external + no apply URL', apiSrc.includes("needs_apply_url") && apiSrc.includes('is_manual_external_intake'));
+assert('api.js approveOpportunity still sets apply_pack_generated when URL is present', apiSrc.includes('apply_pack_generated'));
+
+// 14e. approve.js backend also sets needs_apply_url when applicable
+let approveFn = '';
+try { approveFn = readFileSync(join(__dirname_v, '../netlify/functions/approve.js'), 'utf-8'); } catch {}
+assert('approve.js sets needs_apply_url for manual external + no apply URL', approveFn.includes('needs_apply_url') && approveFn.includes('is_manual_external_intake'));
+assert('approve.js sets apply_pack_missing_url flag', approveFn.includes('apply_pack_missing_url'));
+
+// 14f. QuickAdd.jsx enhanced success handoff
+const qaJsx14 = quickAddJsx;
+assert('QuickAdd.jsx success handoff shows apply URL status', qaJsx14.includes('Apply URL') || qaJsx14.includes('application_url'));
+assert('QuickAdd.jsx has Approve Now / Approve + Generate Apply Pack button', qaJsx14.includes('Approve') && (qaJsx14.includes('Apply Pack') || qaJsx14.includes('approveOpportunity')));
+assert('QuickAdd.jsx imports approveOpportunity for handoff', qaJsx14.includes('approveOpportunity'));
+assert('QuickAdd.jsx handoff links to /apply-pack/:id', qaJsx14.includes('/apply-pack/'));
+assert('QuickAdd.jsx shows next-action recommendation in handoff', qaJsx14.includes('nextAction') || qaJsx14.includes('next action') || qaJsx14.includes('Next:'));
+assert('QuickAdd.jsx handoff allows rejection of weak-fit role', qaJsx14.includes('Reject') || qaJsx14.includes('reject'));
+
+// 14g. QuickAddWidget.jsx exists (compact widget)
+let widgetSrc = '';
+try { widgetSrc = readFileSync(join(__dirname_v, '../src/components/QuickAddWidget.jsx'), 'utf-8'); } catch {}
+assert('QuickAddWidget.jsx exists', widgetSrc.length > 0);
+assert('QuickAddWidget.jsx has reference URL field', widgetSrc.includes('reference_posting_url') || widgetSrc.includes('reference_url') || widgetSrc.includes('qaw-url'));
+assert('QuickAddWidget.jsx has JD text field', widgetSrc.includes('pasted_jd_text') || widgetSrc.includes('jd_text') || widgetSrc.includes('qaw-jd'));
+assert('QuickAddWidget.jsx has title and company fields', widgetSrc.includes('qaw-title') || widgetSrc.includes("'title'"), widgetSrc.includes('qaw-company') || widgetSrc.includes("'company'"));
+assert('QuickAddWidget.jsx calls quickAddOpportunity', widgetSrc.includes('quickAddOpportunity'));
+assert('QuickAddWidget.jsx detects LinkedIn URL', widgetSrc.includes('linkedin') || widgetSrc.includes('LinkedIn'));
+assert('QuickAddWidget.jsx is collapsible', widgetSrc.includes('open') || widgetSrc.includes('collapse'));
+assert('QuickAddWidget.jsx links to /queue after success', widgetSrc.includes('/queue'));
+
+// 14h. Dashboard.jsx imports and renders QuickAddWidget
+let dashSrc14 = '';
+try { dashSrc14 = readFileSync(join(__dirname_v, '../src/pages/Dashboard.jsx'), 'utf-8'); } catch {}
+assert('Dashboard.jsx imports QuickAddWidget', dashSrc14.includes('QuickAddWidget'));
+assert('Dashboard.jsx renders <QuickAddWidget />', dashSrc14.includes('<QuickAddWidget'));
+
+// 14i. ApplyPack.jsx has missing apply URL banner
+let applyPackSrc = '';
+try { applyPackSrc = readFileSync(join(__dirname_v, '../src/pages/ApplyPack.jsx'), 'utf-8'); } catch {}
+assert('ApplyPack.jsx imports updateApplyUrl', applyPackSrc.includes('updateApplyUrl'));
+assert('ApplyPack.jsx shows missing apply URL warning when no application_url', applyPackSrc.includes('apply_url_missing') || (applyPackSrc.includes('application_url') && applyPackSrc.includes('Needs Apply URL') || applyPackSrc.includes('missing')));
+assert('ApplyPack.jsx has inline URL entry for missing URL', applyPackSrc.includes('addUrlValue') || applyPackSrc.includes('Add Apply URL'));
+assert('ApplyPack.jsx checklist includes find-apply-url item for manual external', applyPackSrc.includes('Find') && applyPackSrc.includes('apply URL') || applyPackSrc.includes('find') && applyPackSrc.includes('url'));
+assert('ApplyPack.jsx handles needs_apply_url status in action bar', applyPackSrc.includes('needs_apply_url'));
+
+// 14j. OpportunityDetail.jsx has inline apply URL update
+assert('OpportunityDetail.jsx imports updateApplyUrl', oppDetailSrc.includes('updateApplyUrl'));
+assert('OpportunityDetail.jsx shows inline apply URL entry for manual external with missing URL', oppDetailSrc.includes('applyUrlInput') || oppDetailSrc.includes('Add URL'));
+
+// 14k. Scoring still correct after all changes (no regression)
+const tpmScore14 = scoreOpportunity('Technical Project Manager', 'Lead technical delivery projects, agile, SDLC, stakeholder management, Jira, release planning, cross-functional teams');
+assert('Scoring regression: TPM JD → TPM lane', tpmScore14.lane === LANES.TPM);
+assert('Scoring regression: strong TPM → recommended', tpmScore14.recommended === true);
+
+const delScore14 = scoreOpportunity('Delivery Manager', 'Agile delivery lead for cross-functional squads, SAFe, sprint planning, velocity tracking, release management');
+assert('Scoring regression: Delivery JD → DELIVERY lane', delScore14.lane === LANES.DELIVERY_MANAGER);
+assert('Scoring regression: strong Delivery → recommended', delScore14.recommended === true);
+
+const weakOps14 = scoreOpportunity('Operations Manager', 'Store operations, staff rostering, inventory management, customer service KPIs, loss prevention');
+assert('Scoring regression: weak generic Ops → NOT TPM lane', weakOps14.lane !== LANES.TPM);
+assert('Scoring regression: weak generic Ops → not recommended or low score', !weakOps14.recommended || weakOps14.score < 60);
+
+// 14l. LinkedIn safety — no fetch/scrape introduced
+assert('QuickAddWidget does not fetch LinkedIn URLs', !widgetSrc.includes("fetch(form.reference_posting_url") && !widgetSrc.includes('axios.get') && !widgetSrc.includes("fetch(linkedIn") && !widgetSrc.includes('await fetch(form.'));
+assert('QuickAdd page does not fetch LinkedIn URLs', !qaJsx14.includes("fetch(form.reference_posting_url") && !qaJsx14.includes('scrape'));
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

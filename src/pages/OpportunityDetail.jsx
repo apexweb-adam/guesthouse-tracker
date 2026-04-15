@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext.jsx';
 import FitScoreBadge from '../components/FitScoreBadge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import LaneBadge from '../components/LaneBadge.jsx';
-import { approveOpportunity, updateOpportunity, fetchPrep } from '../lib/api.js';
+import { approveOpportunity, updateOpportunity, fetchPrep, updateApplyUrl } from '../lib/api.js';
 import { getResumeEmphasisLabel } from '../../netlify/functions/_shared/scoring.js';
 
 export default function OpportunityDetail() {
@@ -17,6 +17,8 @@ export default function OpportunityDetail() {
   const [prep, setPrep] = useState(null);
   const [prepLoading, setPrepLoading] = useState(false);
   const [prepOpen, setPrepOpen] = useState(false);
+  const [applyUrlInput, setApplyUrlInput] = useState('');
+  const [savingApplyUrl, setSavingApplyUrl] = useState(false);
 
   const opp = state.opportunities.find(o => o.id === id);
 
@@ -124,6 +126,42 @@ export default function OpportunityDetail() {
                 >
                   ✅ Open Apply URL ↗
                 </a>
+              )}
+              {/* Missing apply URL inline update */}
+              {(opp.is_manual_external_intake || opp.source_family === 'manual_external') &&
+               !opp.application_url && !opp.is_demo_record && (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!applyUrlInput.trim()) return;
+                    setSavingApplyUrl(true);
+                    try {
+                      await updateApplyUrl(opp.id, applyUrlInput.trim());
+                      await loadOpportunities();
+                      setApplyUrlInput('');
+                      notify('Apply URL saved.', 'success');
+                    } catch (err) {
+                      notify(err.message, 'error');
+                    } finally {
+                      setSavingApplyUrl(false);
+                    }
+                  }}
+                  style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}
+                >
+                  <span style={{ fontSize: 12, color: '#92400e', fontWeight: 600 }}>⚠ No apply URL</span>
+                  <input
+                    type="url"
+                    className="form-input"
+                    placeholder="Paste apply URL…"
+                    value={applyUrlInput}
+                    onChange={e => setApplyUrlInput(e.target.value)}
+                    required
+                    style={{ fontSize: 12, width: 260 }}
+                  />
+                  <button type="submit" className="btn btn-primary btn-sm" disabled={savingApplyUrl}>
+                    {savingApplyUrl ? 'Saving…' : 'Add URL'}
+                  </button>
+                </form>
               )}
               {opp.is_demo_record && (
                 <span className="btn btn-ghost btn-sm" style={{ opacity: 0.5, cursor: 'default', fontStyle: 'italic' }}>

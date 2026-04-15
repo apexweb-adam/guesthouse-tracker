@@ -15,6 +15,39 @@ An operating system for a structured job search:
 
 ---
 
+## Quick Add from External Posting
+
+When you find a role manually on LinkedIn or another site, use **Quick Add Job** to bring it into the system without leaving your workflow.
+
+**How it works:**
+1. Copy the reference URL (LinkedIn, company site, job board)
+2. Paste the full job description text
+3. Optionally paste the direct apply URL (ATS/company link)
+4. Submit — the system scores, classifies, and queues the role for your approval
+5. After approval, Apply Pack is auto-generated
+
+**LinkedIn URL handling (safe):**
+- LinkedIn URLs are stored as `reference_posting_url` only
+- The system does NOT fetch or scrape LinkedIn
+- You must paste the JD text manually — the system cannot infer content from a URL alone
+- If you have a direct company apply URL, paste it in the "Apply URL" field
+
+**Missing apply URL:**
+- If no apply URL is provided, the status advances to `needs_apply_url` after approval
+- The Apply Pack checklist will surface "Find / add official apply URL" as a blocking item
+- You can add the URL inline from Opportunity Detail or the Apply Pack page
+
+**Compact Quick Add widget:**
+- Available on the Dashboard — expands inline without navigating away
+- Supports all required fields: reference URL, title, company, JD text, optional apply URL
+
+**Workflow:**
+```
+find role → paste into Quick Add → auto-score → approve (→ Apply Pack generated)
+→ if no apply URL: needs_apply_url → add URL → ready_to_apply → apply → track
+```
+
+---
 ## Candidate Truth (Locked)
 
 This system is built around Sample Candidate actual strongest positioning.

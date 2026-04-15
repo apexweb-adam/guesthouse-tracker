@@ -4,6 +4,7 @@ const LABELS = {
   discovered: 'Discovered',
   queued: 'Queued',
   approved: 'Approved',
+  needs_apply_url: '⚠ Needs Apply URL',
   apply_pack_generated: 'Pack Ready',
   ready_to_apply: 'Ready to Apply',
   applied: 'Applied',

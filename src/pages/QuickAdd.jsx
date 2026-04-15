@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext.jsx';
-import { quickAddOpportunity } from '../lib/api.js';
+import { quickAddOpportunity, approveOpportunity } from '../lib/api.js';
 
 const EMPTY_FORM = {
   reference_posting_url: '',
@@ -15,6 +15,185 @@ const EMPTY_FORM = {
 
 function isLinkedInUrl(url = '') {
   return /linkedin\.com/i.test(url);
+}
+
+// ── Quick Add Success Handoff ────────────────────────────────────────────────
+
+function SuccessHandoff({ result, onAddAnother }) {
+  const { loadOpportunities, notify } = useApp();
+  const navigate = useNavigate();
+  const opp = result.opportunity;
+  const [approving, setApproving] = useState(false);
+  const isLinkedIn = result.intake_source_is_linkedin;
+  const hasApplyUrl = !!(opp.application_url || '').trim();
+  const isStrongFit = opp.recommended && (opp.fit_score || 0) >= 70;
+  const isWeakFit = !opp.recommended || (opp.fit_score || 0) < 40;
+
+  const handleApproveNow = async (generatePack = false) => {
+    setApproving(true);
+    try {
+      await approveOpportunity(opp.id, 'approve', 'Approved via Quick Add handoff');
+      await loadOpportunities();
+      if (generatePack) {
+        notify('Approved — Apply Pack generated.', 'success');
+        navigate(`/apply-pack/${opp.id}`);
+      } else {
+        notify('Opportunity approved.', 'success');
+        navigate(`/opportunity/${opp.id}`);
+      }
+    } catch (e) {
+      notify(e.message, 'error');
+      setApproving(false);
+    }
+  };
+
+  const handleRejectNow = async () => {
+    setApproving(true);
+    try {
+      await approveOpportunity(opp.id, 'reject', 'Rejected via Quick Add handoff');
+      await loadOpportunities();
+      notify('Opportunity rejected.', 'info');
+      onAddAnother();
+    } catch (e) {
+      notify(e.message, 'error');
+      setApproving(false);
+    }
+  };
+
+  // Next-action recommendation
+  let nextAction = null;
+  if (isStrongFit && !hasApplyUrl && isLinkedIn) {
+    nextAction = { label: '⚠ Next: find the direct apply URL, then approve', color: 'var(--amber, #d97706)' };
+  } else if (isStrongFit) {
+    nextAction = { label: '⭐ Strong fit — approve and generate Apply Pack now', color: 'var(--green, #16a34a)' };
+  } else if (isWeakFit) {
+    nextAction = { label: '⬇ Weak fit — consider rejecting or deprioritizing', color: 'var(--red, #dc2626)' };
+  } else {
+    nextAction = { label: '→ Review in Approval Queue', color: 'var(--gray-600)' };
+  }
+
+  return (
+    <div>
+      <h1 className="section-title">Quick Add Job</h1>
+
+      {/* Main success card */}
+      <div className="card" style={{ maxWidth: 700, marginBottom: 16 }}>
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ color: 'var(--green, #16a34a)', fontSize: 20 }}>✓</span>
+          <h2 style={{ margin: 0 }}>{opp.title} · {opp.company}</h2>
+        </div>
+        <div className="card-body">
+          {isLinkedIn && (
+            <div style={{
+              background: 'var(--blue-50, #eff6ff)', border: '1px solid var(--blue-200, #bfdbfe)',
+              borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 12,
+              color: 'var(--blue-800, #1e40af)',
+            }}>
+              🔗 LinkedIn reference stored — the system did NOT access LinkedIn. Intake is purely paste-based.
+            </div>
+          )}
+
+          {/* Score grid */}
+          <div className="grid-4" style={{ gap: 10, marginBottom: 16 }}>
+            <div className="stat-box">
+              <div className="stat-label">Lane</div>
+              <div className="stat-value" style={{ fontSize: 13 }}>{opp.lane?.replace(/_/g, ' ') || '—'}</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-label">Fit Score</div>
+              <div className="stat-value">{opp.fit_score ?? '—'}</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-label">Recommended</div>
+              <div className="stat-value" style={{ color: opp.recommended ? 'var(--green, #16a34a)' : 'var(--gray-500)' }}>
+                {opp.recommended ? '✓ Yes' : '✗ No'}
+              </div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-label">Apply URL</div>
+              <div className="stat-value" style={{ color: hasApplyUrl ? 'var(--green, #16a34a)' : 'var(--amber, #d97706)', fontSize: 12 }}>
+                {hasApplyUrl ? '✓ Known' : '⚠ Missing'}
+              </div>
+            </div>
+          </div>
+
+          {/* Next-action banner */}
+          <div style={{
+            background: 'var(--gray-50, #f9fafb)', border: '1px solid var(--gray-200)', borderRadius: 6,
+            padding: '10px 14px', marginBottom: 18, fontSize: 13, fontWeight: 500, color: nextAction.color,
+          }}>
+            {nextAction.label}
+          </div>
+
+          {/* Apply URL missing notice */}
+          {!hasApplyUrl && (
+            <div style={{
+              background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6,
+              padding: '8px 12px', marginBottom: 14, fontSize: 12, color: '#92400e',
+            }}>
+              <strong>No apply URL:</strong> {isLinkedIn
+                ? 'A LinkedIn URL was provided as reference. To apply, find the official ATS/company apply link and add it in Opportunity Detail.'
+                : 'No direct apply URL was provided. Add one in Opportunity Detail before preparing your application.'
+              }
+            </div>
+          )}
+
+          {/* Action buttons — grouped by fit */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            {isStrongFit && (
+              <button
+                className="btn btn-primary"
+                onClick={() => handleApproveNow(true)}
+                disabled={approving}
+                style={{ fontWeight: 700 }}
+              >
+                {approving ? 'Working…' : '⚡ Approve + Generate Apply Pack'}
+              </button>
+            )}
+
+            {!isStrongFit && !isWeakFit && (
+              <button
+                className="btn btn-primary"
+                onClick={() => handleApproveNow(false)}
+                disabled={approving}
+              >
+                {approving ? 'Working…' : '✓ Approve Now'}
+              </button>
+            )}
+
+            <button
+              className="btn btn-secondary"
+              onClick={() => navigate('/queue')}
+            >
+              Review in Approval Queue
+            </button>
+
+            <button
+              className="btn btn-secondary"
+              onClick={() => navigate(`/opportunity/${opp.id}`)}
+            >
+              View Opportunity
+            </button>
+
+            {isWeakFit && (
+              <button
+                className="btn btn-danger"
+                onClick={handleRejectNow}
+                disabled={approving}
+                style={{ background: 'var(--red-50, #fef2f2)', color: 'var(--red, #dc2626)', border: '1px solid var(--red-200, #fecaca)' }}
+              >
+                {approving ? 'Working…' : '✗ Reject'}
+              </button>
+            )}
+
+            <button className="btn btn-ghost" onClick={onAddAnother}>
+              Add Another Role
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function QuickAdd() {
@@ -45,7 +224,6 @@ export default function QuickAdd() {
         await loadOpportunities();
         await loadLogs();
         notify('Role added and queued for your approval.', 'success');
-        // Show success state then optionally navigate to queue
       }
     } catch (err) {
       notify(err.message, 'error');
@@ -61,67 +239,7 @@ export default function QuickAdd() {
 
   // ── Success state ────────────────────────────────────────────────────────────
   if (result && !result.duplicate && result.opportunity) {
-    const opp = result.opportunity;
-    return (
-      <div>
-        <h1 className="section-title">Quick Add Job</h1>
-
-        <div className="card" style={{ maxWidth: 680 }}>
-          <div className="card-header">
-            <h2 style={{ color: 'var(--success, #16a34a)' }}>✓ Role Added</h2>
-          </div>
-          <div className="card-body">
-            <p style={{ marginBottom: 16, color: 'var(--gray-700)' }}>
-              <strong>{opp.title}</strong> at <strong>{opp.company}</strong> has been scored and
-              queued for your approval.
-            </p>
-
-            {result.intake_source_is_linkedin && (
-              <div className="badge badge-info" style={{ marginBottom: 12, display: 'inline-block' }}>
-                LinkedIn reference stored — system did NOT access LinkedIn
-              </div>
-            )}
-
-            <div className="grid-2" style={{ gap: 12, marginBottom: 16 }}>
-              <div className="stat-box">
-                <div className="stat-label">Lane</div>
-                <div className="stat-value">{opp.lane?.replace(/_/g, ' ') || '—'}</div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-label">Fit Score</div>
-                <div className="stat-value">{opp.fit_score ?? '—'}</div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-label">Recommended</div>
-                <div className="stat-value">{opp.recommended ? '✓ Yes' : '✗ No'}</div>
-              </div>
-              <div className="stat-box">
-                <div className="stat-label">Approval Status</div>
-                <div className="stat-value">Pending review</div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <button
-                className="btn btn-primary"
-                onClick={() => navigate('/queue')}
-              >
-                Review in Approval Queue →
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => navigate(`/opportunity/${opp.id}`)}
-              >
-                View Opportunity
-              </button>
-              <button className="btn btn-ghost" onClick={handleAddAnother}>
-                Add Another
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <SuccessHandoff result={result} onAddAnother={handleAddAnother} />;
   }
 
   // ── Duplicate state ──────────────────────────────────────────────────────────
@@ -267,6 +385,11 @@ export default function QuickAdd() {
                 value={form.external_apply_url}
                 onChange={update('external_apply_url')}
               />
+              {linkedInRef && !form.external_apply_url && (
+                <div style={{ marginTop: 4, fontSize: 12, color: 'var(--amber-700, #92400e)' }}>
+                  ⚠ LinkedIn reference — if you have the direct ATS apply link, paste it here. If not, you can add it later.
+                </div>
+              )}
             </div>
 
             {/* JD text */}

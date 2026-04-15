@@ -103,7 +103,7 @@ export default function Tracker() {
                       onChange={e => handleStatusChange(o, e.target.value)}
                       style={{ padding: '3px 6px', fontSize: 12 }}
                     >
-                      {['discovered','queued','approved','apply_pack_generated','ready_to_apply','applied','follow_up_1','follow_up_2','interviewing','offer','rejected','stale','ghosted','withdrawn'].map(s => (
+                      {['discovered','queued','approved','needs_apply_url','apply_pack_generated','ready_to_apply','applied','follow_up_1','follow_up_2','interviewing','offer','rejected','stale','ghosted','withdrawn'].map(s => (
                         <option key={s} value={s}>{s}</option>
                       ))}
                     </select>

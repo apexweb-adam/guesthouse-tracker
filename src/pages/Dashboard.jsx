@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext.jsx';
 import OpportunityCard from '../components/OpportunityCard.jsx';
+import QuickAddWidget from '../components/QuickAddWidget.jsx';
 import { approveOpportunity } from '../lib/api.js';
 
 export default function Dashboard() {
@@ -53,6 +54,9 @@ export default function Dashboard() {
       <p className="section-sub">
         Approval-based job search OS · {demoMode ? 'Demo mode — no backend required' : 'Live mode'}
       </p>
+
+      {/* Quick Add Widget */}
+      <QuickAddWidget />
 
       {/* Stats Row */}
       <div className="grid-4" style={{ marginBottom: 24 }}>

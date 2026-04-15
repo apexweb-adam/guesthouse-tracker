@@ -10,6 +10,7 @@ import {
   overrideResumeVersion,
   updateChecklistItem,
   updateApplyStatus,
+  updateApplyUrl,
 } from '../lib/api.js';
 import { RESUME_VERSIONS, RESUME_VERSION_LABELS } from '../../netlify/functions/_shared/scoring.js';
 
@@ -112,6 +113,8 @@ export default function ApplyPack() {
 
   const [pack, setPack] = useState(null);
   const [opp, setOppLocal] = useState(null);
+  const [addUrlValue, setAddUrlValue] = useState('');
+  const [addingUrl, setAddingUrl] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
@@ -311,9 +314,58 @@ export default function ApplyPack() {
         </div>
       </div>
 
+      {/* Missing apply URL banner */}
+      {(opportunity?.is_manual_external_intake || opportunity?.source_family === 'manual_external') &&
+       !opportunity?.application_url && (
+        <div style={{
+          background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6,
+          padding: '12px 16px', marginBottom: 14,
+        }}>
+          <div style={{ fontWeight: 700, color: '#92400e', fontSize: 13, marginBottom: 6 }}>
+            ⚠ Apply URL missing
+          </div>
+          <div style={{ fontSize: 12, color: '#78350f', marginBottom: 10 }}>
+            This role was added manually. No direct apply URL has been provided yet.
+            Find the official ATS or company apply link and add it here.
+          </div>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!addUrlValue.trim()) return;
+              setAddingUrl(true);
+              try {
+                const res = await updateApplyUrl(id, addUrlValue.trim());
+                setOppLocal(res.opportunity);
+                await loadOpportunities();
+                setAddUrlValue('');
+                notify('Apply URL added — status updated.', 'success');
+              } catch (err) {
+                notify(err.message, 'error');
+              } finally {
+                setAddingUrl(false);
+              }
+            }}
+            style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
+          >
+            <input
+              type="url"
+              className="form-input"
+              placeholder="https://boards.greenhouse.io/... or company.com/apply/..."
+              value={addUrlValue}
+              onChange={e => setAddUrlValue(e.target.value)}
+              required
+              style={{ flex: 1, minWidth: 240, fontSize: 13 }}
+            />
+            <button type="submit" className="btn btn-primary btn-sm" disabled={addingUrl}>
+              {addingUrl ? 'Saving…' : 'Add Apply URL'}
+            </button>
+          </form>
+        </div>
+      )}
+
       {/* Action bar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {opportunity?.status === 'apply_pack_generated' && (
+        {(opportunity?.status === 'apply_pack_generated' || opportunity?.status === 'needs_apply_url') && (
           <button className="btn btn-primary btn-sm" disabled={saving}
             onClick={() => handleStatusChange('ready_to_apply')}>
             ✓ Mark Ready to Apply
@@ -576,6 +628,20 @@ export default function ApplyPack() {
 
           <Section title={`APPLY CHECKLIST — ${doneCount}/${checklist.length} done`}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Prepend missing apply URL item if relevant */}
+              {(opportunity?.is_manual_external_intake || opportunity?.source_family === 'manual_external') &&
+               !opportunity?.application_url && (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  padding: '8px 10px', borderRadius: 6,
+                  background: '#fffbeb', border: '1px solid #fde68a',
+                }}>
+                  <span style={{ marginTop: 2, fontSize: 14 }}>⚠</span>
+                  <span style={{ fontSize: 13, color: '#92400e', lineHeight: 1.5, fontWeight: 500 }}>
+                    Find and add the official apply URL (ATS or company careers page) — required before applying
+                  </span>
+                </div>
+              )}
               {checklist.map((item) => (
                 <label
                   key={item.id}

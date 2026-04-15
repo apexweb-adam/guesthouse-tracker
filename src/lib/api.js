@@ -175,7 +175,15 @@ export async function approveOpportunity(id, action, reason = '', overrideFields
         const oppForPack = { ...opp, ...updates, approval_state: 'approved' };
         const pack = generateApplyPack(oppForPack);
         updates.apply_pack = pack;
-        updates.status = 'apply_pack_generated';
+        // If this is a manual external role with no apply URL, flag the missing URL clearly
+        const hasApplyUrl = !!(opp.application_url || '').trim();
+        if (opp.is_manual_external_intake && !hasApplyUrl) {
+          updates.status = 'needs_apply_url';
+          updates.apply_pack_missing_url = true;
+        } else {
+          updates.status = 'apply_pack_generated';
+          updates.apply_pack_missing_url = false;
+        }
       } catch (e) {
         console.warn('[api] Apply Pack generation failed (non-fatal):', e.message);
       }
@@ -666,6 +674,51 @@ export async function updateChecklistItem(id, itemId, done) {
   return apiFetch('/apply-pack', {
     method: 'POST',
     body: JSON.stringify({ id, action: 'update_checklist', itemId, done }),
+  });
+}
+
+/**
+ * Update the application URL for a manually-added external role.
+ * Once added, the status advances from needs_apply_url → apply_pack_generated.
+ */
+export async function updateApplyUrl(id, applicationUrl) {
+  if (isDemoMode()) {
+    const now = new Date().toISOString();
+    const { opportunities } = getStore();
+    const opp = opportunities.find(o => o.id === id);
+    if (!opp) throw new Error('Opportunity not found');
+    const updates = {
+      application_url: applicationUrl.trim(),
+      canonical_job_url: opp.canonical_job_url || applicationUrl.trim(),
+      apply_pack_missing_url: false,
+      last_action_date: now,
+    };
+    // Advance status if it was blocked on missing URL
+    if (opp.status === 'needs_apply_url') {
+      updates.status = 'apply_pack_generated';
+    }
+    // Patch Apply Pack if it exists to include new URL
+    if (opp.apply_pack) {
+      updates.apply_pack = {
+        ...opp.apply_pack,
+        application_url: applicationUrl.trim(),
+        apply_url_added_at: now,
+      };
+    }
+    mutateStore(s => {
+      const idx = s.opportunities.findIndex(o => o.id === id);
+      if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], ...updates };
+    });
+    const updated = getStore().opportunities.find(o => o.id === id);
+    return { opportunity: updated };
+  }
+  return apiFetch(`/opportunities?id=${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      application_url: applicationUrl.trim(),
+      apply_pack_missing_url: false,
+      status_advance_from_needs_apply_url: true,
+    }),
   });
 }
 

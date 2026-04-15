@@ -69,7 +69,15 @@ export const handler = async (event) => {
         const oppForPack = { ...opp, ...updates, approval_state: 'approved' };
         const applyPack = generateApplyPack(oppForPack);
         updates.apply_pack = applyPack;
-        updates.status = 'apply_pack_generated';
+        // If manual external role with no apply URL, flag it
+        const hasApplyUrl = !!(opp.application_url || '').trim();
+        if (opp.is_manual_external_intake && !hasApplyUrl) {
+          updates.status = 'needs_apply_url';
+          updates.apply_pack_missing_url = true;
+        } else {
+          updates.status = 'apply_pack_generated';
+          updates.apply_pack_missing_url = false;
+        }
 
         // Fire apply_pack_generated event
         await fireEvent('apply_pack_generated', {

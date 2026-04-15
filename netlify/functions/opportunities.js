@@ -69,10 +69,28 @@ export const handler = async (event) => {
       const allowed = [
         'status', 'notes', 'next_action', 'next_action_due',
         'applied_date', 'last_action_date', 'tracking_url',
+        'application_url', 'apply_pack_missing_url',
       ];
       const safe = Object.fromEntries(
         Object.entries(updates).filter(([k]) => allowed.includes(k))
       );
+
+      // When apply URL is added, advance status from needs_apply_url → apply_pack_generated
+      if (updates.status_advance_from_needs_apply_url && safe.application_url) {
+        const opp = await (await import('./_shared/db.js')).getOpportunity(id);
+        if (opp && opp.status === 'needs_apply_url') {
+          safe.status = 'apply_pack_generated';
+          safe.apply_pack_missing_url = false;
+          // Patch Apply Pack to include new URL if present
+          if (opp.apply_pack) {
+            safe.apply_pack = {
+              ...opp.apply_pack,
+              application_url: safe.application_url,
+              apply_url_added_at: new Date().toISOString(),
+            };
+          }
+        }
+      }
       if (!Object.keys(safe).length) return json(400, { error: 'No valid fields to update' });
 
       const updated = await updateOpportunity(id, safe);

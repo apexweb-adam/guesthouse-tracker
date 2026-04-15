@@ -33,6 +33,7 @@ function json(statusCode, body) {
 
 const VALID_APPLY_STATUSES = [
   'approved',
+  'needs_apply_url',
   'apply_pack_generated',
   'ready_to_apply',
   'applied',
