@@ -14,5 +14,5 @@
   status = 200
 
 [functions]
-  node_bundler = "esbuild"
+  node_bundler = "nft"
   included_files = ["netlify/functions/_shared/**"]
