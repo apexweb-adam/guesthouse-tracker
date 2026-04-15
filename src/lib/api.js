@@ -9,7 +9,7 @@
 import { scoreOpportunity, getRecommendation, LANE_CONFIG } from '../../netlify/functions/_shared/scoring.js';
 import { generateDedupHash } from '../../netlify/functions/_shared/dedup.js';
 import { evaluateStaleness, scanForStale, computeNextAction } from '../../netlify/functions/_shared/stale.js';
-import { generateApplyPack, applyResumeOverride, regenerateApplyPack } from '../../netlify/functions/_shared/applyPack.js';
+import { generateApplyPack, applyResumeOverride, regenerateApplyPack, computePackReadinessScore } from '../../netlify/functions/_shared/applyPack.js';
 import { DEFAULT_SOURCES } from '../../netlify/functions/_shared/sources.js';
 import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
@@ -697,8 +697,23 @@ export async function updateApplyUrl(id, applicationUrl) {
     if (opp.status === 'needs_apply_url') {
       updates.status = 'apply_pack_generated';
     }
-    // Patch Apply Pack if it exists to include new URL
-    if (opp.apply_pack) {
+    // Regenerate Apply Pack if it was generated without an apply URL
+    if (opp.apply_pack && opp.apply_pack.apply_url_missing_at_generation) {
+      try {
+        const oppWithUrl = { ...opp, application_url: applicationUrl.trim() };
+        const refreshedPack = regenerateApplyPack(oppWithUrl, opp.apply_pack, 'apply_url_added');
+        updates.apply_pack = refreshedPack;
+        updates.pack_readiness_score = refreshedPack.pack_readiness_score || 0;
+      } catch (_e) {
+        // Non-fatal: shallow patch
+        updates.apply_pack = {
+          ...opp.apply_pack,
+          application_url: applicationUrl.trim(),
+          apply_url_added_at: now,
+          apply_url_missing_at_generation: false,
+        };
+      }
+    } else if (opp.apply_pack) {
       updates.apply_pack = {
         ...opp.apply_pack,
         application_url: applicationUrl.trim(),
@@ -780,18 +795,33 @@ const PROFILE_STORAGE_KEY = 'discovery_profile_v1';
 
 /**
  * Fetch the active discovery profile.
- * In demo/live mode this reads from localStorage (user-editable) and falls
- * back to the default server profile definition.
+ *
+ * In live mode: loads from server (/profile), with localStorage as emergency fallback.
+ * In demo mode: reads from localStorage, falls back to hard-coded defaults.
  *
  * Returns the current profile object.
  */
 export async function fetchDiscoveryProfile() {
-  // Always use localStorage — profile is UI-editable and persisted locally.
-  // Server-side DEFAULT_DISCOVERY_PROFILE is the fallback if no saved version.
+  // In live mode, prefer server-side persistence
+  if (!isDemoMode()) {
+    try {
+      const res = await apiFetch('/profile');
+      if (res && res.profile) {
+        // Mirror to localStorage as offline fallback
+        try { localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(res.profile)); } catch {}
+        return res.profile;
+      }
+    } catch {
+      // Server unavailable — fall through to localStorage
+    }
+  }
+
+  // Demo mode or server fallback: try localStorage first
   try {
     const stored = localStorage.getItem(PROFILE_STORAGE_KEY);
     if (stored) return JSON.parse(stored);
   } catch {}
+
   // Return the hard-coded defaults (mirrors DEFAULT_DISCOVERY_PROFILE in sources.js)
   return {
     includeTitleKeywords: [
@@ -822,14 +852,32 @@ export async function fetchDiscoveryProfile() {
 }
 
 /**
- * Persist a discovery profile update to localStorage.
+ * Persist a discovery profile update.
+ *
+ * In live mode: saves to server (/profile POST), also mirrors to localStorage.
+ * In demo mode: saves to localStorage only.
+ *
  * @param {object} profile — updated profile object
  */
 export async function saveDiscoveryProfile(profile) {
+  // Always mirror to localStorage for instant offline access
   try {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-    return { saved: true };
-  } catch (err) {
-    throw new Error(`Could not save profile: ${err.message}`);
+  } catch {}
+
+  // In live mode, also persist to backend
+  if (!isDemoMode()) {
+    try {
+      await apiFetch('/profile', {
+        method: 'POST',
+        body: JSON.stringify({ profile }),
+      });
+      return { saved: true, persisted: 'server' };
+    } catch (err) {
+      // Server save failed — localStorage copy still exists
+      return { saved: true, persisted: 'local_only', warning: err.message };
+    }
   }
+
+  return { saved: true, persisted: 'local' };
 }

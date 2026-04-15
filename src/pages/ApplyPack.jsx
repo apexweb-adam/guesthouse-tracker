@@ -215,6 +215,10 @@ export default function ApplyPack() {
     notify('Apply Pack exported.', 'success');
   };
 
+  const handleBrowserPrint = () => {
+    window.print();
+  };
+
   const handlePrintExport = () => {
     if (!pack || !opportunity) return;
     const lines = [];
@@ -226,7 +230,7 @@ export default function ApplyPack() {
     if (opportunity.location) lines.push(`Location: ${opportunity.location}`);
     lines.push(`Lane: ${opportunity.lane || '—'}  |  Fit Score: ${opportunity.fit_score ?? '—'}`);
     lines.push(`Status: ${opportunity.status || '—'}`);
-    lines.push(`Pack version: ${pack.pack_version || 1}  |  Generated: ${pack.generated_at ? new Date(pack.generated_at).toLocaleDateString() : '—'}`);
+    lines.push(`Pack version: ${pack.pack_version || 1}  |  Generated: ${pack.generated_at ? new Date(pack.generated_at).toLocaleDateString() : '—'}  |  Readiness: ${pack.pack_readiness_score ?? packReadiness}%`);
     if (opportunity.canonical_job_url || opportunity.url) {
       lines.push(`Original Posting: ${opportunity.canonical_job_url || opportunity.url}`);
     }
@@ -258,6 +262,12 @@ export default function ApplyPack() {
       lines.push('COPY-READY RESUME EMPHASIS BLOCK');
       lines.push(sub);
       lines.push(pack.copy_ready_resume_emphasis_block);
+      lines.push('');
+    }
+    if (pack.copy_ready_cover_note_block) {
+      lines.push('COPY-READY COVER NOTE BLOCK');
+      lines.push(sub);
+      lines.push(pack.copy_ready_cover_note_block);
       lines.push('');
     }
     if (pack.keyword_mirror_list?.length) {
@@ -354,7 +364,8 @@ export default function ApplyPack() {
   const checklist = pack.apply_checklist || [];
   const doneCount = checklist.filter(c => c.done).length;
   const allDone = doneCount === checklist.length && checklist.length > 0;
-  const packReadiness = computePackReadinessScore(opportunity || {}, pack);
+  // Prefer persisted readiness score from the pack; fall back to live-computed value
+  const packReadiness = pack.pack_readiness_score ?? computePackReadinessScore(opportunity || {}, pack);
 
   const TABS = [
     { id: 'overview', label: '📋 Overview' },
@@ -422,6 +433,9 @@ export default function ApplyPack() {
         <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6 }}>
           Pack generated {new Date(pack.generated_at).toLocaleString()}
           {pack.pack_version > 1 && ` · Last regenerated ${new Date(pack.last_regenerated_at).toLocaleString()}`}
+          {pack.regeneration_reason === 'apply_url_added' && (
+            <span style={{ color: '#065f46', marginLeft: 6 }}>✓ Refreshed — apply URL added</span>
+          )}
           {' · '}System v{pack.generated_by_system_version}
         </div>
       </div>
@@ -507,6 +521,7 @@ export default function ApplyPack() {
           </button>
         )}
         <button className="btn btn-ghost btn-sm" onClick={handlePrintExport}>📄 Export Text Pack</button>
+        <button className="btn btn-ghost btn-sm" onClick={handleBrowserPrint}>🖨 Print / Save PDF</button>
         <button className="btn btn-ghost btn-sm" onClick={handleExport}>⬇ Export Pack JSON</button>
         {/* Pack readiness indicator */}
         {packReadiness !== undefined && (
@@ -701,6 +716,25 @@ export default function ApplyPack() {
             </Section>
           )}
 
+          {pack.copy_ready_cover_note_block && (
+            <Section
+              title="COPY-READY COVER NOTE BLOCK"
+              actionSlot={<CopyButton text={pack.copy_ready_cover_note_block} label="📋 Copy Cover Note" />}
+            >
+              <pre style={{
+                fontSize: 13, color: 'var(--gray-800)', background: '#f0f9ff',
+                borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.7,
+                margin: 0, fontFamily: 'inherit', border: '1px solid #7dd3fc',
+              }}>
+                {pack.copy_ready_cover_note_block}
+              </pre>
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
+                3-paragraph draft. Personalise bracketed sections and review carefully before submitting.
+                This is a starting point — not a finished cover letter.
+              </div>
+            </Section>
+          )}
+
           {/* Quick-access copies */}
           <Section title="QUICK COPY ACCESS">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -722,6 +756,9 @@ export default function ApplyPack() {
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-secondary btn-sm" onClick={handlePrintExport}>
               📄 Export Full Text Pack
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={handleBrowserPrint}>
+              🖨 Print / Save PDF
             </button>
             <button className="btn btn-ghost btn-sm" onClick={handleExport}>
               ⬇ Export JSON Pack

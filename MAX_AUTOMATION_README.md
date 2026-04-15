@@ -213,3 +213,91 @@ Website (React SPA)
 
 All scoring logic lives exclusively in `netlify/functions/_shared/scoring.js`.
 No other file, workflow, or tool re-implements this logic.
+
+---
+
+## Apply Pack — Copy-Ready Content (v4.0.0)
+
+Every approved opportunity now generates an Apply Pack that includes directly usable draft content:
+
+### Copy-Ready Blocks
+
+| Block | What it is | Status |
+|---|---|---|
+| `copy_ready_summary_block` | Application summary draft — aligned to lane and role | ✅ Auto-generated |
+| `copy_ready_resume_emphasis_block` | Lead-with themes and proof points for resume tailoring | ✅ Auto-generated |
+| `copy_ready_cover_note_block` | 3-paragraph cover note draft for ATS fields or email | ✅ Auto-generated |
+
+All blocks are clearly marked `[DRAFT — review and personalise before use]`.
+They are starting points, not finished statements. No claims are fabricated.
+Replace bracketed placeholders with your real experience.
+
+### Pack Readiness Score
+
+- `pack_readiness_score` (0–100) is now **embedded in the pack** and **persisted on the opportunity record**
+- Reflects: resume recommendation presence, keyword count, proof points, copy-ready blocks, apply URL, checklist progress
+- Displayed in the Apply Pack UI and included in text exports
+- Updates when the pack is regenerated (e.g. after apply URL is added)
+
+### Pack Auto-Refresh on Apply URL Add
+
+When a manual external role is approved without an apply URL:
+1. Status is set to `needs_apply_url`
+2. User adds apply URL later (via Apply Pack banner or Opportunity Detail)
+3. System **automatically regenerates the pack** using the new URL
+4. Override history, checklist progress, and audit trail are preserved
+5. Pack version increments and `regeneration_reason = 'apply_url_added'` is recorded
+
+### Print / Export Options
+
+| Export path | How to access |
+|---|---|
+| **Browser print / Save as PDF** | "🖨 Print / Save PDF" button in action bar or Copy-Ready tab |
+| **Text bundle (.txt)** | "📄 Export Text Pack" button — includes all blocks, keywords, checklist, follow-up date |
+| **JSON export** | "⬇ Export Pack JSON" button — machine-readable full pack |
+
+Print view hides navigation chrome. Use browser "Save as PDF" for a clean document.
+
+---
+
+## Discovery Profile — Server-Side Persistence
+
+The discovery profile is now **server-persisted** in live mode.
+
+- **Endpoint:** `GET /profile` (load) + `POST /profile` (save)
+- **Database:** `user_preferences` table (`supabase/migrations/003_user_preferences.sql`)
+- **Fallback:** localStorage is always kept as an offline backup
+- **Demo mode:** continues to use localStorage as before
+
+### Behaviour
+
+- In live mode: profile loads from server on page open, saves to server on save
+- If server save fails: localStorage copy is preserved and user is notified
+- Profile is not forked — the same `DEFAULT_DISCOVERY_PROFILE` shape is used as the base
+
+---
+
+## Events / Notifications
+
+Events fired automatically:
+
+| Event | When | Threshold |
+|---|---|---|
+| `apply_pack_generated` | On approval, when pack is generated | Always |
+| `strong_fit_ready_to_apply` | On approval | fit_score ≥ 75 AND recommended=true |
+| `new_strong_fit` | On discovery ingestion | fit_score ≥ 75 AND recommended=true |
+| `stale_reminder` | Via stale scan | Configured staleness window |
+
+All events are no-op if webhook URLs are not set.
+
+---
+
+## What Is Still Manual
+
+| Step | Why it's manual |
+|---|---|
+| Resume tailoring | Requires human judgment — blanket edits risk quality |
+| Cover note personalisation | Bracketed sections require candidate-specific input |
+| Application submission | Never automated — approval and submission remain human decisions |
+| Outreach sending | Draft is generated; sending requires human review |
+| Follow-up scheduling | System suggests date; user marks follow-up steps |

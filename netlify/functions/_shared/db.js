@@ -36,6 +36,7 @@ const _demo = {
   opportunities: [],
   sources: [],
   ingestion_logs: [],
+  user_preferences: {},
 };
 
 // ─── Opportunities ────────────────────────────────────────────────────────────
@@ -239,4 +240,46 @@ export async function processBatch(rawJobs, sourceId) {
   }
 
   return { inserted, deduped, errors, high_review };
+}
+
+// ─── User Preferences ─────────────────────────────────────────────────────────
+
+/**
+ * Retrieve a preference value by key.
+ * Returns null if no preference is stored yet.
+ * @param {string} profileKey - e.g. 'discovery_profile'
+ */
+export async function getPreference(profileKey) {
+  const sb = getSupabase();
+  if (sb) {
+    const { data, error } = await sb
+      .from('user_preferences')
+      .select('data')
+      .eq('profile_key', profileKey)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.data ?? null;
+  }
+  return _demo.user_preferences[profileKey] ?? null;
+}
+
+/**
+ * Save (upsert) a preference value by key.
+ * @param {string} profileKey - e.g. 'discovery_profile'
+ * @param {object} data - JSON-serialisable preference object
+ */
+export async function upsertPreference(profileKey, data) {
+  const sb = getSupabase();
+  if (sb) {
+    const { error } = await sb
+      .from('user_preferences')
+      .upsert(
+        { profile_key: profileKey, data, updated_at: new Date().toISOString() },
+        { onConflict: 'profile_key' }
+      );
+    if (error) throw error;
+    return { saved: true };
+  }
+  _demo.user_preferences[profileKey] = data;
+  return { saved: true };
 }

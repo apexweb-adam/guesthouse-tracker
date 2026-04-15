@@ -13,6 +13,7 @@ import {
   updateOpportunity,
   isDemoMode,
 } from './_shared/db.js';
+import { regenerateApplyPack, computePackReadinessScore } from './_shared/applyPack.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -69,7 +70,7 @@ export const handler = async (event) => {
       const allowed = [
         'status', 'notes', 'next_action', 'next_action_due',
         'applied_date', 'last_action_date', 'tracking_url',
-        'application_url', 'apply_pack_missing_url',
+        'application_url', 'apply_pack_missing_url', 'pack_readiness_score',
       ];
       const safe = Object.fromEntries(
         Object.entries(updates).filter(([k]) => allowed.includes(k))
@@ -81,8 +82,24 @@ export const handler = async (event) => {
         if (opp && opp.status === 'needs_apply_url') {
           safe.status = 'apply_pack_generated';
           safe.apply_pack_missing_url = false;
-          // Patch Apply Pack to include new URL if present
-          if (opp.apply_pack) {
+          // If the pack was generated without an apply URL, regenerate it now with the URL available
+          // Preserve override history, checklist progress, and audit trail
+          if (opp.apply_pack && opp.apply_pack.apply_url_missing_at_generation) {
+            try {
+              const oppWithUrl = { ...opp, application_url: safe.application_url };
+              const refreshedPack = regenerateApplyPack(oppWithUrl, opp.apply_pack, 'apply_url_added');
+              safe.apply_pack = refreshedPack;
+              safe.pack_readiness_score = refreshedPack.pack_readiness_score || 0;
+            } catch (_e) {
+              // Non-fatal: fall back to shallow URL patch
+              safe.apply_pack = {
+                ...opp.apply_pack,
+                application_url: safe.application_url,
+                apply_url_added_at: new Date().toISOString(),
+                apply_url_missing_at_generation: false,
+              };
+            }
+          } else if (opp.apply_pack) {
             safe.apply_pack = {
               ...opp.apply_pack,
               application_url: safe.application_url,

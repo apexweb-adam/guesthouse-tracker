@@ -25,7 +25,7 @@ import { generatePrepPackage } from './prep.js';
 
 // ─── System version stamp ─────────────────────────────────────────────────────
 
-export const APPLY_PACK_SYSTEM_VERSION = '3.0.0';
+export const APPLY_PACK_SYSTEM_VERSION = '4.0.0';
 
 // ─── Checklist Generator ─────────────────────────────────────────────────────
 
@@ -206,6 +206,63 @@ export function generateCopyReadyResumeEmphasisBlock(opp, bulletEmphasisNotes = 
 }
 
 /**
+ * Generate a copy-ready cover note block.
+ *
+ * This is a short (3-paragraph), professional, role-aware draft.
+ * Clearly marked as [DRAFT — review and personalise before use].
+ * Suitable for ATS text fields or email introductions.
+ *
+ * Rules:
+ * - uses existing lane/recommendation logic
+ * - does NOT fabricate unsupported claims
+ * - does NOT represent a final cover letter
+ *
+ * @param {object} opp - opportunity record
+ * @param {string[]} topKeywords - top matched keywords for this role
+ * @returns {string} copy-ready cover note (3 paragraphs, DRAFT labelled)
+ */
+export function generateCopyReadyCoverNoteBlock(opp, topKeywords = []) {
+  const laneConfig = LANE_CONFIG[opp.lane] || LANE_CONFIG[LANES.OTHER];
+  const laneLabel = laneConfig.label;
+  const company = opp.company || '[Company]';
+  const title = opp.title || '[Role Title]';
+  const kwSnippet = topKeywords.slice(0, 3).join(', ') || 'technical delivery and stakeholder management';
+
+  const PARA1 = {
+    [LANES.TPM]: `I am a Technical Project Manager with a track record of owning end-to-end delivery for complex technical programmes across SDLC, infrastructure, and platform initiatives. My background spans ${kwSnippet}, and I am experienced in working across engineering, product, and business stakeholder groups to bring clarity, governance, and momentum to delivery.`,
+    [LANES.DELIVERY_MANAGER]: `I am a Delivery Manager with strong Agile and SAFe delivery leadership experience across cross-functional squads. My background spans ${kwSnippet}, and I have a consistent record of driving sprint cadence, release management, and continuous improvement across technical delivery teams.`,
+    [LANES.OPS_MANAGER]: `I am a Technical Operations Manager with experience governing ITSM, compliance, and operational readiness programmes in complex technical environments. My background spans ${kwSnippet}, and I have maintained service stability and audit-readiness across regulated and high-availability systems.`,
+    [LANES.PROGRAM_MANAGER]: `I am a Programme Manager with experience leading enterprise-scale programmes across multiple workstreams and organisational boundaries. My background spans ${kwSnippet}, and I bring strong PMO governance, portfolio risk management, and executive stakeholder reporting capabilities.`,
+    [LANES.GENERIC_PM]: `I am a Project Manager with cross-functional delivery experience and a background in ${kwSnippet}. I am interested in the ${title} role and bring structured delivery, stakeholder management, and programme governance to technical environments.`,
+    [LANES.OTHER]: `I am an experienced professional with a background in ${kwSnippet}. I am interested in the ${title} role at ${company} and believe my delivery and coordination experience is relevant to this position.`,
+  };
+
+  const PARA2 = {
+    [LANES.TPM]: `I am drawn to the ${title} opportunity at ${company} because [personalise — insert what specifically appeals about the role/company]. I am confident my experience in delivering technical programmes of this scale, combined with my ability to align cross-functional teams, makes me a strong candidate for this position.`,
+    [LANES.DELIVERY_MANAGER]: `The ${title} role at ${company} aligns closely with my delivery leadership background. I am particularly interested in [personalise — insert specific appeal]. I bring strong execution discipline and a collaborative approach that I am confident would add value to your delivery organisation.`,
+    [LANES.OPS_MANAGER]: `The ${title} role at ${company} is a strong match for my technical operations and governance background. I am drawn to [personalise — insert specific appeal]. My experience maintaining operational rigour across technical environments directly aligns with the requirements of this position.`,
+    [LANES.PROGRAM_MANAGER]: `The ${title} role at ${company} aligns with my programme governance and portfolio management background. I am interested in [personalise — insert specific appeal]. I bring a structured approach to multi-workstream delivery and a track record of maintaining stakeholder alignment at executive level.`,
+    [LANES.GENERIC_PM]: `I am interested in the ${title} role at ${company} because [personalise — insert specific appeal]. My structured delivery approach and stakeholder management experience are directly relevant to the responsibilities described in this posting.`,
+    [LANES.OTHER]: `I am interested in the ${title} role at ${company} because [personalise — insert specific appeal]. I believe my background is relevant and I welcome the opportunity to discuss how I can contribute.`,
+  };
+
+  const PARA3 = `I have attached my resume for your review. I welcome the opportunity to discuss how my background aligns with the ${title} role at ${company}. Please feel free to contact me at your convenience.\n\n[Your Name]\n[Your Contact Details]`;
+
+  const p1 = PARA1[opp.lane] || PARA1[LANES.OTHER];
+  const p2 = PARA2[opp.lane] || PARA2[LANES.OTHER];
+
+  return [
+    `[DRAFT — review and personalise before use. This is a starting point, not a finished cover letter.]`,
+    ``,
+    p1,
+    ``,
+    p2,
+    ``,
+    PARA3,
+  ].join('\n');
+}
+
+/**
  * Compute a pack readiness score (0–100).
  *
  * Indicates how complete and actionable the Apply Pack is.
@@ -213,11 +270,12 @@ export function generateCopyReadyResumeEmphasisBlock(opp, bulletEmphasisNotes = 
  */
 export function computePackReadinessScore(opp, pack) {
   let score = 0;
-  if (pack.recommended_resume_version) score += 20;
+  if (pack.recommended_resume_version) score += 15;
   if ((pack.keyword_mirror_list || []).length >= 5) score += 15;
   if ((pack.proof_points_to_surface || []).length >= 3) score += 15;
-  if (pack.copy_ready_summary_block) score += 15;
+  if (pack.copy_ready_summary_block) score += 10;
   if (pack.copy_ready_resume_emphasis_block) score += 10;
+  if (pack.copy_ready_cover_note_block) score += 10;
   if (opp.application_url) score += 15;
   if ((pack.apply_checklist || []).some(c => c.done)) score += 5;
   if (pack.recruiter_outreach_draft) score += 5;
@@ -253,7 +311,7 @@ export function generateApplyPack(opp) {
   // Generate core prep (keywords, proof points, summary direction, outreach)
   const prep = generatePrepPackage(opp);
 
-  return {
+  const result = {
     // Metadata
     opportunity_id: opp.id,
     pack_version: 1,
@@ -298,6 +356,7 @@ export function generateApplyPack(opp) {
     copy_ready_resume_emphasis_block: generateCopyReadyResumeEmphasisBlock(
       opp, bulletEmphasisNotes, prep.proofPointsToSurface
     ),
+    copy_ready_cover_note_block: generateCopyReadyCoverNoteBlock(opp, prep.keywordMirrorList),
     apply_url_missing_at_generation: !(opp.application_url || '').trim(),
 
     // Workflow
@@ -305,6 +364,10 @@ export function generateApplyPack(opp) {
     suggested_follow_up_date: suggestedFollowUpDate,
     next_action: prep.nextAction,
   };
+
+  // Compute readiness score and embed it in the pack (persisted with the pack)
+  const pack_readiness_score = computePackReadinessScore(opp, result);
+  return { ...result, pack_readiness_score };
 }
 
 /**
@@ -333,13 +396,15 @@ export function getEffectiveResumeVersion(pack) {
 
 /**
  * Regenerate an Apply Pack, preserving override history.
+ * Also records the regeneration reason and re-computes pack_readiness_score.
  */
-export function regenerateApplyPack(opp, existingPack) {
+export function regenerateApplyPack(opp, existingPack, regenerationReason = 'manual') {
   const fresh = generateApplyPack(opp);
-  return {
+  const regenerated = {
     ...fresh,
     pack_version: (existingPack?.pack_version || 1) + 1,
     last_regenerated_at: new Date().toISOString(),
+    regeneration_reason: regenerationReason,
     // Preserve override if one was set
     resume_version_override: existingPack?.resume_version_override || null,
     resume_version_override_reason: existingPack?.resume_version_override_reason || null,
@@ -352,4 +417,7 @@ export function regenerateApplyPack(opp, existingPack) {
       return prev ? { ...item, done: prev.done } : item;
     }),
   };
+  // Re-compute readiness score with the regenerated pack
+  regenerated.pack_readiness_score = computePackReadinessScore(opp, regenerated);
+  return regenerated;
 }

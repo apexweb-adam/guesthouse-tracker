@@ -339,3 +339,52 @@ Pack can be regenerated via the **🔄 Regenerate Pack** button when status is `
 - Preserves checklist done-state
 - Records new `pack_version` and `last_regenerated_at`
 - Records whether apply URL was missing at generation time (`apply_url_missing_at_generation`)
+
+---
+
+## 12. Continuity + Persistence + Premium Usability Layer (v4.0.0)
+
+### What's New
+
+1. **Copy-Ready Cover Note Block** — `copy_ready_cover_note_block` is now generated in every Apply Pack. 3-paragraph professional draft, clearly marked `[DRAFT]`. Suitable for ATS text fields or email introductions.
+
+2. **Pack Readiness Score — Persisted** — `pack_readiness_score` is now embedded in the pack object and persisted on the opportunity record (`pack_readiness_score` field). Score updates when pack is generated or regenerated. Used in dashboard/reporting to identify most-ready roles.
+
+3. **Apply Pack Auto-Refresh on Apply URL Add** — When a role was approved without an apply URL (`apply_url_missing_at_generation = true`), adding the URL later now **automatically regenerates the pack** with the URL included. Override history, checklist progress, and audit trail are all preserved. `regeneration_reason = 'apply_url_added'` is recorded.
+
+4. **Print / Save as PDF** — "🖨 Print / Save PDF" button calls `window.print()`. `@media print` CSS in `style.css` hides navigation chrome and formats the pack as a clean printable document.
+
+5. **Server-Side Discovery Profile Persistence** — Profile is now persisted to Supabase via `/profile` endpoint.
+
+### Migration Required
+
+Run migration `003_user_preferences.sql` in Supabase to create the `user_preferences` table:
+
+```sql
+-- Run in Supabase SQL editor or via migration CLI
+-- supabase/migrations/003_user_preferences.sql
+```
+
+### Discovery Profile — Live Mode
+
+In live mode, the discovery profile is loaded from `GET /.netlify/functions/profile` and saved via `POST /.netlify/functions/profile`. localStorage is kept as an offline cache/fallback. Demo mode continues to use localStorage only.
+
+### Apply Pack Print View
+
+The Apply Pack page now has a "🖨 Print / Save PDF" button. Clicking it opens the browser print dialog. The `@media print` CSS in `src/style.css` hides buttons, nav, and action bars, leaving only the pack content in a clean printable layout. Use the browser's "Save as PDF" option to produce a PDF.
+
+### Exports Available (Apply Pack)
+
+| Export | Format | Includes |
+|---|---|---|
+| 🖨 Print / Save PDF | Browser print / PDF | All visible pack content, print-formatted |
+| 📄 Export Text Pack | `.txt` download | Role header, URLs, resume rec, all copy-ready blocks, keywords, checklist, follow-up date |
+| ⬇ Export JSON | `.json` download | Full machine-readable pack |
+
+### What Still Requires Manual Action
+
+- Resume tailoring (system provides direction and copy-ready emphasis block)
+- Cover note personalisation (replace bracketed placeholders with real experience)
+- Application submission (never automated)
+- Outreach sending (draft provided; sending requires human decision)
+- Follow-up scheduling (system suggests date; user marks steps)

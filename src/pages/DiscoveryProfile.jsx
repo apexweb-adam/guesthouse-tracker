@@ -69,6 +69,7 @@ export default function DiscoveryProfile() {
   const [profile, setProfile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null); // 'server' | 'local_only' | 'local' | null
 
   useEffect(() => {
     fetchDiscoveryProfile().then(p => setProfile(p));
@@ -90,8 +91,15 @@ export default function DiscoveryProfile() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveDiscoveryProfile(profile);
-      notify('Discovery profile saved.', 'success');
+      const result = await saveDiscoveryProfile(profile);
+      setSaveStatus(result.persisted || 'local');
+      if (result.persisted === 'local_only') {
+        notify('Profile saved locally (server unavailable — will sync when online).', 'warning');
+      } else if (result.persisted === 'server') {
+        notify('Discovery profile saved to server.', 'success');
+      } else {
+        notify('Discovery profile saved.', 'success');
+      }
       setIsDirty(false);
     } catch (e) {
       notify(e.message, 'error');
@@ -114,6 +122,12 @@ export default function DiscoveryProfile() {
         <p style={{ fontSize: 13, color: '#6b7280', margin: '4px 0 0' }}>
           Controls what jobs get discovered. Filters are applied before scoring runs, keeping the approval queue high-signal.
         </p>
+        {saveStatus === 'server' && (
+          <div style={{ marginTop: 6, fontSize: 12, color: '#065f46' }}>✓ Profile synced to server</div>
+        )}
+        {saveStatus === 'local_only' && (
+          <div style={{ marginTop: 6, fontSize: 12, color: '#92400e' }}>⚠ Profile saved locally only (server unavailable)</div>
+        )}
       </div>
 
       <div style={{

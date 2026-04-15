@@ -222,6 +222,7 @@ import {
   regenerateApplyPack,
   generateCopyReadySummaryBlock,
   generateCopyReadyResumeEmphasisBlock,
+  generateCopyReadyCoverNoteBlock,
   computePackReadinessScore,
 } from '../netlify/functions/_shared/applyPack.js';
 
@@ -909,6 +910,123 @@ assert('ApplyPack.jsx imports computePackReadinessScore', applyPackSrc15.include
 assert('Apply Pack generator requires approval_state === approved', (() => {
   try { generateApplyPack({ ...tpmOppFull, approval_state: 'pending' }); return false; } catch { return true; }
 })());
+
+// ─── Section 16: Continuity + Persistence + Premium Usability Layer ──────────
+
+console.log('\n== 16. Continuity + Persistence + Premium Usability Layer ==');
+
+// 16a. generateCopyReadyCoverNoteBlock — exported and functional
+const tpmOpp16 = {
+  id: 'opp-s16-tpm', title: 'Senior Technical Project Manager',
+  company: 'AlphaCloud', lane: LANES.TPM, fit_score: 88,
+  recommended: true, approval_state: 'approved', status: 'approved',
+  application_url: 'https://alphacloud.com/careers/apply/123',
+};
+const coverNote16 = generateCopyReadyCoverNoteBlock(tpmOpp16, ['agile', 'stakeholder management', 'SDLC']);
+assert('generateCopyReadyCoverNoteBlock returns a non-empty string', typeof coverNote16 === 'string' && coverNote16.length > 100);
+assert('generateCopyReadyCoverNoteBlock includes DRAFT notice', coverNote16.includes('[DRAFT'));
+assert('generateCopyReadyCoverNoteBlock is 3 paragraphs minimum', coverNote16.split('\n\n').length >= 3);
+assert('generateCopyReadyCoverNoteBlock includes company name', coverNote16.includes('AlphaCloud'));
+assert('generateCopyReadyCoverNoteBlock does not fabricate salary figures', !coverNote16.match(/\$[0-9]+/));
+assert('generateCopyReadyCoverNoteBlock does not auto-claim specific years without placeholder', !coverNote16.match(/\b[0-9]+\+ years\b/) || coverNote16.includes('[X]+'));
+
+// 16b. generateApplyPack includes copy_ready_cover_note_block
+const pack16 = generateApplyPack(tpmOpp16);
+assert('Apply Pack v4 includes copy_ready_cover_note_block', typeof pack16.copy_ready_cover_note_block === 'string' && pack16.copy_ready_cover_note_block.length > 0);
+assert('Apply Pack v4 copy_ready_cover_note_block contains DRAFT notice', pack16.copy_ready_cover_note_block.includes('[DRAFT'));
+
+// 16c. pack_readiness_score is now embedded in the pack itself
+assert('Apply Pack embeds pack_readiness_score', typeof pack16.pack_readiness_score === 'number');
+assert('pack_readiness_score is in valid range 0–100', pack16.pack_readiness_score >= 0 && pack16.pack_readiness_score <= 100);
+assert('pack_readiness_score increases with cover note block present', pack16.pack_readiness_score >= computePackReadinessScore({ ...tpmOpp16, application_url: null }, { ...pack16, copy_ready_cover_note_block: null }));
+
+// 16d. pack_readiness_score reflects apply URL presence
+const noUrlOpp16 = { ...tpmOpp16, application_url: null };
+const noUrlPack16 = generateApplyPack(noUrlOpp16);
+assert('pack_readiness_score lower without apply URL', noUrlPack16.pack_readiness_score < pack16.pack_readiness_score);
+
+// 16e. regenerateApplyPack preserves override history, checklist, adds regeneration_reason
+const packWithChecklist = { ...pack16, apply_checklist: pack16.apply_checklist.map((c, i) => i === 0 ? { ...c, done: true } : c), resume_version_override: 'MASTER-01', resume_version_override_reason: 'test reason' };
+const regenPack16 = regenerateApplyPack(tpmOpp16, packWithChecklist, 'apply_url_added');
+assert('regenerateApplyPack increments pack_version', regenPack16.pack_version === (packWithChecklist.pack_version || 1) + 1);
+assert('regenerateApplyPack preserves resume_version_override', regenPack16.resume_version_override === 'MASTER-01');
+assert('regenerateApplyPack preserves checklist done states', regenPack16.apply_checklist.some(c => c.done === true));
+assert('regenerateApplyPack records regeneration_reason', regenPack16.regeneration_reason === 'apply_url_added');
+assert('regenerateApplyPack embeds updated pack_readiness_score', typeof regenPack16.pack_readiness_score === 'number');
+
+// 16f. Cover note works for all primary lanes
+const delivOpp16 = { ...tpmOpp16, id: 'opp-s16-del', title: 'Delivery Manager', lane: LANES.DELIVERY_MANAGER };
+const delCoverNote = generateCopyReadyCoverNoteBlock(delivOpp16, ['SAFe', 'sprint planning']);
+assert('Delivery cover note returns string', typeof delCoverNote === 'string' && delCoverNote.length > 50);
+assert('Delivery cover note contains DRAFT notice', delCoverNote.includes('[DRAFT'));
+
+// 16g. /profile Netlify function file exists
+let profileFnSrc16 = '';
+try { profileFnSrc16 = readFileSync(join(__dirname_v, '../netlify/functions/profile.js'), 'utf-8'); } catch {}
+assert('netlify/functions/profile.js exists', profileFnSrc16.length > 0);
+assert('profile.js handles GET', profileFnSrc16.includes("'GET'") || profileFnSrc16.includes('"GET"'));
+assert('profile.js handles POST', profileFnSrc16.includes("'POST'") || profileFnSrc16.includes('"POST"'));
+assert('profile.js uses PROFILE_KEY = discovery_profile', profileFnSrc16.includes('discovery_profile'));
+
+// 16h. Supabase migration 003 exists
+let migration16 = '';
+try { migration16 = readFileSync(join(__dirname_v, '../supabase/migrations/003_user_preferences.sql'), 'utf-8'); } catch {}
+assert('supabase/migrations/003_user_preferences.sql exists', migration16.length > 0);
+assert('migration 003 creates user_preferences table', migration16.includes('user_preferences'));
+assert('migration 003 has profile_key column', migration16.includes('profile_key'));
+
+// 16i. db.js has getPreference and upsertPreference
+let dbSrc16 = '';
+try { dbSrc16 = readFileSync(join(__dirname_v, '../netlify/functions/_shared/db.js'), 'utf-8'); } catch {}
+assert('db.js exports getPreference', dbSrc16.includes('getPreference'));
+assert('db.js exports upsertPreference', dbSrc16.includes('upsertPreference'));
+
+// 16j. api.js fetchDiscoveryProfile now has server-side path
+let apiSrc16 = '';
+try { apiSrc16 = readFileSync(join(__dirname_v, '../src/lib/api.js'), 'utf-8'); } catch {}
+assert('api.js fetchDiscoveryProfile has live mode server path', apiSrc16.includes('/profile') && apiSrc16.includes('isDemoMode'));
+assert('api.js saveDiscoveryProfile POSTs to /profile in live mode', apiSrc16.includes('/profile') && apiSrc16.includes('POST'));
+assert('api.js saveDiscoveryProfile has localStorage fallback', apiSrc16.includes('localStorage.setItem') && apiSrc16.includes('PROFILE_STORAGE_KEY'));
+
+// 16k. updateApplyUrl in api.js now regenerates pack when apply_url_missing_at_generation
+assert('api.js updateApplyUrl regenerates pack on apply_url_missing_at_generation', apiSrc16.includes('apply_url_missing_at_generation') && apiSrc16.includes('regenerateApplyPack'));
+
+// 16l. ApplyPack.jsx has cover note block, print button, and uses persisted readiness score
+let applyPackSrc16 = '';
+try { applyPackSrc16 = readFileSync(join(__dirname_v, '../src/pages/ApplyPack.jsx'), 'utf-8'); } catch {}
+assert('ApplyPack.jsx renders copy_ready_cover_note_block', applyPackSrc16.includes('copy_ready_cover_note_block'));
+assert('ApplyPack.jsx has Print / Save PDF button', applyPackSrc16.includes('Print') && (applyPackSrc16.includes('window.print') || applyPackSrc16.includes('handleBrowserPrint')));
+assert('ApplyPack.jsx uses persisted pack_readiness_score from pack', applyPackSrc16.includes('pack.pack_readiness_score'));
+assert('ApplyPack.jsx text export includes cover note', applyPackSrc16.includes('copy_ready_cover_note_block') && applyPackSrc16.includes('COVER NOTE'));
+assert('ApplyPack.jsx shows regeneration_reason for apply_url_added', applyPackSrc16.includes('apply_url_added') || applyPackSrc16.includes('regeneration_reason'));
+
+// 16m. Print CSS in style.css
+let styleSrc16 = '';
+try { styleSrc16 = readFileSync(join(__dirname_v, '../src/style.css'), 'utf-8'); } catch {}
+assert('style.css includes @media print rules', styleSrc16.includes('@media print'));
+assert('style.css @media print hides nav chrome', styleSrc16.includes('nav') && styleSrc16.includes('display: none'));
+
+// 16n. approve.js persists pack_readiness_score on opportunity
+let approveSrc16 = '';
+try { approveSrc16 = readFileSync(join(__dirname_v, '../netlify/functions/approve.js'), 'utf-8'); } catch {}
+assert('approve.js persists pack_readiness_score', approveSrc16.includes('pack_readiness_score'));
+
+// 16o. opportunities.js PATCH allows pack_readiness_score
+let oppsFnSrc16 = '';
+try { oppsFnSrc16 = readFileSync(join(__dirname_v, '../netlify/functions/opportunities.js'), 'utf-8'); } catch {}
+assert('opportunities.js PATCH allows pack_readiness_score', oppsFnSrc16.includes('pack_readiness_score'));
+assert('opportunities.js regenerates pack when apply_url_missing_at_generation', oppsFnSrc16.includes('apply_url_missing_at_generation') && oppsFnSrc16.includes('regenerateApplyPack'));
+
+// 16p. Approval remains mandatory (no autoflow bypass)
+assert('Apply Pack v4 still requires approved state', (() => {
+  try { generateApplyPack({ ...tpmOpp16, approval_state: 'pending' }); return false; } catch { return true; }
+})());
+
+// 16q. Scoring hierarchy preserved — weak Ops still not TPM
+const weakOps16 = scoreOpportunity('Operations Manager', 'Store operations, staff rostering, inventory, loss prevention, team scheduling');
+assert('Section 16: weak Ops still not TPM lane', weakOps16.lane !== LANES.TPM);
+assert('Section 16: weak Ops not over-recommended', !weakOps16.recommended || weakOps16.score < 60);
+
 
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);
