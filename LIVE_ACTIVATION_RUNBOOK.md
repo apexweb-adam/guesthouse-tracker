@@ -215,7 +215,130 @@ Run after every first-time source activation.
 
 ---
 
-## 5. Source Health Verification
+## 5. n8n Workflow Activation
+
+These are the three n8n workflows to import and activate. **Import in order.**
+
+### Workflow Files (in `n8n/workflows/`)
+
+| File | Purpose | When to activate |
+|---|---|---|
+| `05-job-discovery.json` | Scheduled discovery (every 6h) + manual trigger | After manual /discover test succeeds |
+| `06-daily-approval-digest.json` | Daily approval queue digest | After first live role appears in queue |
+| `07-weekly-readiness-summary.json` | Weekly readiness summary | After system is stable (day 3+) |
+
+### Import Steps
+
+1. In your n8n instance: **Workflows → Import from file**
+2. Import `05-job-discovery.json` first
+3. Set n8n environment variables (Settings → Variables):
+   ```
+   SITE_URL=https://your-site.netlify.app
+   DISCOVERY_SECRET=<same value as Netlify DISCOVERY_SECRET>
+   ```
+4. **Do NOT activate the schedule yet** — first test manually:
+   - Open workflow 05 → click **Execute Workflow** (manual trigger node)
+   - Verify the HTTP response shows `ok: true`
+5. Once manual trigger works: **activate** the schedule on workflow 05
+6. Import and activate `06-daily-approval-digest.json`
+7. Import `07-weekly-readiness-summary.json` when ready
+
+### Architecture Note
+
+n8n workflows call Netlify functions only. They do NOT contain scoring, dedup, or classification logic. All business logic lives in `_shared/scoring.js`, `_shared/dedup.js`, and `_shared/readiness.js`. n8n is an orchestration-only layer.
+
+### n8n Environment Variables
+
+```
+SITE_URL=https://your-site.netlify.app
+DISCOVERY_SECRET=<same value as set in Netlify>
+```
+
+---
+
+## 5b. Manual Discovery Run (first run procedure)
+
+Before enabling scheduled n8n discovery, run the first discovery manually to verify the system:
+
+### Using the helper script
+
+```bash
+export SITE_URL=https://your-site.netlify.app
+export DISCOVERY_SECRET=your-secret-here
+
+# Run discovery for all enabled live sources
+./scripts/run-discovery.sh
+
+# Or for a single source
+./scripts/run-discovery.sh src-greenhouse-boards
+```
+
+### Using curl directly
+
+```bash
+# Run all enabled sources
+curl -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Run Greenhouse specifically
+curl -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceId":"src-greenhouse-boards"}'
+```
+
+### What a successful response looks like
+
+```json
+{
+  "ok": true,
+  "mode": "live",
+  "sources_run": 1,
+  "total_discovered": 42,
+  "total_ingested": 12,
+  "total_recommended": 8,
+  "results": [
+    {
+      "source_id": "src-greenhouse-boards",
+      "discovered": 42,
+      "ingested": 12,
+      "deduped": 0,
+      "high_review": 4,
+      "error": null
+    }
+  ]
+}
+```
+
+### Post-run validation checklist
+
+After the first successful discovery run, check these pages:
+
+- [ ] `/tracker` → Approval Queue tab — new pending roles should appear
+- [ ] Each queued role has a real `canonical_job_url` (opens correct posting)
+- [ ] Fit scores look reasonable (TPM/Delivery roles should score 60–100)
+- [ ] Low-fit Ops-only roles show with lower scores and `high_review: true`
+- [ ] Approve 1–2 strong roles → Apply Pack generates correctly
+- [ ] Apply Pack has real URL in "Open Original Posting" button
+- [ ] `/sources` page shows last run timestamp and `success` status
+- [ ] Run `./scripts/check-live.sh` to confirm all API gates are healthy
+
+### Second-run dedup test
+
+Run discovery a second time within the same session:
+
+```bash
+./scripts/run-discovery.sh
+```
+
+Expected: `total_ingested: 0` (or very low if new jobs posted in the meantime).
+If dedup is broken, `total_ingested` will match the first run — investigate `processBatch` in `db.js`.
+
+---
+
+## 6. Source Health Verification
 
 The Sources page (`/sources`) shows per-source health metrics. Verify after each discovery run:
 

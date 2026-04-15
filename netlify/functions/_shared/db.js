@@ -80,6 +80,25 @@ export async function getExistingHashes() {
   return _demo.opportunities.map(o => o.dedup_hash);
 }
 
+/**
+ * Fetch existing source_job_id values (for secondary dedup on live discovered roles).
+ * Keyed as "source_family:source_job_id" to prevent cross-source false positives.
+ */
+export async function getExistingSourceJobIds() {
+  const sb = getSupabase();
+  if (sb) {
+    const { data, error } = await sb
+      .from('opportunities')
+      .select('source_family, source_job_id')
+      .not('source_job_id', 'is', null);
+    if (error) return [];
+    return (data || []).map(r => `${r.source_family}:${r.source_job_id}`);
+  }
+  return _demo.opportunities
+    .filter(o => o.source_job_id)
+    .map(o => `${o.source_family}:${o.source_job_id}`);
+}
+
 export async function insertOpportunity(opp) {
   const sb = getSupabase();
   const now = new Date().toISOString();
@@ -200,6 +219,9 @@ export async function listIngestionLogs({ sourceId, limit = 50 } = {}) {
  */
 export async function processBatch(rawJobs, sourceId) {
   const existingHashes = await getExistingHashes();
+  // Secondary dedup: source_family:source_job_id — catches re-runs even if title/content changes.
+  const existingSourceJobIds = await getExistingSourceJobIds();
+  const seenSourceJobIds = new Set(existingSourceJobIds);
   const inserted = [];
   const deduped = [];
   const errors = [];
@@ -207,13 +229,22 @@ export async function processBatch(rawJobs, sourceId) {
 
   for (const raw of rawJobs) {
     try {
+      // Secondary dedup: source_job_id takes precedence when available
+      if (raw.source_job_id && raw.source_family) {
+        const sjKey = `${raw.source_family}:${raw.source_job_id}`;
+        if (seenSourceJobIds.has(sjKey)) {
+          deduped.push({ ...raw, dedup_reason: 'source_job_id' });
+          continue;
+        }
+      }
+
       const hash = generateDedupHash({
         title: raw.title,
         company: raw.company,
         url: raw.url || raw.canonical_job_url || '',
       });
       if (existingHashes.includes(hash)) {
-        deduped.push(raw);
+        deduped.push({ ...raw, dedup_reason: 'hash' });
         continue;
       }
       const scoring = scoreOpportunity(raw.title, raw.description, raw.seniority);
@@ -234,6 +265,9 @@ export async function processBatch(rawJobs, sourceId) {
       const saved = await insertOpportunity(rec);
       inserted.push(saved);
       existingHashes.push(hash);
+      if (raw.source_job_id && raw.source_family) {
+        seenSourceJobIds.add(`${raw.source_family}:${raw.source_job_id}`);
+      }
     } catch (err) {
       errors.push({ raw, error: err.message });
     }

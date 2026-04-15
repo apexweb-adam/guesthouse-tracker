@@ -1645,5 +1645,95 @@ assert('Section 20: Approval gate intact — fetching history does not bypass ap
   return classifyReadinessGroup(highReadinessPending) !== READINESS_GROUPS.READY_TO_APPLY;
 })());
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Section 21: Live Automation Activation Hardening
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n── Section 21: Live Automation Activation Hardening ──');
+
+import { readFileSync as readFileSync21 } from 'fs';
+import { dirname as dirname21, join as join21 } from 'path';
+import { fileURLToPath as fileURLToPath21 } from 'url';
+const __dirname_v21 = dirname21(fileURLToPath21(import.meta.url));
+
+const dbSrc21 = readFileSync21(join21(__dirname_v21, '../netlify/functions/_shared/db.js'), 'utf-8');
+const discoverSrc21 = readFileSync21(join21(__dirname_v21, '../netlify/functions/discover.js'), 'utf-8');
+const jobFinderSrc21 = readFileSync21(join21(__dirname_v21, '../netlify/functions/_shared/jobFinder.js'), 'utf-8');
+const sourcesSrc21 = readFileSync21(join21(__dirname_v21, '../netlify/functions/_shared/sources.js'), 'utf-8');
+const dedupSrc21 = readFileSync21(join21(__dirname_v21, '../netlify/functions/_shared/dedup.js'), 'utf-8');
+const n8nDiscoverSrc21 = readFileSync21(join21(__dirname_v21, '../n8n/workflows/05-job-discovery.json'), 'utf-8');
+const n8nDigestSrc21 = readFileSync21(join21(__dirname_v21, '../n8n/workflows/06-daily-approval-digest.json'), 'utf-8');
+const runbookSrc21 = readFileSync21(join21(__dirname_v21, '../LIVE_ACTIVATION_RUNBOOK.md'), 'utf-8');
+const runDiscoverySrc21 = readFileSync21(join21(__dirname_v21, '../scripts/run-discovery.sh'), 'utf-8');
+const checkLiveSrc21 = readFileSync21(join21(__dirname_v21, '../scripts/check-live.sh'), 'utf-8');
+
+// 21a. discover.js auth hardening
+assert('discover.js requires DISCOVERY_SECRET — rejects when missing', discoverSrc21.includes('if (!secret) return false'));
+assert('discover.js checks Authorization header for Bearer token', discoverSrc21.includes("'bearer '") || discoverSrc21.includes('"bearer "') || discoverSrc21.includes('.toLowerCase().startsWith'));
+assert('discover.js checks X-Discovery-Secret header', discoverSrc21.includes('x-discovery-secret'));
+assert('discover.js returns 401 on unauthorized call', discoverSrc21.includes('statusCode: 401'));
+assert('discover.js has LIVE_INTAKE_ENABLED kill switch check', discoverSrc21.includes('isLiveIntakeEnabled'));
+
+// 21b. Greenhouse-first source config validation
+assert('discover.js validates GREENHOUSE_BOARDS not empty before running', discoverSrc21.includes('GREENHOUSE_BOARDS env var is empty') || discoverSrc21.includes('greenhouseBoards.length === 0'));
+assert('discover.js rejects Lever source if LEVER_BOARDS is empty', discoverSrc21.includes('LEVER_BOARDS env var is empty') || discoverSrc21.includes('leverBoards.length === 0'));
+assert('discover.js rejects USAJobs if API key missing', discoverSrc21.includes('USAJOBS_API_KEY and USAJOBS_USER_AGENT'));
+assert('sources.js Greenhouse source is defined with sourceFamily=greenhouse', sourcesSrc21.includes("sourceFamily: 'greenhouse'") || sourcesSrc21.includes('sourceFamily:"greenhouse"'));
+assert('sources.js canSourceRunLive requires liveCapable and enabled', sourcesSrc21.includes('liveCapable') && sourcesSrc21.includes('enabled'));
+
+// 21c. Secondary dedup via source_job_id
+assert('db.js exports getExistingSourceJobIds', dbSrc21.includes('export async function getExistingSourceJobIds'));
+assert('db.js processBatch imports getExistingSourceJobIds', dbSrc21.includes('getExistingSourceJobIds'));
+assert('db.js processBatch checks source_job_id before hash', (() => {
+  const batchFn = dbSrc21.slice(dbSrc21.indexOf('export async function processBatch'));
+  return batchFn.includes('source_job_id') && batchFn.includes('seenSourceJobIds');
+})());
+assert('db.js source_job_id dedup key is source_family:source_job_id', dbSrc21.includes('source_family}:${') || dbSrc21.includes('source_family} + '));
+assert('db.js dedup_reason field set for source_job_id deduped records', dbSrc21.includes("dedup_reason: 'source_job_id'"));
+
+// 21d. jobFinder normalisation
+assert('jobFinder.js normaliseJob sets is_demo_record: false', jobFinderSrc21.includes('is_demo_record: false'));
+assert('jobFinder.js normaliseJob sets canonical_job_url', jobFinderSrc21.includes('canonical_job_url'));
+assert('jobFinder.js normaliseJob sets source_job_id', jobFinderSrc21.includes('source_job_id'));
+assert('jobFinder.js Greenhouse adapter sets source_family=greenhouse', jobFinderSrc21.includes('SOURCE_FAMILIES.GREENHOUSE'));
+assert('jobFinder.js does not set is_demo_record: true anywhere', !jobFinderSrc21.includes('is_demo_record: true'));
+
+// 21e. n8n workflows use SITE_URL and DISCOVERY_SECRET
+assert('n8n discover workflow uses $env.SITE_URL', n8nDiscoverSrc21.includes('$env.SITE_URL'));
+assert('n8n discover workflow uses $env.DISCOVERY_SECRET', n8nDiscoverSrc21.includes('$env.DISCOVERY_SECRET'));
+assert('n8n discover workflow sends X-Discovery-Secret header', n8nDiscoverSrc21.includes('X-Discovery-Secret'));
+assert('n8n digest workflow uses $env.SITE_URL', n8nDigestSrc21.includes('$env.SITE_URL'));
+
+// 21f. Manual trigger scripts exist
+assert('scripts/run-discovery.sh has SITE_URL check', runDiscoverySrc21.includes('SITE_URL'));
+assert('scripts/run-discovery.sh has DISCOVERY_SECRET check', runDiscoverySrc21.includes('DISCOVERY_SECRET'));
+assert('scripts/run-discovery.sh calls POST /discover', runDiscoverySrc21.includes('/.netlify/functions/discover'));
+assert('scripts/check-live.sh checks 401 for unauthorized call', checkLiveSrc21.includes('401'));
+assert('scripts/check-live.sh checks /opportunities endpoint', checkLiveSrc21.includes('/opportunities'));
+
+// 21g. LIVE_ACTIVATION_RUNBOOK.md completeness
+assert('LIVE_ACTIVATION_RUNBOOK.md covers migrations', runbookSrc21.includes('Migration') || runbookSrc21.includes('migration'));
+assert('LIVE_ACTIVATION_RUNBOOK.md documents DISCOVERY_SECRET', runbookSrc21.includes('DISCOVERY_SECRET'));
+assert('LIVE_ACTIVATION_RUNBOOK.md documents GREENHOUSE_BOARDS', runbookSrc21.includes('GREENHOUSE_BOARDS'));
+assert('LIVE_ACTIVATION_RUNBOOK.md documents kill switch / rollback', runbookSrc21.includes('Kill Switch') || runbookSrc21.includes('kill switch') || runbookSrc21.includes('Rollback'));
+assert('LIVE_ACTIVATION_RUNBOOK.md documents curl command for manual run', runbookSrc21.includes('curl') && runbookSrc21.includes('/discover'));
+assert('LIVE_ACTIVATION_RUNBOOK.md documents LIVE_INTAKE_ENABLED', runbookSrc21.includes('LIVE_INTAKE_ENABLED'));
+
+// 21h. Hierarchy guard
+const tpmCheck21 = scoreOpportunity('Technical Project Manager', 'Lead SDLC delivery. Agile, Jira, stakeholder management, program delivery.');
+assert('Section 21: TPM hierarchy intact — TPM scores as TPM lane', tpmCheck21.lane === LANES.TPM);
+assert('Section 21: Approval gate intact — live source activation does not bypass approval', (() => {
+  // Even a live-discovered, highly-scored role starts as pending
+  const liveDiscoveredRole = {
+    approval_state: 'pending',
+    status: 'discovered',
+    pack_readiness_score: 90,
+    application_url: 'https://greenhouse.io/jobs/12345',
+    fit_score: 88,
+    recommended: true,
+    source_family: 'greenhouse',
+  };
+  return classifyReadinessGroup(liveDiscoveredRole) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

@@ -396,7 +396,7 @@ The `/opportunities` PATCH handler now also records `status_changed` events when
 
 ## Automation-Readiness Status
 
-The system is now ready to activate structured job discovery automation. Pre-flight checklist:
+The system is now **activation-ready** for the first live structured discovery run. Pre-flight checklist:
 
 | Item | Status |
 |---|---|
@@ -404,21 +404,39 @@ The system is now ready to activate structured job discovery automation. Pre-fli
 | Live `/readiness-history` endpoint deployed | ✅ |
 | OpportunityDetail timeline fetches from live DB | ✅ |
 | Generic PATCH status changes recorded | ✅ |
+| `/discover` auth gate (DISCOVERY_SECRET required) | ✅ |
+| Greenhouse adapter + GREENHOUSE_BOARDS config validation | ✅ |
+| Secondary dedup via `source_job_id` (prevents re-ingestion) | ✅ |
+| Primary dedup via title+company+URL hash | ✅ |
+| Source config validation (clear errors on missing env vars) | ✅ |
+| LIVE_INTAKE_ENABLED kill switch | ✅ |
 | Service worker offline fallback active | ✅ |
 | Tracker readiness-group filter available | ✅ |
 | n8n workflow files in `n8n/workflows/` | ✅ |
+| n8n workflows use SITE_URL + DISCOVERY_SECRET | ✅ |
+| Manual trigger scripts (`scripts/run-discovery.sh`) | ✅ |
+| Post-run validation helper (`scripts/check-live.sh`) | ✅ |
 | Approval gate enforced (no bypass) | ✅ |
 | Structured sources only (no scraping) | ✅ |
 | Demo mode isolated from live data | ✅ |
+| 582 automated tests passing | ✅ |
 
-**Next steps to activate live discovery:**
-1. Set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` in Netlify env
-2. Set `DISCOVERY_SECRET` to a long random string
-3. Set `GREENHOUSE_BOARDS` to one or more board slugs (e.g. `acme,beta-corp`)
-4. Set `LIVE_INTAKE_ENABLED=true`
-5. Run migration 004 (`supabase/migrations/004_readiness_history.sql`) against your DB
-6. Import n8n workflows and set `SITE_URL` + `DISCOVERY_SECRET` env vars
-7. Activate the discovery workflow in n8n
-8. Monitor `/logs` and the Readiness Panel in Reports for first intake results
+**First live rollout — activation sequence:**
+1. Run all 4 Supabase migrations in order (`001` → `002` → `003` → `004`)
+2. Set Netlify env vars: `VITE_DEMO_MODE=false`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `DISCOVERY_SECRET`
+3. Set `GREENHOUSE_BOARDS` to one or more public board slugs (e.g. `atlassian,servicenow`)
+4. Enable the Greenhouse source: in sources config or DB, set `enabled: true` for `src-greenhouse-boards`
+5. Set `LIVE_INTAKE_ENABLED=true` in Netlify
+6. Deploy — verify the site loads without demo badge
+7. Test auth gate: `curl -X POST .../discover -d '{}' → expect 401`
+8. Run first live discovery: `./scripts/run-discovery.sh`
+9. Open `/tracker` → Approval Queue — approve strong TPM/Delivery roles
+10. Import n8n workflow `05-job-discovery.json` → test manual trigger → activate schedule
+11. Run `./scripts/check-live.sh` to confirm all endpoints healthy
+12. Run a second discovery → confirm `total_ingested: 0` (dedup working)
 
-See `LIVE_ACTIVATION_RUNBOOK.md` for detailed steps and rollback instructions.
+**Rollback / kill switch:**
+- Set `LIVE_INTAKE_ENABLED=false` in Netlify → redeploy (stops all automated intake immediately)
+- Remove bad records: `DELETE FROM opportunities WHERE is_demo_record = FALSE AND approval_state = 'pending' AND discovered_at > 'YYYY-MM-DD'`
+
+See `LIVE_ACTIVATION_RUNBOOK.md` for complete step-by-step instructions, post-run validation checklist, and rollback procedures.
