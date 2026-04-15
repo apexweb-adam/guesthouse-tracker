@@ -467,3 +467,77 @@ All previous manual-only actions remain unchanged. The prioritization layer prov
 - Application submission is never automated
 - Approval remains mandatory for every role
 - Readiness classification does not bypass any approval requirement
+
+---
+
+## v6.0 Changes — PWA + Approval Queue + Reports + Batch URL + History
+
+### PWA / Installability
+
+The app now satisfies PWA installability criteria.
+
+Files added:
+- `public/manifest.json` — Web App Manifest
+- `public/sw.js` — Service Worker
+- `public/icon-192.png` — 192×192 app icon
+- `public/icon-512.png` — 512×512 app icon (also maskable)
+- `public/apple-touch-icon.png` — 180×180 iOS icon
+
+`index.html` now includes:
+- `<link rel="manifest" href="/manifest.json">`
+- `<meta name="theme-color" content="#1e3a5f">`
+- `<link rel="apple-touch-icon" ...>`
+- Service worker registration script
+
+**Service worker caching strategy:**
+- App shell (HTML/JS/CSS): Stale-While-Revalidate
+- Fonts: Cache First
+- Netlify Functions (all `/.netlify/functions/*`): Network Only — live data is never cached
+
+**IMPORTANT:** If you update the app, increment `CACHE_NAME` in `public/sw.js` to bust the shell cache.
+
+### Approval Queue Readiness Layer
+
+`ApprovalQueue.jsx` now shows:
+- ReadinessBadge per pending role (reason + score)
+- Grouped tiers: High-Fit → Standard → Weak Fit
+- Sort by Fit Score or Readiness
+- Missing-URL warning inline per role
+- Approval gate reminder remains unchanged
+
+### Reports — Readiness Panel
+
+New "Readiness Panel" tab added to `/reports` (default view).
+Shows live readiness counts and role lists from `state.opportunities`.
+No API call required — uses `computeReadinessSummary()` from `_shared/readiness.js`.
+
+### Follow-up Alert Banner
+
+`Dashboard.jsx` now shows a dismissable banner when any opportunity has `next_action_due` within the next 2 days. Banner is session-dismissed only (no localStorage persistence). No fake urgency.
+
+### Batch Apply URL Add
+
+`BatchUrlPanel.jsx` (new component) provides a multi-record URL input form:
+- Only shows roles in NEEDS_APPLY_URL group
+- Calls `updateApplyUrl()` per record (full auditability preserved)
+- Surfaced in `Tracker.jsx` via a contextual banner when blocked roles exist
+
+`api.js` exports: `batchUpdateApplyUrls(entries)`
+
+### Readiness History
+
+`api.js` exports:
+- `recordReadinessHistory(oppId, eventType, payload)` — writes to localStorage (demo) or Supabase (live)
+- `getReadinessHistory(oppId, limit)` — reads history
+
+Supabase migration: `supabase/migrations/004_readiness_history.sql`
+
+Events tracked: `status_changed`, `apply_url_added`, `pack_regenerated`, `approval_state_changed`, `readiness_score_changed`
+
+### Verification
+
+`scripts/verify.js` now has **465 tests** across **18 sections**.
+
+Section 18 covers: manifest, service worker, icons, approval queue readiness, reports readiness panel, follow-up banner, batch URL panel, readiness history, hierarchy guard, approval guard.
+
+Run: `node scripts/verify.js`

@@ -1,10 +1,76 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext.jsx';
 import OpportunityCard from '../components/OpportunityCard.jsx';
 import QuickAddWidget from '../components/QuickAddWidget.jsx';
 import { approveOpportunity } from '../lib/api.js';
 import { getBestNextActions, classifyReadinessGroup, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
+
+// ─── Follow-up Due Alert Banner ───────────────────────────────────────────────
+// Shows only when real follow-up actions are overdue or due today/tomorrow.
+// Dismissable for the session. Does not create fake urgency.
+
+function FollowUpBanner({ opps, onNavigate }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  const overdue = useMemo(() => {
+    const now = new Date();
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+    const tomorrowEnd = new Date(now);
+    tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+    tomorrowEnd.setHours(23, 59, 59, 999);
+
+    return opps.filter(o => {
+      if (!o.next_action_due) return false;
+      if (['rejected','ghosted','withdrawn'].includes(o.status)) return false;
+      const due = new Date(o.next_action_due);
+      return due <= tomorrowEnd; // Due today, tomorrow, or already overdue
+    }).sort((a, b) => new Date(a.next_action_due) - new Date(b.next_action_due));
+  }, [opps]);
+
+  if (dismissed || overdue.length === 0) return null;
+
+  const isOverdue = overdue.filter(o => new Date(o.next_action_due) < new Date());
+  const urgencyColor = isOverdue.length > 0 ? '#c2410c' : '#92400e';
+  const urgencyBg = isOverdue.length > 0 ? '#fff1f2' : '#fef3c7';
+  const urgencyBorder = isOverdue.length > 0 ? '#fca5a5' : '#fde68a';
+  const icon = isOverdue.length > 0 ? '🔴' : '📅';
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      background: urgencyBg, border: `1px solid ${urgencyBorder}`,
+      borderRadius: 8, padding: '10px 14px', marginBottom: 16,
+    }}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <div style={{ flex: 1 }}>
+        <span style={{ fontWeight: 600, color: urgencyColor, fontSize: 13 }}>
+          {isOverdue.length > 0
+            ? `${isOverdue.length} follow-up${isOverdue.length > 1 ? 's' : ''} overdue`
+            : `${overdue.length} follow-up${overdue.length > 1 ? 's' : ''} due soon`}
+        </span>
+        <span style={{ color: urgencyColor, fontSize: 12, marginLeft: 8 }}>
+          {overdue[0].title} @ {overdue[0].company}
+          {overdue.length > 1 ? ` + ${overdue.length - 1} more` : ''}
+        </span>
+      </div>
+      <button
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: urgencyColor, fontSize: 13, fontWeight: 600 }}
+        onClick={() => onNavigate('/tracker')}
+      >
+        View →
+      </button>
+      <button
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16, lineHeight: 1 }}
+        onClick={() => setDismissed(true)}
+        title="Dismiss"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { state, dispatch, loadOpportunities, notify } = useApp();
@@ -58,6 +124,9 @@ export default function Dashboard() {
       <p className="section-sub">
         Approval-based job search OS · {demoMode ? 'Demo mode — no backend required' : 'Live mode'}
       </p>
+
+      {/* Follow-up Due Alert — only when real overdue/upcoming tasks exist */}
+      <FollowUpBanner opps={opps} onNavigate={nav} />
 
       {/* Quick Add Widget */}
       <QuickAddWidget />

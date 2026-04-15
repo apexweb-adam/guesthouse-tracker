@@ -203,3 +203,98 @@ The Apply Pack can be:
 The print output includes all pack sections, readiness score, cover note block, checklist, and a generation timestamp.
 
 ---
+
+---
+
+## PWA / Installability
+
+The app is a Progressive Web App (PWA) and can be installed to your device home screen or desktop.
+
+### How to install
+
+- **Chrome / Edge (Desktop):** Click the install icon (⊕) in the address bar, or go to ⋮ menu → "Install Job Search OS"
+- **Chrome (Android):** Tap the menu → "Add to Home Screen"
+- **Safari (iOS):** Tap the Share icon → "Add to Home Screen"
+
+### What the service worker caches
+
+The service worker (`public/sw.js`) uses a **safe strategy**:
+
+| Resource type | Strategy | Why |
+|---|---|---|
+| App shell (HTML/JS/CSS) | Stale-While-Revalidate | Fast loads, background refresh |
+| Fonts (Google Fonts) | Cache First | Immutable, font CDN is reliable |
+| Netlify Functions / API | **Network Only** | Live data must never be served stale |
+
+**Live operational data is never served from cache.** Approval decisions, readiness scores, and opportunity records always come from the server. If offline, API calls will fail gracefully — the app shell loads, but data will not update.
+
+### Manifest
+
+`public/manifest.json` configures:
+- App name: "Job Search OS" / short name: "Job OS"
+- Theme color: `#1e3a5f` (navy)
+- Start URL: `/`
+- Display: `standalone`
+- Icons: 192×192, 512×512 (maskable), 180×180 apple-touch-icon
+
+---
+
+## Approval Queue — Readiness Indicators
+
+The Approval Queue now shows readiness context for each pending role:
+
+- **Fit tiers**: High-Fit (score ≥ 70 + recommended) at the top, Standard in the middle, Weak Fit at the bottom
+- **Readiness badge**: Shows current readiness group and reason (e.g., "Needs apply URL to reach full readiness")
+- **Sort control**: Sort by Fit Score or by Readiness (pack_readiness_score)
+- **Missing URL warning**: Inline warning if no apply URL is set, so you know to add it after approving
+
+Approval is still mandatory. No readiness score bypasses the approval gate.
+
+---
+
+## Batch Apply URL Add
+
+When roles are approved but blocked by a missing apply URL, the Tracker shows a notification banner. Click **"+ Add URLs"** to open the Batch URL Panel, where you can paste apply URLs for multiple roles without opening each one individually.
+
+Each URL save:
+- Calls `updateApplyUrl()` per record (full auditability preserved)
+- Triggers Apply Pack regeneration for that role
+- Updates `pack_readiness_score` immediately
+
+---
+
+## Readiness History
+
+Key transitions are tracked per opportunity in localStorage (demo mode) or in the `readiness_history` Supabase table (production):
+
+| Event | When |
+|---|---|
+| `status_changed` | Opportunity status changes |
+| `apply_url_added` | Apply URL is added |
+| `pack_regenerated` | Apply Pack is regenerated |
+| `approval_state_changed` | Approval state changes |
+| `readiness_score_changed` | Pack readiness score changes |
+
+Use `recordReadinessHistory(oppId, eventType, payload)` and `getReadinessHistory(oppId)` from `src/lib/api.js`.
+
+---
+
+## Follow-up Alert
+
+When one or more opportunities have a `next_action_due` date that is today, tomorrow, or already overdue, a dismissable alert banner appears at the top of the Dashboard. It shows the most urgent role and links to the Tracker. It does not create fake urgency — it only surfaces real due dates.
+
+---
+
+## Reports — Readiness Panel
+
+The Reports page has a new **Readiness Panel** tab (default view) showing:
+
+- Ready to Apply count
+- High Readiness (85%+) count
+- Blocked by missing URL count
+- Follow-up due count
+- High-fit pending approval count
+- Full lists of each group with role names and scores
+- Guidance on which page to go to for each action
+
+The Weekly Summary digest also now includes a `readiness` block with the same counts.

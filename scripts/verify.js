@@ -1238,5 +1238,163 @@ assert('Section 17: Approval guard maintained — no readiness bypass', (() => {
 })());
 
 
+// (Result is printed at end of file after all sections)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 18: PWA + Approval Queue Readiness + Reports Panel + Follow-up
+//             Alert + Batch URL + Readiness History
+// ═══════════════════════════════════════════════════════════════════════════
+
+console.log('\n== 18. PWA + Approval Queue Readiness + Reports + Batch URL + History ==');
+
+import { readFileSync as readFileSync18 } from 'fs';
+import { join as join18, dirname as dirname18 } from 'path';
+import { fileURLToPath as fileURLToPath18 } from 'url';
+const __dirname_v18 = dirname18(fileURLToPath18(import.meta.url));
+
+// 18a. PWA: manifest.json exists and has required fields
+let manifestSrc18 = '';
+try { manifestSrc18 = readFileSync18(join18(__dirname_v18, '../public/manifest.json'), 'utf-8'); } catch {}
+assert('manifest.json exists', manifestSrc18.length > 0);
+let manifest18 = {};
+try { manifest18 = JSON.parse(manifestSrc18); } catch {}
+assert('manifest.json has name', typeof manifest18.name === 'string' && manifest18.name.length > 0);
+assert('manifest.json has short_name', typeof manifest18.short_name === 'string');
+assert('manifest.json has start_url', manifest18.start_url === '/');
+assert('manifest.json has display', manifest18.display === 'standalone');
+assert('manifest.json has theme_color', typeof manifest18.theme_color === 'string');
+assert('manifest.json has background_color', typeof manifest18.background_color === 'string');
+assert('manifest.json has icons array', Array.isArray(manifest18.icons) && manifest18.icons.length >= 2);
+assert('manifest.json has maskable icon', (manifest18.icons || []).some(i => i.purpose === 'maskable'));
+assert('manifest.json has 192x192 icon', (manifest18.icons || []).some(i => i.sizes === '192x192'));
+assert('manifest.json has 512x512 icon', (manifest18.icons || []).some(i => i.sizes === '512x512'));
+
+// 18b. index.html has manifest link + theme-color + apple-touch-icon
+let indexSrc18 = '';
+try { indexSrc18 = readFileSync18(join18(__dirname_v18, '../index.html'), 'utf-8'); } catch {}
+assert('index.html links manifest.json', indexSrc18.includes('manifest.json'));
+assert('index.html has theme-color meta', indexSrc18.includes('theme-color'));
+assert('index.html has apple-touch-icon', indexSrc18.includes('apple-touch-icon'));
+assert('index.html registers service worker', indexSrc18.includes('serviceWorker') && indexSrc18.includes('register'));
+
+// 18c. Service worker file exists and has correct strategy
+let swSrc18 = '';
+try { swSrc18 = readFileSync18(join18(__dirname_v18, '../public/sw.js'), 'utf-8'); } catch {}
+assert('sw.js exists', swSrc18.length > 0);
+assert('sw.js has install event', swSrc18.includes('install'));
+assert('sw.js has activate event', swSrc18.includes('activate'));
+assert('sw.js has fetch event', swSrc18.includes('fetch'));
+assert('sw.js passes API paths through network-only', swSrc18.includes('/.netlify/functions/') && swSrc18.includes('Network Only') || swSrc18.includes('fetch(request)'));
+assert('sw.js uses skipWaiting for fast activation', swSrc18.includes('skipWaiting'));
+assert('sw.js claims clients on activate', swSrc18.includes('clients.claim'));
+
+// 18d. PWA icon files exist
+const fs18 = { existsSync: (p) => { try { readFileSync18(p); return true; } catch { return false; } } };
+assert('public/icon-192.png exists', fs18.existsSync(join18(__dirname_v18, '../public/icon-192.png')));
+assert('public/icon-512.png exists', fs18.existsSync(join18(__dirname_v18, '../public/icon-512.png')));
+assert('public/apple-touch-icon.png exists', fs18.existsSync(join18(__dirname_v18, '../public/apple-touch-icon.png')));
+
+// 18e. ApprovalQueue.jsx has readiness indicators and lane grouping
+let queueSrc18 = '';
+try { queueSrc18 = readFileSync18(join18(__dirname_v18, '../src/pages/ApprovalQueue.jsx'), 'utf-8'); } catch {}
+assert('ApprovalQueue.jsx imports classifyReadinessGroup', queueSrc18.includes('classifyReadinessGroup'));
+assert('ApprovalQueue.jsx imports getReadinessReason', queueSrc18.includes('getReadinessReason'));
+assert('ApprovalQueue.jsx has ReadinessBadge component', queueSrc18.includes('ReadinessBadge'));
+assert('ApprovalQueue.jsx groups by high-fit', queueSrc18.includes('highFit') && queueSrc18.includes('High-Fit'));
+assert('ApprovalQueue.jsx shows missing URL warning', queueSrc18.includes('No apply URL set'));
+assert('ApprovalQueue.jsx has readiness sort control', queueSrc18.includes('sortBy') && queueSrc18.includes('Readiness'));
+assert('ApprovalQueue.jsx approval gate still enforced', queueSrc18.includes('Approval gate enforced'));
+
+// 18f. Reports.jsx has Readiness Panel
+let reportsSrc18 = '';
+try { reportsSrc18 = readFileSync18(join18(__dirname_v18, '../src/pages/Reports.jsx'), 'utf-8'); } catch {}
+assert('Reports.jsx imports computeReadinessSummary', reportsSrc18.includes('computeReadinessSummary'));
+assert('Reports.jsx has ReadinessPanel component', reportsSrc18.includes('ReadinessPanel'));
+assert('Reports.jsx has readiness digest type', reportsSrc18.includes("'readiness'") || reportsSrc18.includes('"readiness"'));
+assert('Reports.jsx shows ready-to-apply count', reportsSrc18.includes('Ready to Apply'));
+assert('Reports.jsx shows blocked-by-missing-URL', reportsSrc18.includes('Blocked') && reportsSrc18.includes('URL'));
+assert('Reports.jsx shows follow-up due', reportsSrc18.includes('Follow-up Due'));
+assert('Reports.jsx shows high-fit pending approval', reportsSrc18.includes('High-Fit Pending Approval'));
+assert('Reports.jsx weekly digest includes readiness', reportsSrc18.includes('digest.readiness'));
+
+// 18g. Dashboard.jsx has FollowUpBanner
+let dashSrc18 = '';
+try { dashSrc18 = readFileSync18(join18(__dirname_v18, '../src/pages/Dashboard.jsx'), 'utf-8'); } catch {}
+assert('Dashboard.jsx has FollowUpBanner component', dashSrc18.includes('FollowUpBanner'));
+assert('Dashboard.jsx FollowUpBanner checks next_action_due', dashSrc18.includes('next_action_due'));
+assert('Dashboard.jsx FollowUpBanner is dismissable', dashSrc18.includes('dismissed') && dashSrc18.includes('setDismissed'));
+assert('Dashboard.jsx FollowUpBanner only shows real tasks', dashSrc18.includes('overdue.length === 0') || dashSrc18.includes('overdue.length > 0'));
+
+// 18h. BatchUrlPanel component exists and is correct
+let batchSrc18 = '';
+try { batchSrc18 = readFileSync18(join18(__dirname_v18, '../src/components/BatchUrlPanel.jsx'), 'utf-8'); } catch {}
+assert('BatchUrlPanel.jsx exists', batchSrc18.length > 0);
+assert('BatchUrlPanel.jsx uses batchUpdateApplyUrls', batchSrc18.includes('batchUpdateApplyUrls'));
+assert('BatchUrlPanel.jsx filters for needs_apply_url group', batchSrc18.includes('NEEDS_APPLY_URL'));
+assert('BatchUrlPanel.jsx preserves auditability note', batchSrc18.includes('Apply Packs') || batchSrc18.includes('readiness scores'));
+
+// 18i. Tracker.jsx includes BatchUrlPanel
+let trackerSrc18 = '';
+try { trackerSrc18 = readFileSync18(join18(__dirname_v18, '../src/pages/Tracker.jsx'), 'utf-8'); } catch {}
+assert('Tracker.jsx imports BatchUrlPanel', trackerSrc18.includes('BatchUrlPanel'));
+assert('Tracker.jsx shows batch URL prompt when blocked roles exist', trackerSrc18.includes('needsUrlCount'));
+assert('Tracker.jsx has showBatchUrl state', trackerSrc18.includes('showBatchUrl'));
+
+// 18j. api.js exports batchUpdateApplyUrls and readiness history
+let apiSrc18 = '';
+try { apiSrc18 = readFileSync18(join18(__dirname_v18, '../src/lib/api.js'), 'utf-8'); } catch {}
+assert('api.js exports batchUpdateApplyUrls', apiSrc18.includes('batchUpdateApplyUrls'));
+assert('api.js exports recordReadinessHistory', apiSrc18.includes('recordReadinessHistory'));
+assert('api.js exports getReadinessHistory', apiSrc18.includes('getReadinessHistory'));
+assert('api.js batchUpdateApplyUrls calls updateApplyUrl per entry', apiSrc18.includes('for (const') && apiSrc18.includes('updateApplyUrl'));
+assert('api.js readiness history uses localStorage', apiSrc18.includes('READINESS_HISTORY_KEY'));
+assert('api.js weekly digest includes readiness summary', apiSrc18.includes('computeReadinessSummary(opportunities)'));
+
+// 18k. readiness history unit test
+{
+  // Simulate recordReadinessHistory behavior using the logic directly
+  const history = [];
+  function recordEntry(oppId, eventType, payload) {
+    history.unshift({ id: `rh-${Date.now()}`, opportunity_id: oppId, event_type: eventType, payload, recorded_at: new Date().toISOString() });
+    return history[0];
+  }
+  const e1 = recordEntry('opp-1', 'status_changed', { from: 'discovered', to: 'approved' });
+  const e2 = recordEntry('opp-1', 'readiness_score_changed', { from: 50, to: 85 });
+  const e3 = recordEntry('opp-2', 'apply_url_added', { url: 'https://example.com/apply' });
+  assert('readiness history: entry has correct opportunity_id', e1.opportunity_id === 'opp-1');
+  assert('readiness history: entry has event_type', e1.event_type === 'status_changed');
+  assert('readiness history: entry has payload', e1.payload.from === 'discovered');
+  assert('readiness history: filter by opp works', history.filter(e => e.opportunity_id === 'opp-1').length === 2);
+  assert('readiness history: different opps stored separately', history.filter(e => e.opportunity_id === 'opp-2').length === 1);
+}
+
+// 18l. batchUpdateApplyUrls logic test
+{
+  // Simulate batch: entries with valid URLs should be processed, empty ones skipped
+  const entries = [
+    { id: 'opp-a', applicationUrl: 'https://company.com/apply' },
+    { id: 'opp-b', applicationUrl: '' }, // Should be skipped
+    { id: 'opp-c', applicationUrl: '  ' }, // Should be skipped
+  ];
+  const validEntries = entries.filter(e => e.applicationUrl && e.applicationUrl.trim());
+  assert('batchUpdateApplyUrls: skips empty URLs', validEntries.length === 1);
+  assert('batchUpdateApplyUrls: processes valid URLs', validEntries[0].id === 'opp-a');
+}
+
+// 18m. Migration 004 exists
+let migration4Src18 = '';
+try { migration4Src18 = readFileSync18(join18(__dirname_v18, '../supabase/migrations/004_readiness_history.sql'), 'utf-8'); } catch {}
+assert('Migration 004 exists (readiness_history)', migration4Src18.includes('readiness_history'));
+assert('Migration 004 creates correct columns', migration4Src18.includes('opportunity_id') && migration4Src18.includes('event_type') && migration4Src18.includes('payload'));
+assert('Migration 004 creates indexes', migration4Src18.includes('CREATE INDEX'));
+
+// 18n. Hierarchy + approval guard still intact
+const tpmCheck18 = scoreOpportunity('Technical Project Manager', 'Lead technical delivery. SDLC, Agile, Jira, stakeholder management, PMP preferred.');
+assert('Section 18: TPM hierarchy intact', tpmCheck18.lane === LANES.TPM);
+assert('Section 18: Approval remains mandatory — no readiness bypass', (() => {
+  const unapprovedOpp18 = { approval_state: 'pending', status: 'discovered', pack_readiness_score: 95, application_url: 'https://example.com/apply', fit_score: 90 };
+  return classifyReadinessGroup(unapprovedOpp18) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

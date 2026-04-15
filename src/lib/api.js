@@ -11,6 +11,7 @@ import { generateDedupHash } from '../../netlify/functions/_shared/dedup.js';
 import { evaluateStaleness, scanForStale, computeNextAction } from '../../netlify/functions/_shared/stale.js';
 import { generateApplyPack, applyResumeOverride, regenerateApplyPack, computePackReadinessScore } from '../../netlify/functions/_shared/applyPack.js';
 import { DEFAULT_SOURCES } from '../../netlify/functions/_shared/sources.js';
+import { computeReadinessSummary } from '../../netlify/functions/_shared/readiness.js';
 import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
 // ─── Mode Detection ───────────────────────────────────────────────────────────
@@ -514,6 +515,7 @@ export async function fetchDigest(type = 'approval') {
             offers: opportunities.filter(o => o.status === 'offer').length,
             rejected: opportunities.filter(o => o.status === 'rejected').length,
           },
+          readiness: computeReadinessSummary(opportunities),
           ingestion: {
             runsTotal: logs.length,
             newJobsIngested: logs.reduce((n, l) => n + (l.count_new || 0), 0),
@@ -920,4 +922,89 @@ export async function fetchProfileBothSources() {
   );
 
   return { server: serverProfile, local: localProfile, hasConflict, serverSource };
+}
+
+// ─── Batch Apply URL Update ────────────────────────────────────────────────────
+
+/**
+ * Update apply URLs for multiple opportunities in one operation.
+ * Each entry: { id, applicationUrl }
+ * Preserves auditability — calls updateApplyUrl() for each, which handles
+ * Apply Pack regeneration and history.
+ *
+ * @param {Array<{id: string, applicationUrl: string}>} entries
+ * @returns {Promise<{updated: number, errors: Array}>}
+ */
+export async function batchUpdateApplyUrls(entries) {
+  const results = { updated: 0, errors: [] };
+  for (const { id, applicationUrl } of entries) {
+    if (!applicationUrl || !applicationUrl.trim()) continue;
+    try {
+      await updateApplyUrl(id, applicationUrl.trim());
+      results.updated++;
+    } catch (e) {
+      results.errors.push({ id, error: e.message });
+    }
+  }
+  return results;
+}
+
+// ─── Readiness History ────────────────────────────────────────────────────────
+
+const READINESS_HISTORY_KEY = 'job-search-os-readiness-history-v1';
+
+/**
+ * Load readiness history from localStorage.
+ * @returns {Array} history entries
+ */
+function loadReadinessHistory() {
+  try {
+    const raw = localStorage.getItem(READINESS_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Record a readiness history event for an opportunity.
+ * Keeps last 500 entries to avoid unbounded growth.
+ *
+ * @param {string} opportunityId
+ * @param {string} eventType - e.g. 'readiness_score_changed', 'status_changed', 'apply_url_added', 'pack_regenerated', 'approval_state_changed'
+ * @param {Object} payload - { from, to, reason, ... }
+ */
+export function recordReadinessHistory(opportunityId, eventType, payload = {}) {
+  try {
+    const history = loadReadinessHistory();
+    const entry = {
+      id: `rh-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      opportunity_id: opportunityId,
+      event_type: eventType,
+      payload,
+      recorded_at: new Date().toISOString(),
+    };
+    history.unshift(entry);
+    // Cap at 500 entries
+    const capped = history.slice(0, 500);
+    localStorage.setItem(READINESS_HISTORY_KEY, JSON.stringify(capped));
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get readiness history for a specific opportunity or all opportunities.
+ *
+ * @param {string|null} opportunityId - if null, returns all history
+ * @param {number} limit - max entries to return
+ * @returns {Array} history entries sorted newest first
+ */
+export function getReadinessHistory(opportunityId = null, limit = 50) {
+  const history = loadReadinessHistory();
+  const filtered = opportunityId
+    ? history.filter(e => e.opportunity_id === opportunityId)
+    : history;
+  return filtered.slice(0, limit);
 }

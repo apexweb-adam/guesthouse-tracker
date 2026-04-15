@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import LaneBadge from '../components/LaneBadge.jsx';
 import FitScoreBadge from '../components/FitScoreBadge.jsx';
+import BatchUrlPanel from '../components/BatchUrlPanel.jsx';
 import { updateOpportunity } from '../lib/api.js';
 import { classifyReadinessGroup, getReadinessReason, READINESS_GROUPS, READINESS_GROUP_LABELS } from '../../netlify/functions/_shared/readiness.js';
 
@@ -44,6 +45,7 @@ export default function Tracker() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('readiness');
   const [updating, setUpdating] = useState(null);
+  const [showBatchUrl, setShowBatchUrl] = useState(false);
 
   const READINESS_GROUP_ORDER_SORT = [
     READINESS_GROUPS.READY_TO_APPLY,
@@ -80,6 +82,10 @@ export default function Tracker() {
     return list;
   }, [state.opportunities, filter, search, sortBy]);
 
+  const needsUrlCount = useMemo(() =>
+    state.opportunities.filter(o => classifyReadinessGroup(o) === READINESS_GROUPS.NEEDS_APPLY_URL).length,
+  [state.opportunities]);
+
   const handleStatusChange = async (opp, newStatus) => {
     setUpdating(opp.id);
     try {
@@ -94,6 +100,28 @@ export default function Tracker() {
     <div>
       <h1 className="section-title">Tracker</h1>
       <p className="section-sub">Full pipeline view — sorted by readiness by default.</p>
+
+      {/* Batch URL Panel — shown when there are blocked roles needing apply URL */}
+      {needsUrlCount > 0 && !showBatchUrl && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+          background: '#fff7ed', border: '1px solid #fde68a', borderRadius: 8,
+          padding: '10px 14px',
+        }}>
+          <span style={{ fontSize: 16 }}>🔗</span>
+          <span style={{ fontSize: 13, color: '#c2410c', flex: 1 }}>
+            <strong>{needsUrlCount}</strong> approved role{needsUrlCount !== 1 ? 's' : ''} blocked — missing apply URL
+          </span>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ color: '#c2410c', borderColor: '#fca5a5' }}
+            onClick={() => setShowBatchUrl(true)}
+          >
+            + Add URLs
+          </button>
+        </div>
+      )}
+      {showBatchUrl && <BatchUrlPanel onClose={() => setShowBatchUrl(false)} />}
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
