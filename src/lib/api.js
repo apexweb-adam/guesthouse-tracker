@@ -193,6 +193,25 @@ export async function approveOpportunity(id, action, reason = '', overrideFields
       const idx = s.opportunities.findIndex(o => o.id === id);
       if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], ...updates };
     });
+    // Record readiness history events
+    recordReadinessHistory(id, 'approval_state_changed', {
+      from: opp.approval_state,
+      to: updates.approval_state,
+      action,
+      reason: reason || undefined,
+    });
+    if (updates.status !== opp.status) {
+      recordReadinessHistory(id, 'status_changed', {
+        from: opp.status,
+        to: updates.status,
+      });
+    }
+    if (action === 'approve' && updates.apply_pack?.pack_readiness_score != null) {
+      recordReadinessHistory(id, 'pack_regenerated', {
+        reason: 'generated_on_approval',
+        pack_readiness_score: updates.apply_pack.pack_readiness_score,
+      });
+    }
     return { opportunity: { ...opp, ...updates }, audit };
   }
   return apiFetch('/approve', {
@@ -726,6 +745,23 @@ export async function updateApplyUrl(id, applicationUrl) {
       const idx = s.opportunities.findIndex(o => o.id === id);
       if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], ...updates };
     });
+    // Record readiness history events
+    recordReadinessHistory(id, 'apply_url_added', {
+      url: applicationUrl.trim(),
+      from_status: opp.status,
+      to_status: updates.status || opp.status,
+    });
+    if (updates.apply_pack?.pack_readiness_score != null && updates.apply_pack.pack_readiness_score !== opp.pack_readiness_score) {
+      recordReadinessHistory(id, 'readiness_score_changed', {
+        from: opp.pack_readiness_score || 0,
+        to: updates.apply_pack.pack_readiness_score,
+        reason: 'apply_url_added',
+      });
+      recordReadinessHistory(id, 'pack_regenerated', {
+        reason: 'apply_url_added',
+        pack_readiness_score: updates.apply_pack.pack_readiness_score,
+      });
+    }
     const updated = getStore().opportunities.find(o => o.id === id);
     return { opportunity: updated };
   }
@@ -742,14 +778,21 @@ export async function updateApplyUrl(id, applicationUrl) {
 export async function updateApplyStatus(id, status) {
   if (isDemoMode()) {
     const now = new Date().toISOString();
+    const { opportunities } = getStore();
+    const opp = opportunities.find(o => o.id === id);
+    const prevStatus = opp?.status;
     const statusUpdates = { status, last_action_date: now };
     if (status === 'applied') statusUpdates.applied_date = now;
     mutateStore(s => {
       const idx = s.opportunities.findIndex(o => o.id === id);
       if (idx >= 0) s.opportunities[idx] = { ...s.opportunities[idx], ...statusUpdates };
     });
-    const { opportunities } = getStore();
-    return { opportunity: opportunities.find(o => o.id === id) };
+    // Record readiness history
+    if (prevStatus !== status) {
+      recordReadinessHistory(id, 'status_changed', { from: prevStatus, to: status });
+    }
+    const { opportunities: updatedOpps } = getStore();
+    return { opportunity: updatedOpps.find(o => o.id === id) };
   }
   return apiFetch('/apply-pack', {
     method: 'POST',

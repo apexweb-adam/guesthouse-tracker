@@ -3,20 +3,25 @@
  *
  * Strategy:
  *  - App shell (JS/CSS/HTML) → Cache First (stale-while-revalidate)
- *  - Netlify Functions / API calls → Network First (no dangerous stale caching)
+ *  - Netlify Functions / API calls → Network Only. Never cache live business data.
  *  - Fonts → Cache First (immutable external resources)
+ *  - Navigation fallback → /offline.html when fully offline
  *
  * SAFETY: Live operational data (opportunities, digest, apply packs) is NEVER
  * served from cache. This prevents stale data from misleading users about
  * application state, approval decisions, or readiness scores.
+ *
+ * OFFLINE HONESTY: When a navigation request fails offline, the user sees
+ * offline.html which clearly explains that live data is unavailable.
  */
 
-const CACHE_NAME = 'job-search-os-shell-v1';
+const CACHE_NAME = 'job-search-os-shell-v2';
 
 // Static shell assets to cache on install
 const SHELL_ASSETS = [
   '/',
   '/index.html',
+  '/offline.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
@@ -99,8 +104,34 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. App shell / static assets — Stale-While-Revalidate
-  // This keeps the app fast while ensuring updated bundles are fetched.
+  // 4. Navigation requests — Stale-While-Revalidate with offline fallback.
+  //    If fully offline, serve /offline.html so the user gets a clear message.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) =>
+        cache.match(request).then((cached) => {
+          const networkFetch = fetch(request).then((res) => {
+            if (res && res.status === 200 && res.type !== 'opaque') {
+              cache.put(request, res.clone());
+            }
+            return res;
+          }).catch(() =>
+            // Offline: return the offline fallback page
+            cache.match('/offline.html').then((offlinePage) =>
+              offlinePage || new Response(
+                '<html><body><h1>Offline</h1><p>Please reconnect.</p></body></html>',
+                { headers: { 'Content-Type': 'text/html' } }
+              )
+            )
+          );
+          return cached || networkFetch;
+        })
+      )
+    );
+    return;
+  }
+
+  // 5. App shell / static assets — Stale-While-Revalidate
   event.respondWith(
     caches.open(CACHE_NAME).then((cache) =>
       cache.match(request).then((cached) => {

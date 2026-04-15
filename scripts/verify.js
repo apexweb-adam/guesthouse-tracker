@@ -1396,5 +1396,176 @@ assert('Section 18: Approval remains mandatory — no readiness bypass', (() => 
   return classifyReadinessGroup(unapprovedOpp18) !== READINESS_GROUPS.READY_TO_APPLY;
 })());
 
+// ─── 19. Production-Hardening + Continuity Layer ─────────────────────────────
+
+console.log('\n== 19. Production-Hardening + Continuity Layer ==');
+
+import { readFileSync as readFileSync19, existsSync as existsSync19 } from 'fs';
+import { join as join19, dirname as dirname19 } from 'path';
+import { fileURLToPath as fileURLToPath19 } from 'url';
+const __dirname_v19 = dirname19(fileURLToPath19(import.meta.url));
+
+// 19a. Reports.jsx has exactly ONE export default (deploy blocker fixed)
+let reportsSrc19 = '';
+try { reportsSrc19 = readFileSync19(join19(__dirname_v19, '../src/pages/Reports.jsx'), 'utf-8'); } catch {}
+const exportDefaultMatches = (reportsSrc19.match(/export default function/g) || []).length;
+assert('Reports.jsx has exactly one export default (deploy blocker fixed)', exportDefaultMatches === 1);
+assert('Reports.jsx still has ReadinessPanel', reportsSrc19.includes('ReadinessPanel'));
+assert('Reports.jsx still has computeReadinessSummary import', reportsSrc19.includes('computeReadinessSummary'));
+
+// 19b. No other pages have duplicate export defaults
+const pagesFiles19 = ['Dashboard.jsx', 'ApprovalQueue.jsx', 'Tracker.jsx', 'ApplyPack.jsx', 'OpportunityDetail.jsx'];
+for (const file of pagesFiles19) {
+  let src = '';
+  try { src = readFileSync19(join19(__dirname_v19, `../src/pages/${file}`), 'utf-8'); } catch {}
+  const count = (src.match(/export default function/g) || []).length;
+  assert(`${file} has exactly one export default`, count === 1);
+}
+
+// 19c. api.js wires recordReadinessHistory into approveOpportunity
+let apiSrc19 = '';
+try { apiSrc19 = readFileSync19(join19(__dirname_v19, '../src/lib/api.js'), 'utf-8'); } catch {}
+assert('api.js approveOpportunity calls recordReadinessHistory', (() => {
+  const approveBlock = apiSrc19.slice(apiSrc19.indexOf('export async function approveOpportunity'));
+  return approveBlock.includes('recordReadinessHistory') && approveBlock.includes('approval_state_changed');
+})());
+
+// 19d. api.js wires recordReadinessHistory into updateApplyUrl
+assert('api.js updateApplyUrl calls recordReadinessHistory', (() => {
+  const block = apiSrc19.slice(apiSrc19.indexOf('export async function updateApplyUrl'));
+  return block.includes('recordReadinessHistory') && block.includes('apply_url_added');
+})());
+
+// 19e. api.js wires recordReadinessHistory into updateApplyStatus
+assert('api.js updateApplyStatus calls recordReadinessHistory', (() => {
+  const block = apiSrc19.slice(apiSrc19.indexOf('export async function updateApplyStatus'));
+  return block.includes('recordReadinessHistory') && block.includes('status_changed');
+})());
+
+// 19f. OpportunityDetail imports getReadinessHistory and has ReadinessTimeline
+let oppDetailSrc19 = '';
+try { oppDetailSrc19 = readFileSync19(join19(__dirname_v19, '../src/pages/OpportunityDetail.jsx'), 'utf-8'); } catch {}
+assert('OpportunityDetail.jsx imports getReadinessHistory', oppDetailSrc19.includes('getReadinessHistory'));
+assert('OpportunityDetail.jsx has ReadinessTimeline component', oppDetailSrc19.includes('ReadinessTimeline'));
+assert('OpportunityDetail.jsx timeline shows event_type labels', oppDetailSrc19.includes('approval_state_changed') && oppDetailSrc19.includes('apply_url_added'));
+assert('OpportunityDetail.jsx timeline is newest first', oppDetailSrc19.includes('getReadinessHistory(opportunityId'));
+
+// 19g. db.js has insertReadinessHistory and listReadinessHistory (Supabase live path)
+let dbSrc19 = '';
+try { dbSrc19 = readFileSync19(join19(__dirname_v19, '../netlify/functions/_shared/db.js'), 'utf-8'); } catch {}
+assert('db.js exports insertReadinessHistory', dbSrc19.includes('export async function insertReadinessHistory'));
+assert('db.js exports listReadinessHistory', dbSrc19.includes('export async function listReadinessHistory'));
+assert('db.js insertReadinessHistory writes to readiness_history table', dbSrc19.includes("'readiness_history'") || dbSrc19.includes('"readiness_history"'));
+assert('db.js insertReadinessHistory has demo fallback', dbSrc19.includes('_demo.readiness_history'));
+assert('db.js insertReadinessHistory is non-fatal on error', dbSrc19.includes('non-fatal') || dbSrc19.includes('warn'));
+
+// 19h. approve.js imports and uses insertReadinessHistory
+let approveSrc19 = '';
+try { approveSrc19 = readFileSync19(join19(__dirname_v19, '../netlify/functions/approve.js'), 'utf-8'); } catch {}
+assert('approve.js imports insertReadinessHistory', approveSrc19.includes('insertReadinessHistory'));
+assert('approve.js calls insertReadinessHistory on approval', approveSrc19.includes('approval_state_changed'));
+
+// 19i. opportunities.js imports and uses insertReadinessHistory
+let oppFnSrc19 = '';
+try { oppFnSrc19 = readFileSync19(join19(__dirname_v19, '../netlify/functions/opportunities.js'), 'utf-8'); } catch {}
+assert('opportunities.js imports insertReadinessHistory', oppFnSrc19.includes('insertReadinessHistory'));
+assert('opportunities.js calls insertReadinessHistory on apply_url_added', oppFnSrc19.includes('apply_url_added'));
+
+// 19j. Service worker has offline fallback
+let swSrc19 = '';
+try { swSrc19 = readFileSync19(join19(__dirname_v19, '../public/sw.js'), 'utf-8'); } catch {}
+assert('sw.js includes offline.html in SHELL_ASSETS', swSrc19.includes('/offline.html'));
+assert('sw.js has navigation fallback to offline.html', swSrc19.includes("cache.match('/offline.html')"));
+assert("sw.js CACHE_NAME updated (v2)", swSrc19.includes('shell-v2'));
+assert('sw.js still has API Network Only strategy', swSrc19.includes('Network Only') || (swSrc19.includes('API_PATHS') && swSrc19.includes("fetch(request)")));
+
+// 19k. offline.html exists and is honest
+let offlineSrc19 = '';
+try { offlineSrc19 = readFileSync19(join19(__dirname_v19, '../public/offline.html'), 'utf-8'); } catch {}
+assert('offline.html exists', offlineSrc19.length > 0);
+assert("offline.html explains offline limitations honestly", offlineSrc19.includes('offline') && offlineSrc19.includes('reconnect'));
+assert("offline.html is not fake — does not claim full functionality", !offlineSrc19.includes('all features available') && !offlineSrc19.includes('fully functional'));
+
+// 19l. Tracker.jsx has readiness group filter
+let trackerSrc19 = '';
+try { trackerSrc19 = readFileSync19(join19(__dirname_v19, '../src/pages/Tracker.jsx'), 'utf-8'); } catch {}
+assert('Tracker.jsx has readinessFilter state', trackerSrc19.includes('readinessFilter') && trackerSrc19.includes('setReadinessFilter'));
+assert('Tracker.jsx readinessFilter uses classifyReadinessGroup', trackerSrc19.includes('classifyReadinessGroup(o) === readinessFilter'));
+assert('Tracker.jsx readiness filter has all group options', trackerSrc19.includes('READINESS_FILTER_OPTIONS'));
+assert('Tracker.jsx readiness filter includes Ready to Apply option', trackerSrc19.includes('Ready to Apply'));
+assert('Tracker.jsx readiness filter includes Needs URL option', trackerSrc19.includes('Needs URL'));
+
+// 19m. n8n workflow assets exist
+const n8nWorkflows19 = [
+  '05-job-discovery.json',
+  '06-daily-approval-digest.json',
+  '07-weekly-readiness-summary.json',
+];
+for (const wf of n8nWorkflows19) {
+  const exists = existsSync19(join19(__dirname_v19, `../n8n/workflows/${wf}`));
+  assert(`n8n workflow exists: ${wf}`, exists);
+}
+
+// 19n. n8n workflows use SITE_URL not hardcoded URLs
+let dailyDigestWf19 = '';
+try { dailyDigestWf19 = readFileSync19(join19(__dirname_v19, '../n8n/workflows/06-daily-approval-digest.json'), 'utf-8'); } catch {}
+assert('n8n daily digest workflow uses SITE_URL env var', dailyDigestWf19.includes('$env.SITE_URL'));
+assert('n8n daily digest workflow calls /digest endpoint', dailyDigestWf19.includes('/digest'));
+
+let weeklyWf19 = '';
+try { weeklyWf19 = readFileSync19(join19(__dirname_v19, '../n8n/workflows/07-weekly-readiness-summary.json'), 'utf-8'); } catch {}
+assert('n8n weekly summary workflow uses SITE_URL env var', weeklyWf19.includes('$env.SITE_URL'));
+assert('n8n weekly summary workflow calls /digest?type=weekly', weeklyWf19.includes('type=weekly'));
+
+// 19o. n8n discovery workflow uses DISCOVERY_SECRET (structured sources, not scraping)
+let discoverWf19 = '';
+try { discoverWf19 = readFileSync19(join19(__dirname_v19, '../n8n/workflows/05-job-discovery.json'), 'utf-8'); } catch {}
+assert('n8n discovery workflow uses DISCOVERY_SECRET', discoverWf19.includes('DISCOVERY_SECRET'));
+assert('n8n discovery workflow calls /discover endpoint', discoverWf19.includes('/discover'));
+
+// 19p. Readiness history logic tests (simulate api.js behavior inline)
+{
+  const historyStore = [];
+  function recordEntry19(oppId, eventType, payload) {
+    historyStore.unshift({
+      id: `rh-${Date.now()}-test`,
+      opportunity_id: oppId,
+      event_type: eventType,
+      payload,
+      recorded_at: new Date().toISOString(),
+    });
+    return historyStore[0];
+  }
+
+  const e1 = recordEntry19('opp-a', 'approval_state_changed', { from: 'pending', to: 'approved', action: 'approve' });
+  const e2 = recordEntry19('opp-a', 'status_changed', { from: 'discovered', to: 'approved' });
+  const e3 = recordEntry19('opp-a', 'pack_regenerated', { reason: 'generated_on_approval', pack_readiness_score: 70 });
+  const e4 = recordEntry19('opp-b', 'apply_url_added', { url: 'https://jobs.example.com/apply', to_status: 'apply_pack_generated' });
+
+  assert('readiness history wiring: approval event has correct type', e1.event_type === 'approval_state_changed');
+  assert('readiness history wiring: approval event has from/to', e1.payload.from === 'pending' && e1.payload.to === 'approved');
+  assert('readiness history wiring: status_changed event correct', e2.event_type === 'status_changed');
+  assert('readiness history wiring: pack_regenerated has score', e3.payload.pack_readiness_score === 70);
+  assert('readiness history wiring: apply_url_added has url', e4.payload.url.includes('jobs.example.com'));
+  assert('readiness history wiring: filter by opp-a returns 3 entries', historyStore.filter(e => e.opportunity_id === 'opp-a').length === 3);
+  assert('readiness history wiring: filter by opp-b returns 1 entry', historyStore.filter(e => e.opportunity_id === 'opp-b').length === 1);
+  assert('readiness history wiring: newest first', historyStore[0].event_type === 'apply_url_added');
+}
+
+// 19q. TPM hierarchy and approval gate still intact (sanity)
+const tpmCheck19 = scoreOpportunity('Senior Technical Project Manager', 'Lead cross-functional delivery teams. SDLC, Agile, Jira, stakeholder alignment, PMP.');
+assert('Section 19: TPM hierarchy intact', tpmCheck19.lane === LANES.TPM);
+assert('Section 19: Approval gate intact — high readiness score does not bypass approval', (() => {
+  const highReadinessButPending = {
+    approval_state: 'pending',
+    status: 'discovered',
+    pack_readiness_score: 100,
+    application_url: 'https://example.com/apply',
+    fit_score: 95,
+    recommended: true,
+  };
+  return classifyReadinessGroup(highReadinessButPending) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

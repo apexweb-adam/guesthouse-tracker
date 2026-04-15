@@ -298,3 +298,76 @@ The Reports page has a new **Readiness Panel** tab (default view) showing:
 - Guidance on which page to go to for each action
 
 The Weekly Summary digest also now includes a `readiness` block with the same counts.
+
+---
+
+## Readiness History Wiring (v5.0)
+
+Readiness history is now automatically recorded at all key call sites:
+
+- **`approveOpportunity()`** — records `approval_state_changed`, `status_changed`, and `pack_regenerated` events
+- **`updateApplyUrl()`** — records `apply_url_added`, `readiness_score_changed`, and `pack_regenerated` events
+- **`updateApplyStatus()`** — records `status_changed` events
+
+In production (Supabase), events are written via `insertReadinessHistory()` in `netlify/functions/_shared/db.js`.
+In demo/localStorage mode, events are written by `recordReadinessHistory()` in `src/lib/api.js`.
+
+Both paths use the same event model. No duplicate entries are created per call.
+
+---
+
+## Opportunity Detail — Activity Timeline
+
+The Opportunity Detail page now shows a **🕐 Activity Timeline** in the sidebar, listing readiness history events for that role:
+
+- Newest first
+- Each event shows: icon, human-readable label, from→to transition or relevant detail, and date
+- Events covered: approval changes, status changes, apply URL added, pack regenerated, readiness score changes
+- Only visible if history entries exist for that opportunity
+
+---
+
+## Tracker — Readiness Group Filter
+
+The Tracker now has a **Readiness Group** dropdown filter alongside the existing Status filter. Use it to see only:
+
+- ✅ Ready to Apply
+- ⏰ Follow-up Due
+- 🔗 Needs URL
+- ⭐ Needs Approval
+- ⚙ In Progress
+- — Low Priority
+
+The filter uses the same shared `classifyReadinessGroup()` logic — no separate readiness engine.
+
+---
+
+## Offline Fallback
+
+When the user navigates while fully offline, the service worker now serves `/offline.html` instead of a blank screen.
+
+`offline.html` honestly explains:
+- Live job data is not available offline
+- The app shell is cached and will load
+- Reconnecting will restore live data
+
+The service worker cache name was bumped to `job-search-os-shell-v2` to ensure old cached bundles are cleared on first upgrade.
+
+---
+
+## n8n Automation Workflows
+
+| Workflow | File | Purpose |
+|---|---|---|
+| Job Discovery | `05-job-discovery.json` | POST /discover every 6h |
+| Daily Approval Digest | `06-daily-approval-digest.json` | GET /digest?type=approval daily |
+| Weekly Readiness Summary | `07-weekly-readiness-summary.json` | GET /digest?type=weekly weekly |
+
+**Setup:**
+1. Import the JSON file into n8n
+2. Set the `SITE_URL` env var to your deployed Netlify URL
+3. For the discovery workflow, set `DISCOVERY_SECRET` to match your server env
+4. Connect the final node to your Slack/email/webhook delivery node
+5. Activate the workflow
+
+n8n **does not** re-implement scoring, classification, or discovery profile logic. It only triggers API endpoints.

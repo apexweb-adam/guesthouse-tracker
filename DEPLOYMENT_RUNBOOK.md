@@ -541,3 +541,70 @@ Events tracked: `status_changed`, `apply_url_added`, `pack_regenerated`, `approv
 Section 18 covers: manifest, service worker, icons, approval queue readiness, reports readiness panel, follow-up banner, batch URL panel, readiness history, hierarchy guard, approval guard.
 
 Run: `node scripts/verify.js`
+
+---
+
+## v5.0 — Production-Hardening + Continuity Layer
+
+### Deploy Blocker Fix (Reports.jsx)
+
+`src/pages/Reports.jsx` had a duplicate `export default function Reports()` that caused Netlify build failures. The duplicate (the older version without ReadinessPanel) has been removed. The canonical version with ReadinessPanel, readiness digest type, and full weekly digest is preserved.
+
+**Verification:** `grep -c "export default function" src/pages/Reports.jsx` must return `1`.
+
+### Readiness History Wiring
+
+All key call sites now automatically record readiness history:
+
+| Function | Events recorded |
+|---|---|
+| `approveOpportunity()` | `approval_state_changed`, `status_changed`, `pack_regenerated` |
+| `updateApplyUrl()` | `apply_url_added`, `readiness_score_changed`, `pack_regenerated` |
+| `updateApplyStatus()` | `status_changed` |
+
+**Server-side (Supabase live):** `netlify/functions/_shared/db.js` now exports `insertReadinessHistory()` and `listReadinessHistory()`. These are wired into `approve.js` and `opportunities.js`. History writes are non-fatal — failures log a warning and do not block the primary operation.
+
+**Client-side (demo/localStorage):** `src/lib/api.js` `recordReadinessHistory()` is called at the same points.
+
+**Supabase migration required:** `supabase/migrations/004_readiness_history.sql` (already present).
+
+### Opportunity Detail — Activity Timeline
+
+`OpportunityDetail.jsx` now shows a `ReadinessTimeline` component in the sidebar when history exists for the opportunity. Events are displayed newest first with icons, labels, from→to transitions, and dates.
+
+### Offline Fallback
+
+`public/offline.html` added — an honest offline page that explains live data is unavailable.
+
+`public/sw.js` updated:
+- Cache name bumped to `job-search-os-shell-v2` (busts old shell cache on upgrade)
+- `/offline.html` added to `SHELL_ASSETS`
+- Navigation requests now fall back to `/offline.html` when fully offline
+- API strategy unchanged: Network Only
+
+### Tracker — Readiness Group Filter
+
+`src/pages/Tracker.jsx` now has a **Readiness Group** dropdown filter:
+- State: `readinessFilter` / `setReadinessFilter`
+- Options: All groups, Ready to Apply, Follow-up Due, Needs URL, Needs Approval, In Progress, Low Priority
+- Uses `classifyReadinessGroup()` — same shared logic, no second engine
+
+### n8n Workflow Assets
+
+New workflow files added:
+
+| File | Trigger | Purpose |
+|---|---|---|
+| `n8n/workflows/06-daily-approval-digest.json` | Daily schedule + manual | Fetches approval digest, formats summary |
+| `n8n/workflows/07-weekly-readiness-summary.json` | Weekly schedule + manual | Fetches weekly digest with readiness counts |
+
+Both use `$env.SITE_URL` for the Netlify URL. Neither re-implements business logic.
+Discovery workflow (`05-job-discovery.json`) remains unchanged and requires `DISCOVERY_SECRET`.
+
+### Verification
+
+`scripts/verify.js` now has **520 tests** across **19 sections**.
+
+Section 19 covers: Reports.jsx duplicate export fix, no other duplicate exports, readiness history wiring in api.js + approve.js + opportunities.js, OpportunityDetail timeline, db.js live path, sw.js offline fallback, offline.html, Tracker readiness filter, n8n workflow assets, readiness history logic, hierarchy guard, approval gate.
+
+Run: `node scripts/verify.js`

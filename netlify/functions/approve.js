@@ -8,7 +8,7 @@
  * POST { id, action: 'approve'|'reject'|'override', reason?, overrideFields? }
  */
 
-import { getOpportunity, updateOpportunity } from './_shared/db.js';
+import { getOpportunity, updateOpportunity, insertReadinessHistory } from './_shared/db.js';
 import { generateApplyPack } from './_shared/applyPack.js';
 import { fireEvent } from './_shared/prep.js';
 
@@ -128,6 +128,27 @@ export const handler = async (event) => {
     updates.human_override = humanOverride;
 
     const updated = await updateOpportunity(id, updates);
+
+    // Record readiness history (non-fatal)
+    await insertReadinessHistory(id, 'approval_state_changed', {
+      from: opp.approval_state,
+      to: updates.approval_state,
+      action,
+      reason: reason || undefined,
+    }).catch(() => {});
+    if (updates.status && updates.status !== opp.status) {
+      await insertReadinessHistory(id, 'status_changed', {
+        from: opp.status,
+        to: updates.status,
+      }).catch(() => {});
+    }
+    if (action === 'approve' && updates.pack_readiness_score != null) {
+      await insertReadinessHistory(id, 'pack_regenerated', {
+        reason: 'generated_on_approval',
+        pack_readiness_score: updates.pack_readiness_score,
+      }).catch(() => {});
+    }
+
     return json(200, { opportunity: updated, audit: humanOverride });
   } catch (err) {
     console.error('[approve]', err);

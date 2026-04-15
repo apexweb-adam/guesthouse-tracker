@@ -42,6 +42,7 @@ export default function Tracker() {
   const { state, loadOpportunities, notify } = useApp();
   const nav = useNavigate();
   const [filter, setFilter] = useState('all');
+  const [readinessFilter, setReadinessFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('readiness');
   const [updating, setUpdating] = useState(null);
@@ -56,9 +57,20 @@ export default function Tracker() {
     READINESS_GROUPS.LOW_PRIORITY,
   ];
 
+  const READINESS_FILTER_OPTIONS = [
+    { id: 'all', label: 'All groups' },
+    { id: READINESS_GROUPS.READY_TO_APPLY, label: '✅ Ready to Apply' },
+    { id: READINESS_GROUPS.APPLIED_FOLLOW_UP, label: '⏰ Follow-up Due' },
+    { id: READINESS_GROUPS.NEEDS_APPLY_URL, label: '🔗 Needs URL' },
+    { id: READINESS_GROUPS.NEEDS_APPROVAL, label: '⭐ Needs Approval' },
+    { id: READINESS_GROUPS.IN_PROGRESS, label: '⚙ In Progress' },
+    { id: READINESS_GROUPS.LOW_PRIORITY, label: '— Low Priority' },
+  ];
+
   const opps = useMemo(() => {
     let list = [...state.opportunities];
     if (filter !== 'all') list = list.filter(o => o.status === filter);
+    if (readinessFilter !== 'all') list = list.filter(o => classifyReadinessGroup(o) === readinessFilter);
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(o =>
@@ -80,7 +92,7 @@ export default function Tracker() {
       list.sort((a, b) => (a.status || '').localeCompare(b.status || ''));
     }
     return list;
-  }, [state.opportunities, filter, search, sortBy]);
+  }, [state.opportunities, filter, readinessFilter, search, sortBy]);
 
   const needsUrlCount = useMemo(() =>
     state.opportunities.filter(o => classifyReadinessGroup(o) === READINESS_GROUPS.NEEDS_APPLY_URL).length,
@@ -138,6 +150,19 @@ export default function Tracker() {
               {s === 'readiness' ? '🎯 Readiness' : s === 'fit_score' ? '⭐ Fit Score' : '📋 Status'}
             </button>
           ))}
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: 'var(--gray-500)', fontWeight: 600 }}>Readiness:</span>
+          <select
+            className="form-input"
+            value={readinessFilter}
+            onChange={e => setReadinessFilter(e.target.value)}
+            style={{ padding: '3px 8px', fontSize: 12 }}
+          >
+            {READINESS_FILTER_OPTIONS.map(opt => (
+              <option key={opt.id} value={opt.id}>{opt.label}</option>
+            ))}
+          </select>
         </div>
         <div className="tracker-filters">
           {STATUSES.map(s => (

@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext.jsx';
 import FitScoreBadge from '../components/FitScoreBadge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import LaneBadge from '../components/LaneBadge.jsx';
-import { approveOpportunity, updateOpportunity, fetchPrep, updateApplyUrl } from '../lib/api.js';
+import { approveOpportunity, updateOpportunity, fetchPrep, updateApplyUrl, getReadinessHistory } from '../lib/api.js';
 import { getResumeEmphasisLabel } from '../../netlify/functions/_shared/scoring.js';
 
 export default function OpportunityDetail() {
@@ -399,7 +399,52 @@ export default function OpportunityDetail() {
               </div>
             )}
           </div>
+
+          {/* Readiness History Timeline */}
+          <ReadinessTimeline opportunityId={opp.id} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ReadinessTimeline({ opportunityId }) {
+  const history = getReadinessHistory(opportunityId, 20);
+  if (!history || history.length === 0) return null;
+
+  const EVENT_LABELS = {
+    approval_state_changed: { icon: '✅', label: 'Approval changed' },
+    status_changed: { icon: '🔄', label: 'Status changed' },
+    apply_url_added: { icon: '🔗', label: 'Apply URL added' },
+    pack_regenerated: { icon: '📦', label: 'Apply Pack regenerated' },
+    readiness_score_changed: { icon: '📈', label: 'Readiness score changed' },
+  };
+
+  return (
+    <div className="card card-pad">
+      <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>🕐 Activity Timeline</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {history.map(entry => {
+          const meta = EVENT_LABELS[entry.event_type] || { icon: '•', label: entry.event_type };
+          const p = entry.payload || {};
+          let detail = '';
+          if (p.from !== undefined && p.to !== undefined) detail = `${p.from} → ${p.to}`;
+          else if (p.url) detail = p.url.length > 40 ? p.url.slice(0, 40) + '…' : p.url;
+          else if (p.reason) detail = p.reason.replace(/_/g, ' ');
+          else if (p.pack_readiness_score != null) detail = `${p.pack_readiness_score}% readiness`;
+          return (
+            <div key={entry.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 11, lineHeight: 1.4 }}>
+              <span style={{ minWidth: 16 }}>{meta.icon}</span>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontWeight: 600, color: 'var(--navy)' }}>{meta.label}</span>
+                {detail && <span style={{ color: 'var(--gray-600)', marginLeft: 4 }}>{detail}</span>}
+              </div>
+              <span style={{ color: 'var(--gray-400)', whiteSpace: 'nowrap' }}>
+                {new Date(entry.recorded_at).toLocaleDateString()}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import {
   getOpportunity,
   processBatch,
   updateOpportunity,
+  insertReadinessHistory,
   isDemoMode,
 } from './_shared/db.js';
 import { regenerateApplyPack, computePackReadinessScore } from './_shared/applyPack.js';
@@ -111,6 +112,21 @@ export const handler = async (event) => {
       if (!Object.keys(safe).length) return json(400, { error: 'No valid fields to update' });
 
       const updated = await updateOpportunity(id, safe);
+
+      // Record readiness history for apply URL addition (non-fatal)
+      if (safe.application_url && updates.status_advance_from_needs_apply_url) {
+        await insertReadinessHistory(id, 'apply_url_added', {
+          url: safe.application_url,
+          to_status: safe.status || 'unchanged',
+        }).catch(() => {});
+        if (safe.apply_pack?.pack_readiness_score != null) {
+          await insertReadinessHistory(id, 'pack_regenerated', {
+            reason: 'apply_url_added',
+            pack_readiness_score: safe.apply_pack.pack_readiness_score,
+          }).catch(() => {});
+        }
+      }
+
       return json(200, { opportunity: updated });
     }
 

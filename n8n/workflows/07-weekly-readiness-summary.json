@@ -1,0 +1,67 @@
+{
+  "name": "07 — Weekly Readiness Summary (Scheduled)",
+  "_comment": "ARCHITECTURE NOTE: n8n orchestrates only. All scoring, readiness classification, and digest generation happens server-side in Netlify Functions. This workflow calls /digest?type=weekly to get the pre-computed weekly summary including readiness distribution. Set SITE_URL env var.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "weekly-schedule",
+      "name": "Schedule Trigger (Weekly)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [200, 480]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/digest?type=weekly",
+        "options": {}
+      },
+      "id": "weekly-digest",
+      "name": "GET Weekly Digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [480, 380]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format weekly readiness summary for notification\nconst digest = $input.item.json.digest || {};\nconst funnel = digest.funnel || {};\nconst readiness = digest.readiness || {};\nconst ingestion = digest.ingestion || {};\n\nconst lines = [\n  `📊 Weekly Job Search OS Summary — ${new Date().toLocaleDateString()}`,\n  '',\n  '🎯 Readiness:',\n  `  Ready to apply: ${readiness.readyToApplyCount || 0}`,\n  `  High readiness (85%+): ${readiness.highReadinessCount || 0}`,\n  `  Blocked (no URL): ${readiness.blockedByMissingUrlCount || 0}`,\n  `  Follow-up due: ${readiness.appliedFollowUpDueCount || 0}`,\n  '',\n  '📦 Pipeline:',\n  `  Discovered: ${funnel.discovered || 0}`,\n  `  Approved: ${funnel.approved || 0}`,\n  `  Applied: ${funnel.applied || 0}`,\n  `  Interviewing: ${funnel.interviewing || 0}`,\n  '',\n  '📡 Ingestion (this week):',\n  `  Runs: ${ingestion.runsTotal || 0}`,\n  `  New jobs: ${ingestion.newJobsIngested || 0}`,\n  `  Failures: ${ingestion.failures || 0}`,\n];\nreturn [{ json: { message: lines.join('\\n'), digest } }];"
+      },
+      "id": "format-weekly",
+      "name": "Format Weekly Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 380]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Weekly)": {
+      "main": [[{ "node": "GET Weekly Digest", "type": "main", "index": 0 }]]
+    },
+    "Manual Trigger": {
+      "main": [[{ "node": "GET Weekly Digest", "type": "main", "index": 0 }]]
+    },
+    "GET Weekly Digest": {
+      "main": [[{ "node": "Format Weekly Summary", "type": "main", "index": 0 }]]
+    }
+  },
+  "_setup": {
+    "env_vars_required": ["SITE_URL"],
+    "notes": "Connect 'Format Weekly Summary' to a Slack, email, or webhook node to deliver the weekly readiness summary. No DISCOVERY_SECRET required — this reads the weekly digest endpoint only."
+  }
+}

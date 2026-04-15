@@ -283,3 +283,65 @@ export async function upsertPreference(profileKey, data) {
   _demo.user_preferences[profileKey] = data;
   return { saved: true };
 }
+
+// ─── Readiness History ────────────────────────────────────────────────────────
+
+/**
+ * Insert a readiness history event.
+ * Append-only. Used for status changes, approval changes, URL adds, pack regen.
+ *
+ * @param {string} opportunityId
+ * @param {string} eventType - e.g. 'status_changed', 'approval_state_changed', 'apply_url_added', 'pack_regenerated', 'readiness_score_changed'
+ * @param {object} payload   - arbitrary JSON payload describing the transition
+ */
+export async function insertReadinessHistory(opportunityId, eventType, payload = {}) {
+  const sb = getSupabase();
+  const record = {
+    id: `rh-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    opportunity_id: opportunityId,
+    event_type: eventType,
+    payload,
+    recorded_at: new Date().toISOString(),
+  };
+  if (sb) {
+    const { data, error } = await sb.from('readiness_history').insert(record).select().single();
+    if (error) {
+      // Non-fatal: log and continue — history is audit/reporting, not critical path
+      console.warn('[db] insertReadinessHistory failed (non-fatal):', error.message);
+      return null;
+    }
+    return data;
+  }
+  // Demo fallback: in-memory list (not persisted across restarts)
+  if (!_demo.readiness_history) _demo.readiness_history = [];
+  _demo.readiness_history.unshift(record);
+  return record;
+}
+
+/**
+ * List readiness history entries for one opportunity or all.
+ *
+ * @param {string|null} opportunityId - filter to specific opportunity, or null for all
+ * @param {number} limit
+ */
+export async function listReadinessHistory(opportunityId = null, limit = 50) {
+  const sb = getSupabase();
+  if (sb) {
+    let q = sb
+      .from('readiness_history')
+      .select('*')
+      .order('recorded_at', { ascending: false })
+      .limit(limit);
+    if (opportunityId) q = q.eq('opportunity_id', opportunityId);
+    const { data, error } = await q;
+    if (error) {
+      console.warn('[db] listReadinessHistory failed (non-fatal):', error.message);
+      return [];
+    }
+    return data || [];
+  }
+  // Demo fallback
+  const all = _demo.readiness_history || [];
+  const filtered = opportunityId ? all.filter(e => e.opportunity_id === opportunityId) : all;
+  return filtered.slice(0, limit);
+}
