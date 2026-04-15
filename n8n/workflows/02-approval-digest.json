@@ -1,0 +1,103 @@
+{
+  "name": "02 — Approval Queue Digest & Stale Reminder (Daily 08:00)",
+  "_comment": "Runs daily at 08:00. Fetches approval queue and stale digests from the API (which computes them from live data) and fires outbound webhooks to Zapier/email if there are items. No business logic in n8n.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 * * *" }] }
+      },
+      "id": "daily-trigger",
+      "name": "Daily 08:00 Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/digest?type=approval",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-approval-digest",
+      "name": "Fetch Approval Digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const digest = $input.first().json.digest;\nif (!digest || digest.totalPending === 0) {\n  console.log('Approval queue is empty — skipping notification.');\n  return [];\n}\nreturn [{ json: digest }];"
+      },
+      "id": "check-has-pending",
+      "name": "Check: Queue Has Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/webhooks",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify({ event: 'queue_updated', payload: { totalPending: $json.totalPending, recommendedCount: $json.recommendedCount, highFitCount: $json.highFitCount, summary: $json.summary, topOpportunities: $json.topOpportunities } }) }}",
+        "options": {}
+      },
+      "id": "fire-queue-webhook",
+      "name": "Fire queue_updated Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/digest?type=stale",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-stale-digest",
+      "name": "Fetch Stale Digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "const digest = $input.first().json.digest;\nif (!digest || digest.totalStale === 0) {\n  console.log('No stale opportunities — skipping stale notification.');\n  return [];\n}\nreturn [{ json: digest }];"
+      },
+      "id": "check-has-stale",
+      "name": "Check: Has Stale Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 420]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/webhooks",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify({ event: 'stale_reminder', payload: { totalStale: $json.totalStale, ghostedCount: $json.ghostedCount, summary: $json.summary, items: $json.items } }) }}",
+        "options": {}
+      },
+      "id": "fire-stale-webhook",
+      "name": "Fire stale_reminder Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 420]
+    }
+  ],
+  "connections": {
+    "Daily 08:00 Trigger": {
+      "main": [[
+        { "node": "Fetch Approval Digest", "type": "main", "index": 0 },
+        { "node": "Fetch Stale Digest", "type": "main", "index": 0 }
+      ]]
+    },
+    "Fetch Approval Digest": { "main": [[{ "node": "Check: Queue Has Items", "type": "main", "index": 0 }]] },
+    "Check: Queue Has Items": { "main": [[{ "node": "Fire queue_updated Webhook", "type": "main", "index": 0 }]] },
+    "Fetch Stale Digest": { "main": [[{ "node": "Check: Has Stale Items", "type": "main", "index": 0 }]] },
+    "Check: Has Stale Items": { "main": [[{ "node": "Fire stale_reminder Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

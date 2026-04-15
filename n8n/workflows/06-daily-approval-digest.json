@@ -1,0 +1,101 @@
+{
+  "name": "06 — Daily Approval Digest (Scheduled)",
+  "_comment": "ARCHITECTURE NOTE: n8n orchestrates only. Scoring, classification, and digest generation happen in Netlify Functions. n8n just calls /digest with the appropriate type. Set SITE_URL env var in n8n to your deployed Netlify URL. No DISCOVERY_SECRET needed for digest calls.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger (Daily)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [200, 480]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/digest?type=approval",
+        "options": {}
+      },
+      "id": "approval-digest",
+      "name": "GET Approval Digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [480, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.digest.totalPending }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "has-pending",
+      "name": "Has pending items?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [720, 380]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format approval digest summary for notification\nconst digest = $input.item.json.digest || {};\nconst lines = [\n  `📋 Daily Approval Queue — ${new Date().toLocaleDateString()}`,\n  `Total pending: ${digest.totalPending || 0}`,\n  `Recommended: ${digest.recommendedCount || 0}`,\n  `High fit (70+): ${digest.highFitCount || 0}`,\n];\nif ((digest.topOpportunities || []).length > 0) {\n  lines.push('\\nTop roles:');\n  digest.topOpportunities.slice(0, 5).forEach(o => {\n    lines.push(`  • ${o.fitScore} — ${o.title} @ ${o.company}${o.recommended ? ' ✓' : ''}`);\n  });\n}\nreturn [{ json: { message: lines.join('\\n'), digest } }];"
+      },
+      "id": "format-message",
+      "name": "Format Digest Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 280]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log: no pending approvals today\nreturn [{ json: { message: 'No pending approvals today.', skipped: true } }];"
+      },
+      "id": "no-pending",
+      "name": "No pending (skip)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 480]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Daily)": {
+      "main": [[{ "node": "GET Approval Digest", "type": "main", "index": 0 }]]
+    },
+    "Manual Trigger": {
+      "main": [[{ "node": "GET Approval Digest", "type": "main", "index": 0 }]]
+    },
+    "GET Approval Digest": {
+      "main": [[{ "node": "Has pending items?", "type": "main", "index": 0 }]]
+    },
+    "Has pending items?": {
+      "main": [
+        [{ "node": "Format Digest Message", "type": "main", "index": 0 }],
+        [{ "node": "No pending (skip)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "_setup": {
+    "env_vars_required": ["SITE_URL"],
+    "notes": "Connect 'Format Digest Message' to a Slack, email, or webhook node to deliver the digest. No DISCOVERY_SECRET needed — digest endpoint is public (read-only summary data)."
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "name": "04 — Weekly Summary Digest (Monday 09:00)",
+  "_comment": "Fires every Monday at 09:00. Fetches the weekly digest from the API and fires a weekly_summary webhook event to Zapier. An optional disabled backup node is included — enable and connect to cloud storage to automate weekly backup.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 9 * * 1" }] }
+      },
+      "id": "weekly-trigger",
+      "name": "Monday 09:00 Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/digest?type=weekly",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-weekly-digest",
+      "name": "Fetch Weekly Digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const digest = $input.first().json.digest;\nconst funnel = digest.funnel || {};\nconst ig = digest.ingestion || {};\nconst summaryText = [\n  '📊 Weekly Job Search Summary',\n  '',\n  `New this week: ${digest.newThisWeek || 0}`,\n  `Pending approval: ${funnel.pendingApproval || 0}`,\n  `Applied: ${funnel.applied || 0}`,\n  `Interviewing: ${funnel.interviewing || 0}`,\n  `Offers: ${funnel.offers || 0}`,\n  '',\n  `Ingestion: ${ig.newJobsIngested || 0} new jobs, ${ig.failures || 0} failures this week`,\n].join('\\n');\nreturn [{ json: { ...digest, summaryText } }];"
+      },
+      "id": "format-summary",
+      "name": "Format Summary Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/webhooks",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify({ event: 'weekly_summary', payload: { summary: $json.summary, summaryText: $json.summaryText, funnel: $json.funnel, ingestion: $json.ingestion, newThisWeek: $json.newThisWeek, generatedAt: $json.generatedAt } }) }}",
+        "options": {}
+      },
+      "id": "fire-weekly-webhook",
+      "name": "Fire weekly_summary Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/export?format=json",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "optional-export",
+      "name": "Optional: Fetch Export Payload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 500],
+      "disabled": true,
+      "notes": "Disabled by default. Enable and connect to a cloud storage (Google Drive, S3) to create an automated weekly backup."
+    }
+  ],
+  "connections": {
+    "Monday 09:00 Trigger": { "main": [[{ "node": "Fetch Weekly Digest", "type": "main", "index": 0 }]] },
+    "Fetch Weekly Digest": { "main": [[{ "node": "Format Summary Text", "type": "main", "index": 0 }]] },
+    "Format Summary Text": { "main": [[{ "node": "Fire weekly_summary Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

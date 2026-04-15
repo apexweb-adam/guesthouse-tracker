@@ -94,3 +94,98 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* ─── Print / Save-as-PDF styles ─────────────────────────────────────────── */
+@media print {
+  /* Hide chrome: nav, sidebar, action bars, modals */
+  nav,
+  .sidebar,
+  .no-print,
+  .action-bar,
+  [role="navigation"],
+  .btn-ghost,
+  .btn-secondary,
+  .btn-primary {
+    display: none !important;
+  }
+
+  body {
+    font-size: 12pt;
+    color: #000;
+    background: #fff;
+  }
+
+  .card,
+  .card-pad {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    page-break-inside: avoid;
+    margin-bottom: 12pt;
+  }
+
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #f9f9f9 !important;
+    border: 1px solid #ccc !important;
+    padding: 8pt;
+    font-size: 10pt;
+    page-break-inside: avoid;
+  }
+
+  h1, h2, h3 {
+    color: #000 !important;
+    page-break-after: avoid;
+  }
+
+  a::after {
+    content: ' (' attr(href) ')';
+    font-size: 9pt;
+    color: #555;
+  }
+
+  /* Ensure tabs content is visible in print even if not the active tab */
+  [data-print-show] {
+    display: block !important;
+  }
+
+  /* Page break hints */
+  .print-break-before {
+    page-break-before: always;
+  }
+  .print-break-avoid {
+    page-break-inside: avoid;
+  }
+
+  /* Section spacing for cleaner document layout */
+  .card + .card {
+    margin-top: 12pt;
+  }
+
+  /* Footer stamp via CSS counter / attr — shows on every page */
+  @page {
+    margin: 1.5cm;
+    @bottom-center {
+      content: "AI Job Search System — Application Prep Pack — " attr(data-print-timestamp);
+      font-size: 8pt;
+      color: #666;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #666;
+    }
+  }
+
+  /* Fallback visible footer for browsers without @page support */
+  body::after {
+    content: "Generated: " attr(data-print-timestamp) " — AI Job Search System";
+    display: block;
+    margin-top: 24pt;
+    padding-top: 8pt;
+    border-top: 1px solid #ccc;
+    font-size: 9pt;
+    color: #666;
+    text-align: center;
+  }
+}

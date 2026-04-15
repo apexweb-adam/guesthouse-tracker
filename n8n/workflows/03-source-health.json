@@ -1,0 +1,76 @@
+{
+  "name": "03 — Source Health Check & Failure Alerting (Every 6 Hours)",
+  "_comment": "Every 6 hours, fetch source health from the API and fire source_failure webhook events for any sources with failures or noisy warnings. Connect source_failure webhook to email notification via Zapier.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }] }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger (6h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/sources",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-sources",
+      "name": "Fetch Source Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Find sources with recent failures or noisy warning.\n// No business logic — just filtering on API-provided health data.\nconst sources = $input.first().json.sources || [];\nconst failing = sources.filter(s => s.total_failures > 0 || s.noisy_warning || s.last_status === 'failure');\nif (!failing.length) {\n  console.log('All sources healthy — no alerts needed.');\n  return [];\n}\nreturn failing.map(s => ({ json: s }));"
+      },
+      "id": "filter-failing",
+      "name": "Filter: Unhealthy Sources",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/webhooks",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify({ event: 'source_failure', payload: { sourceId: $json.id, sourceName: $json.name, lastStatus: $json.last_status, totalFailures: $json.total_failures, noisyWarning: $json.noisy_warning, lastRun: $json.last_run } }) }}",
+        "options": {}
+      },
+      "id": "fire-failure-webhook",
+      "name": "Fire source_failure Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/digest?type=ingestion",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-ingestion-digest",
+      "name": "Fetch Ingestion Digest (parallel reference)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [420, 420]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (6h)": {
+      "main": [[
+        { "node": "Fetch Source Health", "type": "main", "index": 0 },
+        { "node": "Fetch Ingestion Digest (parallel reference)", "type": "main", "index": 0 }
+      ]]
+    },
+    "Fetch Source Health": { "main": [[{ "node": "Filter: Unhealthy Sources", "type": "main", "index": 0 }]] },
+    "Filter: Unhealthy Sources": { "main": [[{ "node": "Fire source_failure Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
