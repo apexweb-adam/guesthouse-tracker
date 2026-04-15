@@ -16,6 +16,7 @@
 import { listOpportunities, listIngestionLogs, isDemoMode } from './_shared/db.js';
 import { scanForStale } from './_shared/stale.js';
 import { LANE_CONFIG } from './_shared/scoring.js';
+import { computeReadinessSummary } from './_shared/readiness.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -107,12 +108,15 @@ async function weeklyDigest() {
     rejected: allOpps.filter(o => o.status === 'rejected').length,
   };
 
+  const readiness = computeReadinessSummary(allOpps);
+
   return {
     type: 'weekly',
-    summary: `Weekly digest: ${recentOpps.length} new opportunities ingested, ${funnel.pendingApproval} pending approval, ${funnel.interviewing} in interview`,
+    summary: `Weekly digest: ${recentOpps.length} new opportunities ingested, ${funnel.pendingApproval} pending approval, ${funnel.interviewing} in interview, ${readiness.readyToApplyCount} ready to apply`,
     weekStart: sevenDaysAgo,
     newThisWeek: recentOpps.length,
     funnel,
+    readiness,
     ingestion: {
       runsTotal: recentLogs.length,
       newJobsIngested: recentLogs.reduce((n, l) => n + (l.count_new || 0), 0),

@@ -388,3 +388,82 @@ The Apply Pack page now has a "🖨 Print / Save PDF" button. Clicking it opens 
 - Application submission (never automated)
 - Outreach sending (draft provided; sending requires human decision)
 - Follow-up scheduling (system suggests date; user marks steps)
+
+---
+
+## Prioritization + Actionability Layer (v5.0)
+
+### Readiness-Based Sorting (Tracker)
+
+The Tracker now defaults to **Readiness sort** instead of fit score. This surfaces "Ready to Apply" roles at the top.
+
+Sort options:
+- 🎯 **Readiness** (default) — Ready → Follow-up Due → Needs URL → Needs Approval → In Progress → Low Priority
+- ⭐ **Fit Score** — descending fit score
+- 📋 **Status** — alphabetical status
+
+Each row shows a **Readiness Badge** with a tooltip explaining the blocked state (e.g., "Blocked: apply URL not yet added").
+
+### Action Center (Dashboard)
+
+The Dashboard's first panel after the stats row is the **Action Center**. It lists up to 5 prioritized actions, e.g.:
+- ✅ "2 roles are ready to apply now" → links to top-ready opportunity
+- ⏰ "1 applied role needs follow-up" → links directly to the opportunity
+- 🔗 "3 approved roles blocked — missing apply URL"
+- ⭐ "2 high-fit roles waiting for approval"
+
+Logic: `getBestNextActions(opps)` in `netlify/functions/_shared/readiness.js`.
+
+### Weekly Digest — Readiness Summary
+
+`GET /digest?type=weekly` now includes a `readiness` field:
+
+```json
+{
+  "readiness": {
+    "readyToApplyCount": 2,
+    "highReadinessCount": 1,
+    "blockedByMissingUrlCount": 3,
+    "needsApprovalCount": 4,
+    "appliedFollowUpDueCount": 1,
+    "topReadyToApply": [...]
+  }
+}
+```
+
+### Profile Merge / Sync Safety
+
+When you load the Discovery Profile page in live mode:
+1. The system fetches both the **server profile** and **local profile**
+2. If they differ, a conflict resolution panel appears
+3. You choose: **Keep Server Profile** or **Keep Local Profile**
+4. The chosen profile becomes the new source of truth in both locations
+
+This prevents silent overwrites when using multiple devices or browsers.
+
+### Print / Export Polish (Apply Pack)
+
+Text export now includes:
+- `Generated: [timestamp] — AI Job Search System (Sample Candidate)` footer line
+
+Browser print now:
+- Sets `data-print-timestamp` attribute on `<html>` for `@page` footer
+- `@page` CSS adds "AI Job Search System" footer and page numbers (in supporting browsers)
+- `body::after` provides fallback footer for browsers without `@page` support
+
+### New Shared Module
+
+`netlify/functions/_shared/readiness.js` — exports:
+- `classifyReadinessGroup(opp)` — returns one of 6 READINESS_GROUPS values
+- `getReadinessReason(opp)` — human-readable blocked-state explanation
+- `groupByReadiness(opps)` — groups and sorts array of opportunities
+- `getBestNextActions(opps)` — Action Center action list
+- `computeReadinessSummary(opps)` — digest-ready summary object
+- `READINESS_GROUPS`, `READINESS_GROUP_LABELS`, `READINESS_GROUP_ORDER`
+
+### What Still Requires Manual Action
+
+All previous manual-only actions remain unchanged. The prioritization layer provides decision support, not automation:
+- Application submission is never automated
+- Approval remains mandatory for every role
+- Readiness classification does not bypass any approval requirement

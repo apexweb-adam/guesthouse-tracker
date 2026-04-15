@@ -216,6 +216,11 @@ export default function ApplyPack() {
   };
 
   const handleBrowserPrint = () => {
+    // Set a data attribute with the generation timestamp for the @media print footer
+    document.documentElement.setAttribute(
+      'data-print-timestamp',
+      new Date().toLocaleString()
+    );
     window.print();
   };
 
@@ -322,6 +327,7 @@ export default function ApplyPack() {
     lines.push('⚠ All drafted content requires human review before use.');
     lines.push('Do NOT auto-submit applications or outreach.');
     lines.push(sep);
+    lines.push(`Generated: ${new Date().toLocaleString()} — AI Job Search System (Sample Candidate)`);
 
     const text = lines.join('\n');
     const blob = new Blob([text], { type: 'text/plain' });

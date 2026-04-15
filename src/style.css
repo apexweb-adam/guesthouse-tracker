@@ -156,4 +156,36 @@ button:focus-visible {
   .print-break-avoid {
     page-break-inside: avoid;
   }
+
+  /* Section spacing for cleaner document layout */
+  .card + .card {
+    margin-top: 12pt;
+  }
+
+  /* Footer stamp via CSS counter / attr — shows on every page */
+  @page {
+    margin: 1.5cm;
+    @bottom-center {
+      content: "AI Job Search System — Application Prep Pack — " attr(data-print-timestamp);
+      font-size: 8pt;
+      color: #666;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #666;
+    }
+  }
+
+  /* Fallback visible footer for browsers without @page support */
+  body::after {
+    content: "Generated: " attr(data-print-timestamp) " — AI Job Search System";
+    display: block;
+    margin-top: 24pt;
+    padding-top: 8pt;
+    border-top: 1px solid #ccc;
+    font-size: 9pt;
+    color: #666;
+    text-align: center;
+  }
 }

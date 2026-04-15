@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext.jsx';
 import OpportunityCard from '../components/OpportunityCard.jsx';
 import QuickAddWidget from '../components/QuickAddWidget.jsx';
 import { approveOpportunity } from '../lib/api.js';
+import { getBestNextActions, classifyReadinessGroup, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
 
 export default function Dashboard() {
   const { state, dispatch, loadOpportunities, notify } = useApp();
@@ -15,7 +16,10 @@ export default function Dashboard() {
     discovered: opps.filter(o => o.status === 'discovered').length,
     active: opps.filter(o => ['approved','applied','interviewing','offer'].includes(o.status)).length,
     stale: opps.filter(o => o.stale_flag || o.isStale || o.isGhosted).length,
+    readyToApply: opps.filter(o => classifyReadinessGroup(o) === READINESS_GROUPS.READY_TO_APPLY).length,
   }), [opps]);
+
+  const bestActions = useMemo(() => getBestNextActions(opps), [opps]);
 
   const highFit = useMemo(() =>
     opps.filter(o => o.recommended && !['rejected','ghosted'].includes(o.status))
@@ -61,9 +65,9 @@ export default function Dashboard() {
       {/* Stats Row */}
       <div className="grid-4" style={{ marginBottom: 24 }}>
         {[
+          { value: stats.readyToApply, label: 'Ready to Apply', sub: 'Pack 70%+ + apply URL', action: () => nav('/tracker'), color: 'var(--green)' },
           { value: stats.queue, label: 'Pending Approval', sub: 'Need review', action: () => nav('/queue'), color: 'var(--amber)' },
-          { value: stats.discovered, label: 'Discovered', sub: 'Awaiting scoring review' },
-          { value: stats.active, label: 'In Progress', sub: 'Approved / applied / interviewing', color: 'var(--green)' },
+          { value: stats.active, label: 'In Progress', sub: 'Approved / applied / interviewing', color: 'var(--blue)' },
           { value: stats.stale, label: 'Stale / Ghosted', sub: 'Need follow-up or close', color: stats.stale > 0 ? 'var(--red)' : undefined },
         ].map((s, i) => (
           <div key={i} className="card stat-card" style={{ cursor: s.action ? 'pointer' : 'default' }} onClick={s.action}>
@@ -73,6 +77,55 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* Action Center */}
+      {bestActions.length > 0 && (
+        <div className="card" style={{ marginBottom: 24, borderLeft: '4px solid var(--navy)' }}>
+          <div className="card-header">
+            <h2>🎯 Action Center — What to do right now</h2>
+            <span style={{ fontSize: 11, color: 'var(--gray-500)' }}>{new Date().toLocaleDateString()}</span>
+          </div>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {bestActions.map((action, i) => {
+              const iconMap = {
+                ready_to_apply: '✅',
+                follow_up_due: '⏰',
+                needs_apply_url: '🔗',
+                needs_approval: '⭐',
+                stale_review: '🧹',
+              };
+              const colorMap = {
+                ready_to_apply: 'var(--green)',
+                follow_up_due: 'var(--amber)',
+                needs_apply_url: 'var(--blue)',
+                needs_approval: 'var(--amber)',
+                stale_review: 'var(--gray-500)',
+              };
+              const navMap = {
+                ready_to_apply: '/tracker',
+                follow_up_due: '/tracker',
+                needs_apply_url: '/tracker',
+                needs_approval: '/queue',
+                stale_review: '/tracker',
+              };
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px',
+                  background: 'var(--gray-50)', borderRadius: 8, cursor: 'pointer',
+                  borderLeft: `3px solid ${colorMap[action.type] || 'var(--gray-300)'}`,
+                }} onClick={() => action.topOpp ? nav(`/opportunity/${action.topOpp.id}`) : nav(navMap[action.type] || '/')}>
+                  <span style={{ fontSize: 18 }}>{iconMap[action.type] || '•'}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-900)' }}>{action.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 2 }}>{action.detail}</div>
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--gray-400)', whiteSpace: 'nowrap' }}>→</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid-2" style={{ marginBottom: 24 }}>
         {/* High Fit Recommendations */}

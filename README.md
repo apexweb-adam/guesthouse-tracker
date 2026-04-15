@@ -142,3 +142,64 @@ See `DEPLOYMENT_DECISION.md` and `DEPLOYMENT_RUNBOOK.md`.
 1. Push to GitHub → connect to Netlify → add `VITE_DEMO_MODE=true` → deploy
 2. Demo preview works immediately, no credentials needed
 3. For production: add Supabase credentials, set `VITE_DEMO_MODE=false`
+
+---
+
+## Prioritization + Action Center
+
+The system now provides operational decision-support, not just tracking.
+
+### What `pack_readiness_score` powers
+
+`pack_readiness_score` (0–100%) is computed when an Apply Pack is generated and persisted on the opportunity record.
+
+It reflects:
+- Whether an apply URL is confirmed
+- Whether all copy-ready blocks are generated
+- Resume recommendation confidence
+- Pack version completeness
+
+It drives:
+- **Dashboard Action Center** — "What to do right now" view
+- **Tracker readiness sort** — default sort by readiness, not just fit score
+- **Digest/reporting** — weekly readiness summary in `/digest?type=weekly`
+
+### Readiness Groups
+
+Opportunities are classified into one of:
+
+| Group | Meaning |
+|---|---|
+| Ready to Apply Now | Approved + apply URL confirmed + readiness ≥ 70% |
+| Needs Apply URL | Approved but apply URL not yet added — blocked |
+| Needs Approval / Review | Pending your approval decision |
+| Applied — Follow-up Due | Applied and follow-up due within 2 days |
+| In Progress | Active but not yet ready or awaiting interview outcome |
+| Low Priority / Weak Fit | Below recommendation threshold or closed |
+
+Use `classifyReadinessGroup(opp)` from `_shared/readiness.js` for consistent classification across all surfaces.
+
+### Action Center
+
+The Dashboard shows an Action Center panel listing the best next actions, e.g.:
+- "3 roles are ready to apply now"
+- "2 approved roles only need an apply URL"
+- "1 applied role needs follow-up today"
+
+This panel is driven by `getBestNextActions(opps)` from `_shared/readiness.js`.
+
+### Discovery Profile Sync
+
+The Discovery Profile is server-persisted (Supabase `user_preferences` table).
+
+If you use multiple devices and the local and server profiles differ, the system detects this on load and shows a conflict resolution UI — let you choose "Keep Server" or "Keep Local". Neither is silently overwritten.
+
+### Apply Pack Print / Export
+
+The Apply Pack can be:
+- **Exported as .txt** — click "Export Text Pack" (includes generated timestamp and footer stamp)
+- **Printed / Saved as PDF** — click "Print / Save PDF" (uses `@media print` styling with `@page` footer)
+
+The print output includes all pack sections, readiness score, cover note block, checklist, and a generation timestamp.
+
+---

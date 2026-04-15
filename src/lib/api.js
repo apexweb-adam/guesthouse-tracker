@@ -881,3 +881,43 @@ export async function saveDiscoveryProfile(profile) {
 
   return { saved: true, persisted: 'local' };
 }
+
+/**
+ * Fetch BOTH server and local profiles for conflict detection.
+ *
+ * Returns { server, local, hasConflict }
+ * hasConflict = true when both exist and have meaningfully different content.
+ * Used by the DiscoveryProfile UI for merge/sync safety.
+ */
+export async function fetchProfileBothSources() {
+  let serverProfile = null;
+  let serverSource = null;
+
+  if (!isDemoMode()) {
+    try {
+      const res = await apiFetch('/profile');
+      if (res && res.profile) {
+        serverProfile = res.profile;
+        serverSource = res.source || 'persisted';
+      }
+    } catch {
+      serverSource = 'unavailable';
+    }
+  }
+
+  let localProfile = null;
+  try {
+    const stored = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (stored) localProfile = JSON.parse(stored);
+  } catch {}
+
+  // Conflict: both exist, content differs meaningfully
+  const hasConflict = !!(
+    serverProfile &&
+    localProfile &&
+    serverSource !== 'default' &&
+    JSON.stringify(serverProfile) !== JSON.stringify(localProfile)
+  );
+
+  return { server: serverProfile, local: localProfile, hasConflict, serverSource };
+}

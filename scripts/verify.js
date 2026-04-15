@@ -10,6 +10,16 @@ import { generateDedupHash, checkDuplicate, partitionByDedup } from '../netlify/
 import { evaluateStaleness, scanForStale } from '../netlify/functions/_shared/stale.js';
 import { passesDiscoveryProfile, DEFAULT_DISCOVERY_PROFILE, SOURCE_FAMILIES, DEFAULT_SOURCES } from '../netlify/functions/_shared/sources.js';
 import { normaliseJob, stripHtml } from '../netlify/functions/_shared/jobFinder.js';
+import {
+  classifyReadinessGroup,
+  getReadinessReason,
+  groupByReadiness,
+  getBestNextActions,
+  computeReadinessSummary,
+  READINESS_GROUPS,
+  READINESS_GROUP_LABELS,
+  READINESS_GROUP_ORDER,
+} from '../netlify/functions/_shared/readiness.js';
 
 let passed = 0;
 let failed = 0;
@@ -1026,6 +1036,206 @@ assert('Apply Pack v4 still requires approved state', (() => {
 const weakOps16 = scoreOpportunity('Operations Manager', 'Store operations, staff rostering, inventory, loss prevention, team scheduling');
 assert('Section 16: weak Ops still not TPM lane', weakOps16.lane !== LANES.TPM);
 assert('Section 16: weak Ops not over-recommended', !weakOps16.recommended || weakOps16.score < 60);
+
+// ─── Section 17: Prioritization + Actionability Layer ────────────────────────
+
+console.log('\n== 17. Prioritization + Actionability Layer ==');
+
+// Base opportunity shapes for Section 17
+const s17ReadyOpp = {
+  id: 'opp-s17-ready', title: 'Senior TPM', company: 'ReadyCo',
+  lane: LANES.TPM, fit_score: 88, recommended: true,
+  approval_state: 'approved', status: 'approved',
+  application_url: 'https://readyco.com/apply/123',
+  pack_readiness_score: 85,
+};
+const s17NeedsUrlOpp = {
+  id: 'opp-s17-nourl', title: 'Delivery Manager', company: 'NeedURLCo',
+  lane: LANES.DELIVERY_MANAGER, fit_score: 82, recommended: true,
+  approval_state: 'approved', status: 'approved',
+  application_url: null,
+  pack_readiness_score: 60,
+};
+const s17PendingOpp = {
+  id: 'opp-s17-pending', title: 'IT Project Manager', company: 'PendingCo',
+  lane: LANES.TPM, fit_score: 75, recommended: true,
+  approval_state: 'pending', status: 'queued',
+  application_url: null,
+  pack_readiness_score: null,
+};
+const s17AppliedFollowOpp = {
+  id: 'opp-s17-follow', title: 'Programme Manager', company: 'FollowCo',
+  lane: LANES.PROGRAM_MANAGER, fit_score: 70, recommended: true,
+  approval_state: 'approved', status: 'applied',
+  application_url: 'https://followco.com/apply/5',
+  pack_readiness_score: 80,
+  next_action_due: new Date(Date.now() + 86400000).toISOString().slice(0, 10), // tomorrow
+};
+const s17LowPriorityOpp = {
+  id: 'opp-s17-low', title: 'Store Operations Manager', company: 'LowPriCo',
+  lane: LANES.GENERIC_PM, fit_score: 22, recommended: false,
+  approval_state: 'pending', status: 'discovered',
+  application_url: null,
+  pack_readiness_score: null,
+};
+const s17RejectedOpp = {
+  id: 'opp-s17-rejected', title: 'Project Manager', company: 'RejectedCo',
+  lane: LANES.GENERIC_PM, fit_score: 35, recommended: false,
+  approval_state: 'rejected', status: 'rejected',
+  application_url: null,
+};
+
+// 17a. classifyReadinessGroup — correct groupings
+assert('classifyReadinessGroup: approved + apply URL + high readiness = READY_TO_APPLY',
+  classifyReadinessGroup(s17ReadyOpp) === READINESS_GROUPS.READY_TO_APPLY);
+
+assert('classifyReadinessGroup: approved + NO apply URL = NEEDS_APPLY_URL',
+  classifyReadinessGroup(s17NeedsUrlOpp) === READINESS_GROUPS.NEEDS_APPLY_URL);
+
+assert('classifyReadinessGroup: pending approval = NEEDS_APPROVAL',
+  classifyReadinessGroup(s17PendingOpp) === READINESS_GROUPS.NEEDS_APPROVAL);
+
+assert('classifyReadinessGroup: applied + follow-up due soon = APPLIED_FOLLOW_UP',
+  classifyReadinessGroup(s17AppliedFollowOpp) === READINESS_GROUPS.APPLIED_FOLLOW_UP);
+
+assert('classifyReadinessGroup: low fit + not recommended = LOW_PRIORITY',
+  classifyReadinessGroup(s17LowPriorityOpp) === READINESS_GROUPS.LOW_PRIORITY);
+
+assert('classifyReadinessGroup: rejected = LOW_PRIORITY',
+  classifyReadinessGroup(s17RejectedOpp) === READINESS_GROUPS.LOW_PRIORITY);
+
+// 17b. getReadinessReason returns human-readable blocked reason
+const s17ReadyReason = getReadinessReason(s17ReadyOpp);
+assert('getReadinessReason for READY_TO_APPLY includes readiness score', s17ReadyReason.includes('85'));
+
+const s17NeedsUrlReason = getReadinessReason(s17NeedsUrlOpp);
+assert('getReadinessReason for NEEDS_APPLY_URL says blocked / apply URL', s17NeedsUrlReason.toLowerCase().includes('apply url') || s17NeedsUrlReason.toLowerCase().includes('blocked'));
+
+const s17PendingReason = getReadinessReason(s17PendingOpp);
+assert('getReadinessReason for NEEDS_APPROVAL mentions approval', s17PendingReason.toLowerCase().includes('approv'));
+
+// 17c. groupByReadiness sorts correctly
+const s17AllOpps = [s17ReadyOpp, s17NeedsUrlOpp, s17PendingOpp, s17AppliedFollowOpp, s17LowPriorityOpp, s17RejectedOpp];
+const s17Groups = groupByReadiness(s17AllOpps);
+
+assert('groupByReadiness has READY_TO_APPLY group', Array.isArray(s17Groups[READINESS_GROUPS.READY_TO_APPLY]));
+assert('groupByReadiness READY_TO_APPLY contains the ready opp', s17Groups[READINESS_GROUPS.READY_TO_APPLY].some(o => o.id === 'opp-s17-ready'));
+assert('groupByReadiness NEEDS_APPLY_URL contains the blocked opp', s17Groups[READINESS_GROUPS.NEEDS_APPLY_URL].some(o => o.id === 'opp-s17-nourl'));
+assert('groupByReadiness NEEDS_APPROVAL contains pending opp', s17Groups[READINESS_GROUPS.NEEDS_APPROVAL].some(o => o.id === 'opp-s17-pending'));
+assert('groupByReadiness LOW_PRIORITY contains low-fit opp', s17Groups[READINESS_GROUPS.LOW_PRIORITY].some(o => o.id === 'opp-s17-low'));
+
+// 17d. High readiness roles sort above low readiness within same group
+const s17TwoApproved = [
+  { ...s17ReadyOpp, id: 'opp-s17-high', pack_readiness_score: 90 },
+  { ...s17ReadyOpp, id: 'opp-s17-lower', pack_readiness_score: 72 },
+];
+const s17GroupsTwoApproved = groupByReadiness(s17TwoApproved);
+const s17ReadyList = s17GroupsTwoApproved[READINESS_GROUPS.READY_TO_APPLY];
+assert('Within READY_TO_APPLY group, higher readiness sorts first',
+  s17ReadyList[0].pack_readiness_score >= s17ReadyList[1].pack_readiness_score);
+
+// 17e. getBestNextActions returns prioritized action list
+const s17Actions = getBestNextActions(s17AllOpps);
+assert('getBestNextActions returns an array', Array.isArray(s17Actions));
+assert('getBestNextActions includes at least one action', s17Actions.length >= 1);
+
+// Ready-to-apply should be first when it exists
+const s17ReadyAction = s17Actions.find(a => a.type === 'ready_to_apply');
+assert('getBestNextActions includes ready_to_apply action when roles qualify', !!s17ReadyAction);
+assert('ready_to_apply action has count', s17ReadyAction && s17ReadyAction.count >= 1);
+assert('ready_to_apply action has detail string', s17ReadyAction && typeof s17ReadyAction.detail === 'string');
+
+// 17f. getBestNextActions handles empty list gracefully
+const s17EmptyActions = getBestNextActions([]);
+assert('getBestNextActions on empty opps returns empty array', s17EmptyActions.length === 0);
+
+// 17g. getBestNextActions with only rejected opps = empty/low actions
+const s17OnlyRejected = getBestNextActions([s17RejectedOpp]);
+assert('getBestNextActions with only rejected = no actionable items', s17OnlyRejected.length === 0);
+
+// 17h. computeReadinessSummary returns correct counts
+const s17Summary = computeReadinessSummary(s17AllOpps);
+assert('computeReadinessSummary returns object', typeof s17Summary === 'object');
+assert('computeReadinessSummary readyToApplyCount >= 1', s17Summary.readyToApplyCount >= 1);
+assert('computeReadinessSummary blockedByMissingUrlCount >= 1', s17Summary.blockedByMissingUrlCount >= 1);
+assert('computeReadinessSummary needsApprovalCount >= 1', s17Summary.needsApprovalCount >= 1);
+assert('computeReadinessSummary topReadyToApply is array', Array.isArray(s17Summary.topReadyToApply));
+assert('computeReadinessSummary topReadyToApply entries have id/title/score fields',
+  s17Summary.topReadyToApply.length === 0 ||
+  ('id' in s17Summary.topReadyToApply[0] && 'pack_readiness_score' in s17Summary.topReadyToApply[0]));
+
+// 17i. READINESS_GROUP_LABELS covers all group keys
+const s17AllGroupKeys = Object.values(READINESS_GROUPS);
+assert('READINESS_GROUP_LABELS has label for every READINESS_GROUP',
+  s17AllGroupKeys.every(k => !!READINESS_GROUP_LABELS[k]));
+
+// 17j. READINESS_GROUP_ORDER covers all group keys
+assert('READINESS_GROUP_ORDER includes all group keys',
+  s17AllGroupKeys.every(k => READINESS_GROUP_ORDER.includes(k)));
+
+// 17k. Weekly digest readiness summary check (source-level)
+let digestSrc17 = '';
+try { digestSrc17 = readFileSync(join(__dirname_v, '../netlify/functions/digest.js'), 'utf-8'); } catch {}
+assert('digest.js imports computeReadinessSummary', digestSrc17.includes('computeReadinessSummary'));
+assert('digest.js includes readiness in weekly digest', digestSrc17.includes('readiness'));
+assert('weekly digest summary string includes ready to apply', digestSrc17.includes('ready to apply'));
+
+// 17l. Tracker.jsx uses readiness-based sorting
+let trackerSrc17 = '';
+try { trackerSrc17 = readFileSync(join(__dirname_v, '../src/pages/Tracker.jsx'), 'utf-8'); } catch {}
+assert('Tracker.jsx imports classifyReadinessGroup', trackerSrc17.includes('classifyReadinessGroup'));
+assert('Tracker.jsx has readiness sort option', trackerSrc17.includes("'readiness'") || trackerSrc17.includes('"readiness"'));
+assert('Tracker.jsx has ReadinessBadge component or similar', trackerSrc17.includes('ReadinessBadge') || trackerSrc17.includes('readiness'));
+assert('Tracker.jsx has sort controls', trackerSrc17.includes('Sort') || trackerSrc17.includes('sortBy'));
+
+// 17m. Dashboard.jsx has Action Center
+let dashSrc17 = '';
+try { dashSrc17 = readFileSync(join(__dirname_v, '../src/pages/Dashboard.jsx'), 'utf-8'); } catch {}
+assert('Dashboard.jsx imports getBestNextActions', dashSrc17.includes('getBestNextActions'));
+assert('Dashboard.jsx has Action Center UI', dashSrc17.includes('Action Center') || dashSrc17.includes('action-center'));
+assert('Dashboard.jsx shows readyToApply count in stats', dashSrc17.includes('readyToApply'));
+
+// 17n. DiscoveryProfile.jsx has profile merge/conflict UI
+let dpSrc17 = '';
+try { dpSrc17 = readFileSync(join(__dirname_v, '../src/pages/DiscoveryProfile.jsx'), 'utf-8'); } catch {}
+assert('DiscoveryProfile.jsx imports fetchProfileBothSources', dpSrc17.includes('fetchProfileBothSources'));
+assert('DiscoveryProfile.jsx has conflict detection UI', dpSrc17.includes('conflict') || dpSrc17.includes('hasConflict'));
+assert('DiscoveryProfile.jsx shows Keep Server / Keep Local options', dpSrc17.includes('Keep Server') && dpSrc17.includes('Keep Local'));
+
+// 17o. api.js has fetchProfileBothSources
+let apiSrc17 = '';
+try { apiSrc17 = readFileSync(join(__dirname_v, '../src/lib/api.js'), 'utf-8'); } catch {}
+assert('api.js exports fetchProfileBothSources', apiSrc17.includes('fetchProfileBothSources'));
+assert('api.js fetchProfileBothSources detects conflict', apiSrc17.includes('hasConflict'));
+
+// 17p. style.css print polish includes @page rules
+let styleSrc17 = '';
+try { styleSrc17 = readFileSync(join(__dirname_v, '../src/style.css'), 'utf-8'); } catch {}
+assert('style.css has @page rules for print', styleSrc17.includes('@page'));
+assert('style.css @page has footer stamp content', styleSrc17.includes('AI Job Search System') || styleSrc17.includes('@bottom'));
+
+// 17q. ApplyPack.jsx text export includes generated timestamp
+let applyPackSrc17 = '';
+try { applyPackSrc17 = readFileSync(join(__dirname_v, '../src/pages/ApplyPack.jsx'), 'utf-8'); } catch {}
+assert('ApplyPack.jsx text export includes generated timestamp', applyPackSrc17.includes('Generated:') && applyPackSrc17.includes('toLocaleString'));
+assert('ApplyPack.jsx print function sets data-print-timestamp', applyPackSrc17.includes('data-print-timestamp'));
+
+// 17r. Approval remains mandatory — readiness classification does not bypass it
+assert('classifyReadinessGroup never marks unapproved as READY_TO_APPLY',
+  classifyReadinessGroup({ ...s17ReadyOpp, approval_state: 'pending' }) !== READINESS_GROUPS.READY_TO_APPLY);
+
+// 17s. Scoring hierarchy preserved
+const tpmCheck17 = scoreOpportunity('Senior Technical Project Manager', 'Lead end-to-end technical delivery. SDLC, agile, stakeholder management, Jira, PMP preferred.');
+assert('Section 17: TPM role still classifies as TPM lane', tpmCheck17.lane === LANES.TPM);
+
+const delCheck17 = scoreOpportunity('Delivery Manager', 'Lead agile squad delivery. Sprint planning, retrospectives, release cadence, SAFe. Stakeholder reporting.');
+assert('Section 17: Delivery Manager still classifies as delivery_manager', delCheck17.lane === LANES.DELIVERY_MANAGER);
+
+const weakOps17 = scoreOpportunity('Operations Manager', 'Manage store floor operations, staff rostering, inventory control.');
+assert('Section 17: Weak generic Ops not classified as TPM', weakOps17.lane !== LANES.TPM);
+assert('Section 17: Approval guard maintained — no readiness bypass', (() => {
+  try { generateApplyPack({ ...tpmOpp16, approval_state: 'pending' }); return false; } catch { return true; }
+})());
 
 
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');

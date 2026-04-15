@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext.jsx';
-import { fetchDiscoveryProfile, saveDiscoveryProfile } from '../lib/api.js';
+import { fetchDiscoveryProfile, saveDiscoveryProfile, fetchProfileBothSources, isDemoMode } from '../lib/api.js';
 
 function TagInput({ label, hint, value = [], onChange }) {
   const [text, setText] = useState('');
@@ -70,9 +70,26 @@ export default function DiscoveryProfile() {
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null); // 'server' | 'local_only' | 'local' | null
+  const [conflict, setConflict] = useState(null); // { server, local } or null
 
   useEffect(() => {
-    fetchDiscoveryProfile().then(p => setProfile(p));
+    if (!isDemoMode()) {
+      fetchProfileBothSources().then(({ server, local, hasConflict, serverSource }) => {
+        if (hasConflict) {
+          setConflict({ server, local });
+        } else {
+          // No conflict — load server if available, else local
+          setProfile(server || local || null);
+          if (!server && !local) {
+            fetchDiscoveryProfile().then(p => setProfile(p));
+          }
+        }
+      }).catch(() => {
+        fetchDiscoveryProfile().then(p => setProfile(p));
+      });
+    } else {
+      fetchDiscoveryProfile().then(p => setProfile(p));
+    }
   }, []);
 
   const update = (field, value) => {
@@ -107,6 +124,70 @@ export default function DiscoveryProfile() {
       setSaving(false);
     }
   };
+
+  if (conflict) {
+    return (
+      <div style={{ maxWidth: 700, margin: '0 auto' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1e3a5f', margin: '0 0 16px' }}>⚙ Discovery Profile — Sync Conflict</h1>
+        <div style={{
+          background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 10,
+          padding: 20, marginBottom: 24,
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#92400e', marginBottom: 8 }}>
+            ⚠ Your local profile and server profile differ
+          </div>
+          <p style={{ fontSize: 13, color: '#78350f', margin: '0 0 16px' }}>
+            This usually happens when the profile was updated on a different device or browser.
+            Choose which version to keep. Your other version will be overwritten.
+          </p>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button
+              onClick={async () => {
+                setProfile(conflict.server);
+                setConflict(null);
+                setIsDirty(false);
+                await saveDiscoveryProfile(conflict.server);
+                notify('Kept server profile — local copy updated.', 'success');
+              }}
+              style={{
+                padding: '10px 20px', background: '#1e3a5f', color: '#fff',
+                border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              }}
+            >Keep Server Profile</button>
+            <button
+              onClick={async () => {
+                setProfile(conflict.local);
+                setConflict(null);
+                setIsDirty(false);
+                await saveDiscoveryProfile(conflict.local);
+                notify('Kept local profile — server copy updated.', 'success');
+              }}
+              style={{
+                padding: '10px 20px', background: '#065f46', color: '#fff',
+                border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              }}
+            >Keep Local Profile</button>
+          </div>
+          <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {[
+              { label: '🌐 Server profile', data: conflict.server },
+              { label: '💻 Local profile', data: conflict.local },
+            ].map(({ label, data }) => (
+              <div key={label} style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: 12 }}>
+                <div style={{ fontWeight: 700, fontSize: 12, color: '#92400e', marginBottom: 6 }}>{label}</div>
+                <div style={{ fontSize: 11, color: '#78350f' }}>
+                  Include: {(data?.includeTitleKeywords || []).slice(0, 3).join(', ') || '(none)'}{(data?.includeTitleKeywords || []).length > 3 ? ` +${(data.includeTitleKeywords.length - 3)} more` : ''}<br />
+                  Exclude: {(data?.excludeTitleKeywords || []).slice(0, 2).join(', ') || '(none)'}<br />
+                  Remote: {data?.remotePreference || '—'}<br />
+                  Max per run: {data?.maxRecordsPerRun || '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!profile) {
     return <div style={{ padding: 40, color: '#6b7280' }}>Loading profile…</div>;
@@ -265,10 +346,12 @@ export default function DiscoveryProfile() {
         fontSize: 12,
         color: '#6b7280',
       }}>
-        <strong>How this works:</strong> Profile is saved in your browser. When a discovery run starts,
-        the profile's include/exclude filters are applied before scoring. Only matching, non-duplicate
-        jobs enter the approval queue. Source enable/disable controls which adapters are tried.
-        The actual scoring and lane classification always follow the locked candidate hierarchy.
+        <strong>How this works:</strong> In live mode, profile is saved to the server (Supabase) and
+        mirrored locally. In demo mode, localStorage is used. When a discovery run starts,
+        the include/exclude filters are applied before scoring. Only matching, non-duplicate
+        jobs enter the approval queue. The scoring and lane classification always follow the
+        locked candidate hierarchy. If you use multiple devices, the server profile is the
+        primary source — conflicts are surfaced at load time for your review.
       </div>
     </div>
   );
