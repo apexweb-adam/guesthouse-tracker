@@ -212,6 +212,23 @@ export const DEFAULT_DISCOVERY_PROFILE = {
     'facilities',
     'event',
     'change manager', // different discipline
+    // Additional exclusions — generic/non-technical management roles that do not
+    // map to TPM / Delivery Manager and produce queue noise:
+    'product manager',       // product ≠ project/technical PM
+    'account manager',       // sales/client management
+    'office manager',        // administrative
+    'procurement manager',   // sourcing/legal
+    'contract manager',      // legal/commercial
+    'clinical manager',      // healthcare
+    'construction manager',  // civil/construction
+    'retail manager',        // retail operations
+    'store manager',         // retail operations
+    'estate manager',        // property/real estate
+    'recruitment manager',   // HR/talent
+    'warehouse manager',     // logistics/operations
+    'site manager',          // construction/facilities
+    'property manager',      // real estate
+    'hospitality manager',   // hospitality
   ],
 
   // Domain keywords to include in description (any match = keep)
@@ -239,6 +256,10 @@ export const DEFAULT_DISCOVERY_PROFILE = {
     'retail operations',
     'supply chain only',
     'FMCG',
+    'hospitality management',
+    'real estate management',
+    'warehousing operations',
+    'clinical operations',
   ],
 
   // Location preferences (any of these = match)

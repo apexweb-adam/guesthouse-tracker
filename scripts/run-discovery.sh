@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# run-discovery.sh — Manual discovery trigger for the first live run
+# run-discovery.sh — Manual discovery trigger for live discovery runs
 #
 # Usage:
 #   ./scripts/run-discovery.sh
-#   ./scripts/run-discovery.sh src-greenhouse-boards    # single source
+#   ./scripts/run-discovery.sh src-greenhouse-boards    # Greenhouse only
+#   ./scripts/run-discovery.sh src-lever-boards         # Lever only
 #
 # Required env vars (export before running, or set in .env):
 #   SITE_URL         e.g. https://your-site.netlify.app
@@ -16,8 +17,9 @@
 # Example:
 #   export SITE_URL=https://candidate-job-search.netlify.app
 #   export DISCOVERY_SECRET=abc123...
-#   ./scripts/run-discovery.sh
-#   ./scripts/run-discovery.sh src-greenhouse-boards
+#   ./scripts/run-discovery.sh                          # all enabled live sources
+#   ./scripts/run-discovery.sh src-greenhouse-boards    # Greenhouse only
+#   ./scripts/run-discovery.sh src-lever-boards         # Lever only (after LEVER_BOARDS is set)
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail

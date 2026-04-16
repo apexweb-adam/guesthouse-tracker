@@ -1746,5 +1746,92 @@ assert('Section 21: Approval gate intact — live source activation does not byp
   return classifyReadinessGroup(liveDiscoveredRole) !== READINESS_GROUPS.READY_TO_APPLY;
 })());
 
+// ─── Section 22: Lever + Source Quality ──────────────────────────────────────
+
+import { readFileSync as readFileSync22 } from 'fs';
+import { join as join22, dirname as dirname22 } from 'path';
+import { fileURLToPath as fileURLToPath22 } from 'url';
+
+const __dirname_v22 = dirname22(fileURLToPath22(import.meta.url));
+
+function section22(label) { console.log('\n== Section 22: ' + label + ' =='); }
+
+section22('Lever + Source Quality — discovery filter, per-board cap, reports, runbook');
+
+const sourcesSrc22    = readFileSync22(join22(__dirname_v22, '../netlify/functions/_shared/sources.js'), 'utf-8');
+const jobFinderSrc22  = readFileSync22(join22(__dirname_v22, '../netlify/functions/_shared/jobFinder.js'), 'utf-8');
+const dashboardSrc22  = readFileSync22(join22(__dirname_v22, '../src/pages/Dashboard.jsx'), 'utf-8');
+const reportsSrc22    = readFileSync22(join22(__dirname_v22, '../src/pages/Reports.jsx'), 'utf-8');
+const leverRunbookSrc = readFileSync22(join22(__dirname_v22, '../LEVER_ROLLOUT_RUNBOOK.md'), 'utf-8');
+const n8nDiscoverSrc22 = readFileSync22(join22(__dirname_v22, '../n8n/workflows/05-job-discovery.json'), 'utf-8');
+
+// 22a. Discovery profile exclusion keywords hardened
+assert('sources.js excludeTitleKeywords includes office manager', sourcesSrc22.includes('office manager'));
+assert('sources.js excludeTitleKeywords includes product manager', sourcesSrc22.includes('product manager'));
+assert('sources.js excludeTitleKeywords includes account manager', sourcesSrc22.includes('account manager'));
+assert('sources.js excludeTitleKeywords includes procurement manager', sourcesSrc22.includes('procurement manager'));
+assert('sources.js excludeTitleKeywords includes contract manager', sourcesSrc22.includes('contract manager'));
+assert('sources.js excludeDomainKeywords includes hospitality management', sourcesSrc22.includes('hospitality management'));
+assert('sources.js excludeDomainKeywords includes real estate management', sourcesSrc22.includes('real estate management'));
+
+// 22b. Discovery profile still includes core TPM/Delivery roles
+assert('sources.js includeTitleKeywords still includes technical project manager', sourcesSrc22.includes('technical project manager'));
+assert('sources.js includeTitleKeywords still includes delivery manager', sourcesSrc22.includes('delivery manager'));
+
+// 22c. Per-board cap added to jobFinder
+assert('jobFinder.js has per-board cap logic', jobFinderSrc22.includes('perBoardCap') || jobFinderSrc22.includes('per-board cap') || jobFinderSrc22.includes('computePerBoardCap'));
+assert('jobFinder.js applies per-board cap to Greenhouse boards', jobFinderSrc22.includes('greenhouseBoards') && (jobFinderSrc22.includes('perBoardCap') || jobFinderSrc22.includes('slice')));
+assert('jobFinder.js applies per-board cap to Lever boards', jobFinderSrc22.includes('leverBoards') && (jobFinderSrc22.includes('perBoardCap') || jobFinderSrc22.includes('slice')));
+
+// 22d. Lever adapter still correctly set
+assert('jobFinder.js Lever adapter sets source_family=lever', jobFinderSrc22.includes('SOURCE_FAMILIES.LEVER'));
+assert('jobFinder.js Lever adapter uses api.lever.co', jobFinderSrc22.includes('api.lever.co'));
+assert('jobFinder.js Lever adapter sets source_job_id from j.id', jobFinderSrc22.includes('source_job_id: j.id'));
+
+// 22e. Dashboard has BestNewRolesPanel
+assert('Dashboard.jsx has BestNewRolesPanel component', dashboardSrc22.includes('BestNewRolesPanel'));
+assert('Dashboard.jsx BestNewRolesPanel shows fit_score', dashboardSrc22.includes('fit_score'));
+assert('Dashboard.jsx BestNewRolesPanel shows source_family', dashboardSrc22.includes('source_family'));
+assert('Dashboard.jsx BestNewRolesPanel only shows pending roles', dashboardSrc22.includes("approval_state === 'pending'"));
+assert('Dashboard.jsx BestNewRolesPanel filters fit_score >= 50', dashboardSrc22.includes('>= 50') || dashboardSrc22.includes('>=50'));
+
+// 22f. Reports has Source Quality tab
+assert('Reports.jsx has source_quality digest type', reportsSrc22.includes("'source_quality'") || reportsSrc22.includes('"source_quality"'));
+assert('Reports.jsx has SourceQualityPanel component', reportsSrc22.includes('SourceQualityPanel'));
+assert('Reports.jsx Source Quality shows recommended_pct', reportsSrc22.includes('recommended_pct'));
+assert('Reports.jsx Source Quality shows per-source-family stats', reportsSrc22.includes('source_family') && reportsSrc22.includes('familyStats'));
+assert('Reports.jsx Source Quality loadDigest skips source_quality', reportsSrc22.includes("'source_quality'") && reportsSrc22.includes('source_quality'));
+
+// 22g. n8n workflow updated with Lever notes
+assert('n8n 05-job-discovery.json has Lever support note', n8nDiscoverSrc22.includes('LEVER') || n8nDiscoverSrc22.includes('Lever'));
+assert('n8n 05-job-discovery.json mentions LEVER_BOARDS', n8nDiscoverSrc22.includes('LEVER_BOARDS'));
+
+// 22h. Lever rollout runbook exists and is complete
+assert('LEVER_ROLLOUT_RUNBOOK.md exists', leverRunbookSrc.length > 0);
+assert('LEVER_ROLLOUT_RUNBOOK.md documents LEVER_BOARDS env var', leverRunbookSrc.includes('LEVER_BOARDS'));
+assert('LEVER_ROLLOUT_RUNBOOK.md includes verify slug step', leverRunbookSrc.includes('jobs.lever.co'));
+assert('LEVER_ROLLOUT_RUNBOOK.md includes manual Lever discovery command', leverRunbookSrc.includes('src-lever-boards'));
+assert('LEVER_ROLLOUT_RUNBOOK.md includes second-run dedup check', leverRunbookSrc.includes('second') && leverRunbookSrc.includes('dedup'));
+assert('LEVER_ROLLOUT_RUNBOOK.md includes how to disable Lever only', leverRunbookSrc.includes('Disable Lever Only') || leverRunbookSrc.includes('disable Lever') || leverRunbookSrc.includes('Disable Lever'));
+assert('LEVER_ROLLOUT_RUNBOOK.md includes safe delete pending-only pattern', leverRunbookSrc.includes("approval_state = 'pending'") || leverRunbookSrc.includes("approval_state='pending'"));
+assert('LEVER_ROLLOUT_RUNBOOK.md never deletes approved records', leverRunbookSrc.includes('NEVER delete approved') || leverRunbookSrc.includes('Never delete approved'));
+assert('LEVER_ROLLOUT_RUNBOOK.md includes quality thresholds', leverRunbookSrc.includes('Threshold') || leverRunbookSrc.includes('threshold') || leverRunbookSrc.includes('Rollback Decision'));
+assert('LEVER_ROLLOUT_RUNBOOK.md warns against multiple source families', leverRunbookSrc.includes('USAJobs') || leverRunbookSrc.includes('Do not activate'));
+assert('LEVER_ROLLOUT_RUNBOOK.md covers n8n scheduling', leverRunbookSrc.includes('n8n') && leverRunbookSrc.includes('schedule'));
+assert('LEVER_ROLLOUT_RUNBOOK.md references LIVE_ACTIVATION_RUNBOOK for Greenhouse', leverRunbookSrc.includes('LIVE_ACTIVATION_RUNBOOK'));
+
+// 22i. Hierarchy still intact
+const tpmCheck22 = scoreOpportunity('Technical Project Manager', 'Lead SDLC delivery with cross-functional teams.');
+assert('Section 22: TPM hierarchy intact', tpmCheck22.lane === LANES.TPM);
+
+const officeManager22 = passesDiscoveryProfile({ title: 'Office Manager', description: 'Manage the office.' }, DEFAULT_DISCOVERY_PROFILE);
+assert('Section 22: Office Manager excluded by discovery profile', !officeManager22);
+
+const leverTPM22 = passesDiscoveryProfile({ title: 'Technical Project Manager', description: 'Agile SDLC delivery', source_family: 'lever' }, DEFAULT_DISCOVERY_PROFILE);
+assert('Section 22: Lever TPM role passes discovery profile', leverTPM22);
+
+const leverOpsNoTech22 = passesDiscoveryProfile({ title: 'Operations Manager', description: 'General business operations oversight.' }, DEFAULT_DISCOVERY_PROFILE);
+assert('Section 22: Generic Operations Manager excluded by discovery profile (no TPM/Delivery title match)', !leverOpsNoTech22);
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

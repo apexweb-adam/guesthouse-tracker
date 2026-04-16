@@ -180,6 +180,11 @@
     "All scoring, dedup, and classification happen inside the Netlify function. n8n only triggers it.",
     "If /discover returns 401, check DISCOVERY_SECRET in both n8n and Netlify environments.",
     "If discovery is disabled (LIVE_INTAKE_ENABLED != true), the function returns ok:false with a message — n8n logs and continues.",
-    "Combine with workflow 02 (approval digest) to notify when the queue grows after a discovery run."
+    "Combine with workflow 02 (approval digest) to notify when the queue grows after a discovery run.",
+    "LEVER SUPPORT: Lever is the second live source. Set LEVER_BOARDS env var (comma-separated company slugs, e.g. atlassian,canva) in Netlify. Enable the src-lever-boards source in the Sources UI. No changes to this workflow are needed — /discover handles both Greenhouse and Lever.",
+    "SOURCE-SPECIFIC TESTING: To test a single source, POST with body {\"sourceId\":\"src-greenhouse-boards\"} or {\"sourceId\":\"src-lever-boards\"} instead of an empty body. The manual trigger in this workflow always runs all enabled sources.",
+    "LEVER ACTIVATION ORDER: (1) Set LEVER_BOARDS in Netlify env, (2) enable src-lever-boards in Sources UI, (3) run this workflow manually once, (4) verify queue quality, (5) run a second time to confirm dedup, (6) only then keep the schedule active.",
+    "DO NOT activate multiple new source families simultaneously. Prove Lever clean before enabling others.",
+    "ROLLBACK: To disable Lever only, disable src-lever-boards in the Sources UI or set LEVER_BOARDS= (empty) in Netlify and redeploy. Greenhouse remains unaffected."
   ]
 }

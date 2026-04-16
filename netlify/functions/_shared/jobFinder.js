@@ -258,17 +258,24 @@ export async function discoverJobsForSource(source, config = {}) {
     discoveryProfile = DEFAULT_DISCOVERY_PROFILE,
   } = config;
 
+  // Per-board cap: prevent a single busy board from flooding the run.
+  // Each board gets at most this many raw (pre-filter) results before merging.
+  const globalMax = discoveryProfile.maxRecordsPerRun || 50;
+  const computePerBoardCap = (boardCount) => Math.max(10, Math.ceil(globalMax / Math.max(1, boardCount)));
+
   let rawJobs = [];
 
   if (source.sourceFamily === SOURCE_FAMILIES.GREENHOUSE) {
+    const perBoardCap = computePerBoardCap(greenhouseBoards.length);
     for (const boardToken of greenhouseBoards) {
       const jobs = await fetchGreenhouseJobs(boardToken, source.id);
-      rawJobs.push(...jobs);
+      rawJobs.push(...jobs.slice(0, perBoardCap));
     }
   } else if (source.sourceFamily === SOURCE_FAMILIES.LEVER) {
+    const perBoardCap = computePerBoardCap(leverBoards.length);
     for (const siteSlug of leverBoards) {
       const jobs = await fetchLeverJobs(siteSlug, source.id);
-      rawJobs.push(...jobs);
+      rawJobs.push(...jobs.slice(0, perBoardCap));
     }
   } else if (source.sourceFamily === SOURCE_FAMILIES.USAJOBS) {
     rawJobs = await fetchUSAJobsRoles(usajobsKeyword, maxResults, source.id);

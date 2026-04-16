@@ -5,6 +5,96 @@ import OpportunityCard from '../components/OpportunityCard.jsx';
 import QuickAddWidget from '../components/QuickAddWidget.jsx';
 import { approveOpportunity } from '../lib/api.js';
 import { getBestNextActions, classifyReadinessGroup, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
+import { LANE_CONFIG } from '../../netlify/functions/_shared/scoring.js';
+
+const SOURCE_FAMILY_LABELS = {
+  greenhouse: { label: 'Greenhouse', color: '#15803d', bg: '#dcfce7' },
+  lever:      { label: 'Lever',      color: '#7c3aed', bg: '#f5f3ff' },
+  usajobs:    { label: 'USAJobs',    color: '#1d4ed8', bg: '#eff6ff' },
+  seek:       { label: 'SEEK',       color: '#0369a1', bg: '#f0f9ff' },
+  apsjobs:    { label: 'APSJobs',    color: '#b45309', bg: '#fef3c7' },
+  manual:     { label: 'Manual',     color: '#6b7280', bg: '#f9fafb' },
+  csv:        { label: 'CSV',        color: '#6b7280', bg: '#f9fafb' },
+};
+
+// ─── Best New Roles Panel ─────────────────────────────────────────────────────
+// Shows top pending discovered roles ranked by fit score.
+// Source family is shown so the operator can judge source quality at a glance.
+
+function BestNewRolesPanel({ opps, onNavigate }) {
+  const bestNew = useMemo(() =>
+    opps
+      .filter(o =>
+        o.approval_state === 'pending' &&
+        !['rejected', 'ghosted', 'stale', 'withdrawn'].includes(o.status) &&
+        (o.fit_score || 0) >= 50
+      )
+      .sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0))
+      .slice(0, 6),
+  [opps]);
+
+  if (bestNew.length === 0) return null;
+
+  return (
+    <div className="card" style={{ marginBottom: 24, borderLeft: '4px solid #7c3aed' }}>
+      <div className="card-header" style={{ background: '#f5f3ff' }}>
+        <h2 style={{ color: '#7c3aed' }}>🏆 Best New Roles — Pending Approval</h2>
+        <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('/queue')}>Review all →</button>
+      </div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {bestNew.map(o => {
+          const sfMeta = SOURCE_FAMILY_LABELS[o.source_family] || SOURCE_FAMILY_LABELS.manual;
+          const laneMeta = LANE_CONFIG[o.lane] || null;
+          return (
+            <div
+              key={o.id}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 0', borderBottom: '1px solid var(--gray-100)',
+                cursor: 'pointer',
+              }}
+              onClick={() => onNavigate(`/opportunity/${o.id}`)}
+            >
+              {/* Fit score */}
+              <span style={{
+                fontWeight: 700, fontSize: 15, color: (o.fit_score || 0) >= 85 ? '#15803d' : (o.fit_score || 0) >= 70 ? '#1d4ed8' : '#92400e',
+                minWidth: 32, textAlign: 'right',
+              }}>
+                {o.fit_score || 0}
+              </span>
+              {/* Title + company */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {o.title}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{o.company}</div>
+              </div>
+              {/* Lane badge */}
+              {laneMeta && (
+                <span style={{
+                  background: `${laneMeta.color}18`, color: laneMeta.color,
+                  padding: '2px 7px', borderRadius: 10, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+                }}>
+                  {laneMeta.short}
+                </span>
+              )}
+              {/* Source family badge */}
+              <span style={{
+                background: sfMeta.bg, color: sfMeta.color,
+                padding: '2px 7px', borderRadius: 10, fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap',
+              }}>
+                {sfMeta.label}
+              </span>
+            </div>
+          );
+        })}
+        <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4 }}>
+          Showing pending roles with fit score ≥ 50, ranked by score. Approve strong TPM/Delivery roles first.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Follow-up Due Alert Banner ───────────────────────────────────────────────
 // Shows only when real follow-up actions are overdue or due today/tomorrow.
@@ -130,6 +220,9 @@ export default function Dashboard() {
 
       {/* Quick Add Widget */}
       <QuickAddWidget />
+
+      {/* Best New Roles — top pending roles by fit score with source family */}
+      <BestNewRolesPanel opps={opps} onNavigate={nav} />
 
       {/* Stats Row */}
       <div className="grid-4" style={{ marginBottom: 24 }}>
