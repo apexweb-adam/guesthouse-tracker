@@ -15,12 +15,17 @@
 
 n8n is the **primary orchestration backbone**. It does **not** contain any business logic.
 
+**Active workflows (current):**
+
 | Workflow | Schedule | What it does |
 |---|---|---|
-| `01-rss-intake.json` | Every 2 hours | Fetches active source list, filters to live-enabled RSS sources, triggers `ingest-scheduled` function per source |
-| `02-approval-digest.json` | Daily 08:00 | Fetches approval queue digest + stale digest from API, fires `queue_updated` and `stale_reminder` webhook events if items exist |
-| `03-source-health.json` | Every 6 hours | Fetches source health from API, fires `source_failure` webhook for any sources with failures or noisy warnings |
-| `04-weekly-summary.json` | Monday 09:00 | Fetches weekly digest, fires `weekly_summary` webhook; optional disabled backup node |
+| `05-job-discovery.json` | Every 6 hours | Calls `POST /discover` to run structured job discovery across live sources (Greenhouse, Lever) |
+| `06-daily-approval-digest.json` | Daily 08:00 | Fetches approval queue digest from API, fires webhook if pending items exist |
+| `07-weekly-readiness-summary.json` | Monday 09:00 | Fetches weekly readiness summary from API, fires `weekly_summary` webhook |
+
+**Legacy workflows (01–04 — superseded, kept for reference only):**
+
+Files `01-rss-intake.json`, `02-approval-digest.json`, `03-source-health.json`, `04-weekly-summary.json` are older iterations. Do not import or activate them. The active set is 05–07.
 
 **Rules n8n follows:**
 - All calls are HTTP requests to Netlify Functions

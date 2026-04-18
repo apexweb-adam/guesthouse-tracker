@@ -52,7 +52,7 @@ Trust level is set per-source in the database or `DEFAULT_SOURCES`. It does not 
 | Method | How to use |
 |---|---|
 | Environment variable | Set `LIVE_INTAKE_ENABLED=false` in Netlify environment variables. Restart required. |
-| n8n kill check | Workflow `01-rss-intake.json` reads `/sources` and checks `liveIntakeEnabled` before firing any ingest. If false, all source processing is skipped. |
+| n8n kill check | Workflow `05-job-discovery.json` reads `/sources` and checks `liveIntakeEnabled` before firing any ingest. If false, all source processing is skipped. |
 | UI status | Sidebar shows `🟢 Live intake ON` or `🔴 Live intake OFF` |
 
 The kill switch is respected at both the API layer and the n8n orchestration layer. Disabling it at either layer is sufficient to halt automated intake.
@@ -61,7 +61,7 @@ The kill switch is respected at both the API layer and the n8n orchestration lay
 
 Each source has an `enabled` boolean field. Disabled sources:
 - Are filtered out by `ingest-scheduled` before any fetch is attempted
-- Are filtered out by n8n workflow `01-rss-intake.json` before triggering ingest
+- Are filtered out by n8n workflow `05-job-discovery.json` before triggering ingest
 - Are shown as disabled in the Sources UI
 - Can be re-enabled via the UI toggle (calls `PATCH /sources`)
 
@@ -93,7 +93,7 @@ When noisy:
 - `noisy_warning: true` is set on the source record
 - The Sources UI shows a yellow warning indicator
 - The ingestion digest highlights the source
-- n8n workflow `03-source-health.json` fires a `source_failure` webhook for operator review
+- n8n workflow `05-job-discovery.json` fires a `source_failure` webhook for operator review
 - The source is NOT automatically disabled (human must decide)
 
 To suppress a noisy source: disable it via the UI or set `enabled: false` in the database.

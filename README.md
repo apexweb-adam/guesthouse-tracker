@@ -419,7 +419,7 @@ The system is now **activation-ready** for the first live structured discovery r
 | Approval gate enforced (no bypass) | ✅ |
 | Structured sources only (no scraping) | ✅ |
 | Demo mode isolated from live data | ✅ |
-| 582 automated tests passing | ✅ |
+| 636 automated tests passing | ✅ |
 
 **First live rollout — activation sequence:**
 1. Run all 4 Supabase migrations in order (`001` → `002` → `003` → `004`)

@@ -18,8 +18,8 @@
 | Preparation package generation | `/prep?id=<id>` endpoint + `_shared/prep.js` |
 | **Real job discovery — Greenhouse** | **`discover.js` + `_shared/jobFinder.js` → Greenhouse public boards API (no auth required)** |
 | **Real job discovery — Lever** | **`discover.js` + `_shared/jobFinder.js` → Lever public postings API (no auth required)** |
-| **Real job discovery — USAJobs** | **`discover.js` + `_shared/jobFinder.js` → USAJobs REST API (requires USAJOBS_API_KEY)** |
-| **Real job discovery — RSS/Atom** | **`ingest-scheduled.js` → RSS/Atom feeds (SEEK, APSJobs) with `jobFinder.fetchRSSFeed()`** |
+| Real job discovery — USAJobs | Code exists but NOT activated. Requires `USAJOBS_API_KEY`. Not enabled in current rollout. |
+| Real job discovery — RSS/Atom | Code exists but NOT activated in current rollout. RSS/Atom feed support is built but no boards are live yet. |
 | **Discovery profile filtering** | **`_shared/sources.js` → `passesDiscoveryProfile()` — title include/exclude, domain exclude, pre-score filter** |
 | **canonical_job_url + application_url stored** | **On every discovered opportunity — `_shared/jobFinder.normaliseJob()`** |
 | **Demo record isolation** | **All demo records have `is_demo_record: true`, `source_family: 'demo'`, no example.com URLs** |
@@ -50,7 +50,7 @@
 ## The apply flow (find → score → approve → prepare → apply → track)
 
 ```
-1. DISCOVER   Job found via Greenhouse / Lever / USAJobs / RSS — canonical_job_url stored
+1. DISCOVER   Job found via Greenhouse or Lever — canonical_job_url stored
 2. QUEUE      Recommended jobs enter approval queue (profile-filtered, scored, classified)
 3. APPROVE    Human approves or rejects each role
 4. PACK READY Apply Pack auto-generated: resume recommendation + checklist + keywords + outreach drafts
@@ -65,23 +65,23 @@ The system discovers real jobs from governed structured sources. No scraping, no
 
 ### Supported source families
 
-| Source family | How it works | Auth |
-|---|---|---|
-| `greenhouse` | Greenhouse public boards JSON API — `boards-api.greenhouse.io/v1/boards/{token}/jobs` | None (public) |
-| `lever` | Lever public postings JSON API — `api.lever.co/v0/postings/{slug}` | None (public) |
-| `usajobs` | USAJobs REST API — `data.usajobs.gov/api/search` | USAJOBS_API_KEY required |
-| `seek` | SEEK RSS/Atom feed | None (public) |
-| `apsjobs` | Australian Public Service Jobs RSS | None (public) |
-| `rss` | Any approved RSS/Atom feed | None |
-| `linkedin` | NOT automated. Email intake only — no browser automation, no scraping. | N/A |
+| Source family | How it works | Auth | Status |
+|---|---|---|---|
+| `greenhouse` | Greenhouse public boards JSON API — `boards-api.greenhouse.io/v1/boards/{token}/jobs` | None (public) | **Active** |
+| `lever` | Lever public postings JSON API — `api.lever.co/v0/postings/{slug}` | None (public) | **Active** |
+| `usajobs` | USAJobs REST API — `data.usajobs.gov/api/search` | USAJOBS_API_KEY required | Not activated |
+| `seek` | SEEK RSS/Atom feed | None (public) | Not activated |
+| `apsjobs` | Australian Public Service Jobs RSS | None (public) | Not activated |
+| `rss` | Any approved RSS/Atom feed | None | Not activated |
+| `linkedin` | NOT automated. Email intake only — no browser automation, no scraping. | N/A | Manual only |
 
 ### env vars required per source family
 
 ```
-GREENHOUSE_BOARDS=telstra,anz,atlassian      # comma-separated board tokens
-LEVER_BOARDS=canva,xero,atlassian            # comma-separated company slugs
-USAJOBS_API_KEY=your-key                     # from developer.usajobs.gov
-USAJOBS_USER_AGENT=your-registered-email     # must match API key registration
+GREENHOUSE_BOARDS=telstra,anz,atlassian      # comma-separated board tokens (active)
+LEVER_BOARDS=canva,xero,atlassian            # comma-separated company slugs (active)
+# USAJOBS_API_KEY=your-key                   # not activated in current rollout
+# USAJOBS_USER_AGENT=your-registered-email   # not activated in current rollout
 LIVE_INTAKE_ENABLED=true                     # global kill switch — must be true
 ```
 

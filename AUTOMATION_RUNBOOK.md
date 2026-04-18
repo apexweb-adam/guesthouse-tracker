@@ -56,7 +56,7 @@ curl https://your-site.netlify.app/.netlify/functions/sources
 2. See per-source summaries and recent log entries
 
 **Via n8n:**
-- Workflow `03-source-health.json` runs every 6 hours and emails you about failing sources via Zapier
+- Workflow `05-job-discovery.json` runs every 6 hours and alerts on failing sources via Zapier
 
 ---
 
@@ -123,7 +123,7 @@ netlify env:set LIVE_INTAKE_ENABLED false
 
 # In n8n: deactivate all workflows
 # - Go to n8n dashboard
-# - Deactivate workflows 01, 02, 03, 04
+# - Deactivate workflows 05, 06, 07
 
 # In Zapier: pause all Zaps
 ```
