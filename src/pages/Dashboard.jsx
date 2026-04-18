@@ -22,6 +22,9 @@ const SOURCE_FAMILY_LABELS = {
 // Source family is shown so the operator can judge source quality at a glance.
 
 function BestNewRolesPanel({ opps, onNavigate }) {
+  const now = Date.now();
+  const oneDayAgo = new Date(now - 86400000).toISOString();
+
   const bestNew = useMemo(() =>
     opps
       .filter(o =>
@@ -33,6 +36,10 @@ function BestNewRolesPanel({ opps, onNavigate }) {
       .slice(0, 6),
   [opps]);
 
+  const newTodayCount = useMemo(() =>
+    bestNew.filter(o => (o.discovered_at || o.ingested_at || '') >= oneDayAgo).length,
+  [bestNew, oneDayAgo]);
+
   if (bestNew.length === 0) return null;
 
   return (
@@ -41,10 +48,16 @@ function BestNewRolesPanel({ opps, onNavigate }) {
         <h2 style={{ color: '#7c3aed' }}>🏆 Best New Roles — Pending Approval</h2>
         <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('/queue')}>Review all →</button>
       </div>
+      {newTodayCount > 0 && (
+        <div style={{ padding: '4px 12px 0', fontSize: 12, color: '#15803d', fontWeight: 600 }}>
+          {newTodayCount} new today
+        </div>
+      )}
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {bestNew.map(o => {
           const sfMeta = SOURCE_FAMILY_LABELS[o.source_family] || SOURCE_FAMILY_LABELS.manual;
           const laneMeta = LANE_CONFIG[o.lane] || null;
+          const isNewToday = (o.discovered_at || o.ingested_at || '') >= oneDayAgo;
           return (
             <div
               key={o.id}
@@ -69,6 +82,16 @@ function BestNewRolesPanel({ opps, onNavigate }) {
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{o.company}</div>
               </div>
+              {/* NEW TODAY badge */}
+              {isNewToday && (
+                <span style={{
+                  background: '#dcfce7', color: '#15803d',
+                  padding: '1px 6px', borderRadius: 8, fontSize: 9, fontWeight: 700,
+                  whiteSpace: 'nowrap', letterSpacing: '0.04em',
+                }}>
+                  NEW TODAY
+                </span>
+              )}
               {/* Lane badge */}
               {laneMeta && (
                 <span style={{

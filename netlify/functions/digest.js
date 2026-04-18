@@ -1,7 +1,7 @@
 /**
  * Netlify Function: /digest
  *
- * GET ?type=approval|stale|weekly|ingestion
+ * GET ?type=approval|stale|weekly|ingestion|daily
  *
  * Generates structured digest summaries from live system data.
  * Used by n8n, Zapier, and the Reports page.
@@ -11,6 +11,7 @@
  *   stale     → stale / ghosted opportunities needing follow-up
  *   weekly    → conversion funnel + ingestion summary (last 7 days)
  *   ingestion → per-source ingestion run summary
+ *   daily     → per-source-family summary of jobs ingested in last 24h
  */
 
 import { listOpportunities, listIngestionLogs, isDemoMode } from './_shared/db.js';
@@ -169,12 +170,79 @@ async function ingestionDigest() {
   };
 }
 
+async function dailyDigest() {
+  const allOpps = await listOpportunities();
+  const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
+
+  const todayOpps = allOpps.filter(o =>
+    (o.discovered_at || o.ingested_at || '') >= oneDayAgo
+  );
+
+  const familyMap = {};
+  for (const o of todayOpps) {
+    const sf = o.source_family || 'manual';
+    if (!familyMap[sf]) {
+      familyMap[sf] = { source_family: sf, new_today: 0, high_fit_today: 0, recommended_today: 0, score_sum: 0 };
+    }
+    const fm = familyMap[sf];
+    fm.new_today++;
+    if ((o.fit_score || 0) >= 85) fm.high_fit_today++;
+    if (o.recommended) fm.recommended_today++;
+    fm.score_sum += (o.fit_score || 0);
+  }
+
+  const per_source_family = Object.values(familyMap).map(fm => ({
+    source_family: fm.source_family,
+    new_today: fm.new_today,
+    high_fit_today: fm.high_fit_today,
+    recommended_today: fm.recommended_today,
+    avg_score: fm.new_today > 0 ? Math.round(fm.score_sum / fm.new_today) : 0,
+  })).sort((a, b) => b.new_today - a.new_today);
+
+  const high_fit_roles = todayOpps
+    .filter(o => (o.fit_score || 0) >= 85)
+    .sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0))
+    .slice(0, 10)
+    .map(o => ({
+      id: o.id,
+      title: o.title,
+      company: o.company,
+      fit_score: o.fit_score,
+      source_family: o.source_family,
+      lane: o.lane,
+    }));
+
+  const readiness = computeReadinessSummary(allOpps);
+
+  const blocked_by_missing_url = allOpps.filter(o =>
+    o.approval_state === 'approved' && !o.application_url && !o.canonical_job_url
+  ).length;
+
+  const approval_needed = allOpps.filter(o =>
+    o.approval_state === 'pending' && !['rejected', 'ghosted', 'stale'].includes(o.status)
+  ).length;
+
+  const totalToday = todayOpps.length;
+  const highFitToday = todayOpps.filter(o => (o.fit_score || 0) >= 85).length;
+
+  return {
+    type: 'daily',
+    per_source_family,
+    high_fit_roles,
+    readiness,
+    blocked_by_missing_url,
+    approval_needed,
+    summary: `Daily digest: ${totalToday} new role${totalToday !== 1 ? 's' : ''} today, ${highFitToday} high-fit (score ≥ 85), ${approval_needed} pending approval`,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 export const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'GET') return json(405, { error: 'Method not allowed' });
 
   const type = event.queryStringParameters?.type || 'approval';
-  const validTypes = ['approval', 'stale', 'weekly', 'ingestion'];
+  const validTypes = ['approval', 'stale', 'weekly', 'ingestion', 'daily'];
   if (!validTypes.includes(type)) {
     return json(400, { error: `type must be one of: ${validTypes.join(', ')}` });
   }
@@ -184,6 +252,7 @@ export const handler = async (event) => {
     if (type === 'approval') digest = await approvalDigest();
     else if (type === 'stale') digest = await staleDigest();
     else if (type === 'weekly') digest = await weeklyDigest();
+    else if (type === 'daily') digest = await dailyDigest();
     else digest = await ingestionDigest();
 
     return json(200, { digest, demo: isDemoMode() });

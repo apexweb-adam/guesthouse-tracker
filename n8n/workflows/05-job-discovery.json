@@ -1,20 +1,24 @@
 {
   "name": "05 — Job Discovery Run (Scheduled + Manual)",
   "_comment": "ARCHITECTURE NOTE: n8n does NOT re-implement scoring, dedup, classification, or discovery profile logic. It only triggers POST /discover on the Netlify function. Set SITE_URL and DISCOVERY_SECRET env vars in n8n. DISCOVERY_SECRET must match the server env var of the same name.",
+  "_daily_schedule": {
+    "schedule": "0 7 * * * (daily at 7am UTC)",
+    "note": "Changed from every-6h to daily. For source-specific runs use manual trigger or POST body with sourceId or sourceFamily."
+  },
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "hours",
-              "minutesInterval": 360
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
             }
           ]
         }
       },
       "id": "schedule-trigger",
-      "name": "Schedule Trigger (Every 6h)",
+      "name": "Schedule Trigger (Daily 7am UTC)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
       "position": [200, 300]
@@ -141,7 +145,7 @@
     }
   ],
   "connections": {
-    "Schedule Trigger (Every 6h)": {
+    "Schedule Trigger (Daily 7am UTC)": {
       "main": [[{ "node": "POST /discover", "type": "main", "index": 0 }]]
     },
     "Manual Trigger": {
@@ -174,7 +178,7 @@
     "DISCOVERY_SECRET": "Must match DISCOVERY_SECRET env var set in Netlify — required for /discover auth"
   },
   "_notes": [
-    "This workflow fires every 6 hours. Adjust the schedule in 'Schedule Trigger (Every 6h)' as needed.",
+    "This workflow fires daily at 7am UTC. Adjust the schedule in 'Schedule Trigger (Daily 7am UTC)' as needed.",
     "Manual trigger is available for on-demand discovery runs from the n8n UI.",
     "DISCOVERY_SECRET is passed as X-Discovery-Secret header — must match server env var.",
     "All scoring, dedup, and classification happen inside the Netlify function. n8n only triggers it.",
@@ -183,6 +187,9 @@
     "Combine with workflow 02 (approval digest) to notify when the queue grows after a discovery run.",
     "LEVER SUPPORT: Lever is the second live source. Set LEVER_BOARDS env var (comma-separated company slugs, e.g. atlassian,canva) in Netlify. Enable the src-lever-boards source in the Sources UI. No changes to this workflow are needed — /discover handles both Greenhouse and Lever.",
     "SOURCE-SPECIFIC TESTING: To test a single source, POST with body {\"sourceId\":\"src-greenhouse-boards\"} or {\"sourceId\":\"src-lever-boards\"} instead of an empty body. The manual trigger in this workflow always runs all enabled sources.",
+    "GREENHOUSE-ONLY RUN: POST body {\"sourceId\":\"src-greenhouse-boards\"}",
+    "LEVER-ONLY RUN: POST body {\"sourceId\":\"src-lever-boards\"}",
+    "SOURCE-FAMILY RUN: POST body {\"sourceFamily\":\"greenhouse\"} to run all sources of that family",
     "LEVER ACTIVATION ORDER: (1) Set LEVER_BOARDS in Netlify env, (2) enable src-lever-boards in Sources UI, (3) run this workflow manually once, (4) verify queue quality, (5) run a second time to confirm dedup, (6) only then keep the schedule active.",
     "DO NOT activate multiple new source families simultaneously. Prove Lever clean before enabling others.",
     "ROLLBACK: To disable Lever only, disable src-lever-boards in the Sources UI or set LEVER_BOARDS= (empty) in Netlify and redeploy. Greenhouse remains unaffected."

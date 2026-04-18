@@ -80,12 +80,20 @@ function SourceQualityPanel({ opps }) {
   }
 
   const isNoisy = (s) => s.total >= 5 && s.junk_pct > 50;
+  const isNoiseAlert = (s) => s.total >= 5 && s.junk_pct > 60;
+
+  // Find the best-signal source (highest recommended_pct) among families with >= 3 records
+  const eligibleForBadge = familyStats.filter(s => s.total >= 3);
+  const bestSignalFamily = eligibleForBadge.length >= 2
+    ? eligibleForBadge.reduce((best, s) => s.recommended_pct > best.recommended_pct ? s : best, eligibleForBadge[0])
+    : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div className="card card-pad" style={{ fontSize: 12, color: 'var(--gray-600)', borderLeft: '3px solid var(--blue)', background: '#eff6ff' }}>
         <strong>Source Quality Report</strong> — computed from all ingested opportunities in this session.
         Use this to compare Greenhouse vs Lever quality and decide which source to throttle or promote.
+        Dedup rates are available in the <strong>Ingestion Health</strong> tab.
       </div>
 
       {/* Summary row */}
@@ -117,6 +125,7 @@ function SourceQualityPanel({ opps }) {
                 <th>Recommended</th>
                 <th>High Fit (85+)</th>
                 <th>Avg Score</th>
+                <th>Junk Rate</th>
                 <th>Approved</th>
                 <th>Rejected</th>
                 <th>Pending</th>
@@ -129,6 +138,8 @@ function SourceQualityPanel({ opps }) {
               {familyStats.map(s => {
                 const meta = SF_META[s.source_family] || SF_META.manual;
                 const noisy = isNoisy(s);
+                const noiseAlert = isNoiseAlert(s);
+                const isBestSignal = bestSignalFamily && s.source_family === bestSignalFamily.source_family;
                 const laneMeta = s.top_lane ? LANE_CONFIG[s.top_lane] : null;
                 return (
                   <tr key={s.source_family}>
@@ -139,12 +150,21 @@ function SourceQualityPanel({ opps }) {
                       }}>
                         {meta.label}
                       </span>
+                      {isBestSignal && (
+                        <span style={{ marginLeft: 5, background: '#dcfce7', color: '#15803d', padding: '1px 5px', borderRadius: 8, fontSize: 9, fontWeight: 700 }}>
+                          ✓ Better Signal
+                        </span>
+                      )}
                     </td>
                     <td style={{ fontSize: 12 }}>{s.total}</td>
                     <td style={{ fontSize: 12, color: 'var(--green)' }}>{s.recommended} ({s.recommended_pct}%)</td>
                     <td style={{ fontSize: 12, color: '#1d4ed8' }}>{s.high_fit}</td>
                     <td style={{ fontSize: 12, fontWeight: 600, color: s.avg_score >= 70 ? 'var(--green)' : s.avg_score >= 50 ? 'var(--amber)' : 'var(--gray-500)' }}>
                       {s.avg_score}
+                    </td>
+                    <td style={{ fontSize: 12, color: noiseAlert ? '#c2410c' : noisy ? 'var(--amber)' : 'inherit', fontWeight: noiseAlert ? 700 : 'normal' }}>
+                      {s.junk_pct}%
+                      {noiseAlert && <span style={{ marginLeft: 4, background: '#fee2e2', color: '#c2410c', padding: '1px 5px', borderRadius: 6, fontSize: 9, fontWeight: 700 }}>Noise Alert</span>}
                     </td>
                     <td style={{ fontSize: 12 }}>{s.approved}</td>
                     <td style={{ fontSize: 12, color: s.rejected > 0 ? 'var(--red)' : 'inherit' }}>{s.rejected}</td>

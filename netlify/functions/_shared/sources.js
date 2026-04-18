@@ -96,6 +96,7 @@ export const DEFAULT_SOURCES = [
     trustLevel: TRUST_LEVELS.MEDIUM,
     description: 'SEEK structured RSS feed for Technical PM roles in ICT. Requires LIVE_INTAKE_ENABLED=true.',
     liveCapable: true,
+    maxRecordsPerSource: 25,
   },
   {
     id: 'src-rss-apsjobs',
@@ -107,6 +108,7 @@ export const DEFAULT_SOURCES = [
     trustLevel: TRUST_LEVELS.HIGH,
     description: 'Australian Public Service jobs RSS — federal TPM / delivery roles. Government jobs are APS-authenticated postings.',
     liveCapable: true,
+    maxRecordsPerSource: 25,
   },
   // ── ATS Public APIs ─────────────────────────────────────────────────────────
   {
@@ -119,6 +121,7 @@ export const DEFAULT_SOURCES = [
     trustLevel: TRUST_LEVELS.HIGH,
     description: 'Greenhouse public job board API. Set GREENHOUSE_BOARDS env var to comma-separated board tokens (e.g. telstra,anz). No auth required — these are public boards.',
     liveCapable: true,
+    maxRecordsPerSource: 25,
   },
   {
     id: 'src-lever-boards',
@@ -130,6 +133,7 @@ export const DEFAULT_SOURCES = [
     trustLevel: TRUST_LEVELS.HIGH,
     description: 'Lever public postings API. Set LEVER_BOARDS env var to comma-separated company slugs. Public read-only — no auth required.',
     liveCapable: true,
+    maxRecordsPerSource: 25,
   },
   {
     id: 'src-usajobs',
@@ -141,6 +145,7 @@ export const DEFAULT_SOURCES = [
     trustLevel: TRUST_LEVELS.HIGH,
     description: 'USAJobs REST API for federal PM/TPM roles. Set USAJOBS_API_KEY and USAJOBS_USER_AGENT. Must be used within API terms of service.',
     liveCapable: true,
+    maxRecordsPerSource: 25,
   },
   // ── Not automated ────────────────────────────────────────────────────────────
   {
@@ -328,4 +333,29 @@ export function mergeWithDefaults(dbSources = []) {
     }
   }
   return merged;
+}
+
+/**
+ * Returns an array of unique source families from enabled, liveCapable sources.
+ */
+export function getEnabledSourceFamilies(sources) {
+  const families = new Set();
+  for (const s of sources) {
+    if (s.liveCapable && s.enabled && s.sourceFamily) {
+      families.add(s.sourceFamily);
+    }
+  }
+  return Array.from(families);
+}
+
+/**
+ * Filter sources by family.
+ * If familyFilter is a non-empty string, only return sources matching that family.
+ * Otherwise return all sources.
+ */
+export function filterSourcesByFamily(sources, familyFilter) {
+  if (!familyFilter || typeof familyFilter !== 'string' || familyFilter.trim() === '') {
+    return sources;
+  }
+  return sources.filter(s => s.sourceFamily === familyFilter.trim());
 }

@@ -744,3 +744,94 @@ curl -X POST https://YOUR_SITE/.netlify/functions/discover \
 # Run local verification
 node scripts/verify.js
 ```
+
+---
+
+## Daily Operations
+
+### Daily Schedule
+
+The job discovery workflow (n8n `05-job-discovery.json`) runs automatically once per day at **7am UTC**.
+This replaces the previous every-6-hours schedule to reduce noise and align with a morning review cadence.
+
+### Manual Daily Run
+
+To trigger discovery manually:
+
+```bash
+# Run all enabled sources
+./scripts/run-discovery.sh
+
+# Or via curl directly
+curl -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Source-Specific Runs
+
+Run only Greenhouse sources:
+```bash
+curl -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceId":"src-greenhouse-boards"}'
+```
+
+Run only Lever sources:
+```bash
+curl -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceId":"src-lever-boards"}'
+```
+
+Run all sources of a specific source family:
+```bash
+curl -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceFamily":"greenhouse"}'
+```
+
+### Daily Check
+
+After the morning run, review:
+
+1. `/discover` result: check `total_ingested`, `total_discovered`, `results` per source
+2. Daily digest: `GET /digest?type=daily` — shows per-source-family breakdown, high-fit roles, approval queue status
+
+```bash
+curl https://YOUR_SITE/.netlify/functions/digest?type=daily
+```
+
+### Daily Quality Checks
+
+| Observation | Diagnosis | Action |
+|---|---|---|
+| `total_ingested: 0` and discovery ran OK | Dedup working — roles already in DB | Normal, no action |
+| New roles appearing with `fit_score < 50` | Source quality issue | Check source config; consider tightening discovery profile |
+| `approval_needed` count growing each day | Approval queue backing up | Review and approve/reject pending roles in Dashboard |
+| `blocked_by_missing_url > 0` | Approved roles missing application URL | Add URLs manually before applying |
+
+### Live Intake Control
+
+To disable all live intake:
+```
+LIVE_INTAKE_ENABLED=false  ← set in Netlify env → Redeploy
+```
+
+This blocks ALL automated source ingestion. Manual and CSV intake remain available.
+
+### What Are the Best Jobs That Arrived Today?
+
+**Option 1:** Dashboard → **Best New Roles** panel — shows pending roles with `NEW TODAY` badge for roles ingested in the last 24h, ranked by fit score.
+
+**Option 2:** Run the daily digest and check `high_fit_roles`:
+```bash
+curl "https://YOUR_SITE/.netlify/functions/digest?type=daily"
+# → digest.high_fit_roles — top fit_score >= 85 roles from today
+# → digest.per_source_family — breakdown by source
+# → digest.approval_needed — count needing review
+```

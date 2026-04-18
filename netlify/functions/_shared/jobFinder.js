@@ -76,6 +76,7 @@ export function normaliseJob({
     source_family: source_family || SOURCE_FAMILIES.RSS,
     source: source_id || 'src-live',
     is_demo_record: false,
+    discovered_at: new Date().toISOString(),
     ...extra,
   };
 }

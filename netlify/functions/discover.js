@@ -23,7 +23,7 @@
  *   (RSS/Atom:   url configured in DEFAULT_SOURCES / DB)
  */
 
-import { isLiveIntakeEnabled, canSourceRunLive, DEFAULT_SOURCES, mergeWithDefaults } from './_shared/sources.js';
+import { isLiveIntakeEnabled, canSourceRunLive, DEFAULT_SOURCES, mergeWithDefaults, filterSourcesByFamily } from './_shared/sources.js';
 import { discoverJobsForSource, normaliseJob } from './_shared/jobFinder.js';
 import { DEFAULT_DISCOVERY_PROFILE } from './_shared/sources.js';
 import { listSources, processBatch, logIngestion, isDemoMode } from './_shared/db.js';
@@ -99,18 +99,22 @@ export const handler = async (event) => {
   let body = {};
   try { body = event.body ? JSON.parse(event.body) : {}; } catch {}
 
-  const { sourceId } = body;
+  const { sourceId, sourceFamily } = body;
 
   // Load sources
   let dbSources = [];
   try { dbSources = await listSources(); } catch {}
   const allSources = mergeWithDefaults(dbSources);
 
-  // Filter to live-capable, enabled sources (optionally single source)
-  const sourcesToRun = allSources.filter(s => {
+  // Filter to live-capable, enabled sources (optionally by single source or source family)
+  let sourcesToRun = allSources.filter(s => {
     if (sourceId && s.id !== sourceId) return false;
     return canSourceRunLive(s);
   });
+
+  if (sourceFamily) {
+    sourcesToRun = filterSourcesByFamily(sourcesToRun, sourceFamily);
+  }
 
   if (sourcesToRun.length === 0) {
     return {
@@ -120,10 +124,13 @@ export const handler = async (event) => {
         ok: true,
         message: sourceId
           ? `Source ${sourceId} is not enabled or not live-capable.`
-          : 'No live-capable sources are currently enabled. Enable sources and set LIVE_INTAKE_ENABLED=true.',
+          : sourceFamily
+            ? `No live-capable sources found for source family: ${sourceFamily}.`
+            : 'No live-capable sources are currently enabled. Enable sources and set LIVE_INTAKE_ENABLED=true.',
         discovered: 0,
         ingested: 0,
         sources_run: 0,
+        filter_source_family: sourceFamily || null,
       }),
     };
   }
@@ -257,6 +264,7 @@ export const handler = async (event) => {
       total_discovered: totalDiscovered,
       total_ingested: totalIngested,
       total_recommended: totalRecommended,
+      filter_source_family: sourceFamily || null,
       results,
     }),
   };

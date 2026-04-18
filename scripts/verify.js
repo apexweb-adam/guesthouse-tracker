@@ -1833,5 +1833,110 @@ assert('Section 22: Lever TPM role passes discovery profile', leverTPM22);
 const leverOpsNoTech22 = passesDiscoveryProfile({ title: 'Operations Manager', description: 'General business operations oversight.' }, DEFAULT_DISCOVERY_PROFILE);
 assert('Section 22: Generic Operations Manager excluded by discovery profile (no TPM/Delivery title match)', !leverOpsNoTech22);
 
+// ─── Section 23: Daily Automation Expansion ──────────────────────────────────
+
+import { readFileSync as readFileSync23 } from 'fs';
+import { join as join23, dirname as dirname23 } from 'path';
+import { fileURLToPath as fileURLToPath23 } from 'url';
+
+const __dirname_v23 = dirname23(fileURLToPath23(import.meta.url));
+
+console.log('\n== Section 23: Daily Automation Expansion ==');
+
+const digestSrc23        = readFileSync23(join23(__dirname_v23, '../netlify/functions/digest.js'), 'utf-8');
+const sourcesSrc23       = readFileSync23(join23(__dirname_v23, '../netlify/functions/_shared/sources.js'), 'utf-8');
+const discoverSrc23      = readFileSync23(join23(__dirname_v23, '../netlify/functions/discover.js'), 'utf-8');
+const jobFinderSrc23     = readFileSync23(join23(__dirname_v23, '../netlify/functions/_shared/jobFinder.js'), 'utf-8');
+const dashboardSrc23     = readFileSync23(join23(__dirname_v23, '../src/pages/Dashboard.jsx'), 'utf-8');
+const reportsSrc23       = readFileSync23(join23(__dirname_v23, '../src/pages/Reports.jsx'), 'utf-8');
+const n8nDiscover23      = readFileSync23(join23(__dirname_v23, '../n8n/workflows/05-job-discovery.json'), 'utf-8');
+const runbookSrc23       = readFileSync23(join23(__dirname_v23, '../LIVE_ACTIVATION_RUNBOOK.md'), 'utf-8');
+
+// 23a. digest.js supports daily type
+assert('23a. digest.js supports daily type', digestSrc23.includes("'daily'") || digestSrc23.includes('"daily"'));
+
+// 23b. daily digest dailyDigest function exists in source
+assert('23b. daily digest dailyDigest function exists in source', digestSrc23.includes('dailyDigest'));
+
+// 23c. daily digest has per_source_family in output
+assert('23c. daily digest has per_source_family in output', digestSrc23.includes('per_source_family'));
+
+// 23d. daily digest has high_fit_roles
+assert('23d. daily digest has high_fit_roles', digestSrc23.includes('high_fit_roles'));
+
+// 23e. daily digest has blocked_by_missing_url count
+assert('23e. daily digest has blocked_by_missing_url count', digestSrc23.includes('blocked_by_missing_url'));
+
+// 23f. daily digest has approval_needed count
+assert('23f. daily digest has approval_needed count', digestSrc23.includes('approval_needed'));
+
+// 23g. sources.js live sources have maxRecordsPerSource field
+assert('23g. sources.js live sources have maxRecordsPerSource field', sourcesSrc23.includes('maxRecordsPerSource'));
+
+// 23h. sources.js exports getEnabledSourceFamilies helper
+assert('23h. sources.js exports getEnabledSourceFamilies helper', sourcesSrc23.includes('getEnabledSourceFamilies'));
+
+// 23i. sources.js exports filterSourcesByFamily helper
+assert('23i. sources.js exports filterSourcesByFamily helper', sourcesSrc23.includes('filterSourcesByFamily'));
+
+// 23j. discover.js supports sourceFamily body param
+assert('23j. discover.js supports sourceFamily body param', discoverSrc23.includes('sourceFamily'));
+
+// 23k. discover.js filter_source_family in response
+assert('23k. discover.js filter_source_family in response', discoverSrc23.includes('filter_source_family'));
+
+// 23l. jobFinder.js normaliseJob sets discovered_at
+assert('23l. jobFinder.js normaliseJob sets discovered_at', jobFinderSrc23.includes('discovered_at'));
+
+// 23m. Dashboard.jsx BestNewRolesPanel has "new today" / "NEW TODAY" indicator
+assert('23m. Dashboard.jsx BestNewRolesPanel has new today / NEW TODAY indicator',
+  dashboardSrc23.toLowerCase().includes('new today'));
+
+// 23n. Reports.jsx SourceQualityPanel has junk_pct display
+assert('23n. Reports.jsx SourceQualityPanel has junk_pct display',
+  reportsSrc23.includes('junk_pct'));
+
+// 23o. n8n 05-job-discovery.json has daily schedule (cron or daily)
+assert('23o. n8n 05-job-discovery.json has daily schedule (cron or daily)',
+  n8nDiscover23.includes('cronExpression') || n8nDiscover23.includes('0 7 * * *') || n8nDiscover23.includes('Daily'));
+
+// 23p. n8n 05-job-discovery.json notes include GREENHOUSE-ONLY RUN
+assert('23p. n8n 05-job-discovery.json notes include GREENHOUSE-ONLY RUN',
+  n8nDiscover23.includes('GREENHOUSE-ONLY RUN'));
+
+// 23q. n8n 05-job-discovery.json notes include LEVER-ONLY RUN
+assert('23q. n8n 05-job-discovery.json notes include LEVER-ONLY RUN',
+  n8nDiscover23.includes('LEVER-ONLY RUN'));
+
+// 23r. LIVE_ACTIVATION_RUNBOOK.md has Daily Operations section
+assert('23r. LIVE_ACTIVATION_RUNBOOK.md has Daily Operations section',
+  runbookSrc23.includes('Daily Operations'));
+
+// 23s. LIVE_ACTIVATION_RUNBOOK.md daily ops covers 7am UTC or daily schedule
+assert('23s. LIVE_ACTIVATION_RUNBOOK.md daily ops covers 7am UTC or daily schedule',
+  runbookSrc23.includes('7am UTC') || runbookSrc23.includes('daily schedule') || runbookSrc23.includes('Daily Schedule'));
+
+// 23t. LIVE_ACTIVATION_RUNBOOK.md daily ops covers best jobs today
+assert('23t. LIVE_ACTIVATION_RUNBOOK.md daily ops covers best jobs today',
+  runbookSrc23.toLowerCase().includes('best') && (runbookSrc23.toLowerCase().includes('today') || runbookSrc23.toLowerCase().includes('best new roles')));
+
+// 23u. Scoring hierarchy still intact (TPM > Delivery > Ops)
+const tpmCheck23 = scoreOpportunity('Technical Project Manager', 'Lead SDLC delivery. Agile, Jira, stakeholder management.');
+assert('23u. Scoring hierarchy still intact (TPM > Delivery > Ops)', tpmCheck23.lane === LANES.TPM);
+
+// 23v. Approval gate still mandatory
+assert('23v. Approval gate still mandatory', (() => {
+  const liveRole = {
+    approval_state: 'pending',
+    status: 'discovered',
+    pack_readiness_score: 95,
+    application_url: 'https://greenhouse.io/jobs/99999',
+    fit_score: 92,
+    recommended: true,
+    source_family: 'greenhouse',
+  };
+  return classifyReadinessGroup(liveRole) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);
