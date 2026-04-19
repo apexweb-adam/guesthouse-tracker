@@ -14,6 +14,101 @@
 
 ---
 
+## Source Activation Waves
+
+Sources are activated in waves. Each wave requires the previous wave to be clean and stable before advancing. Do not skip steps or activate multiple new families simultaneously.
+
+| Wave | Sources | Status | Activation gate |
+|---|---|---|---|
+| Wave 1 | Lever (primary) + Greenhouse (secondary) | **Active** | Proven. Lever live discovery works. Greenhouse live discovery works. Dedup works. |
+| Wave 2 | USAJobs | **Staged — not activated** | Requires API key registration, manual run passing, dedup passing, quality evaluation. See §USAJobs prerequisites below. |
+| Wave 3 | RSS / Atom curated feeds | **Staged — not activated** | Requires specific vetted feed URLs, manual run, quality evaluation. See §RSS prerequisites below. |
+| Wave 4 | Additional structured ATS / public feeds | **Not evaluated** | Only after Wave 3 is proven clean and produces quality >50% recommended rate. |
+
+**The goal is not to turn everything on. The goal is high-signal discovery with minimum queue pollution.**
+
+### USAJobs Activation Prerequisites (Wave 2)
+
+Do not activate USAJobs until all of the following are true:
+
+1. **Register an API key** at https://developer.usajobs.gov/ — free account required
+2. **Set env vars in Netlify:**
+   - `USAJOBS_API_KEY=<your-key>`
+   - `USAJOBS_USER_AGENT=<your-registered-email>`
+   - `USAJOBS_KEYWORD=technical project manager` (optional; defaults to this if unset)
+3. **Run one manual USAJobs-only discovery** and inspect results:
+   ```bash
+   ./scripts/run-discovery.sh --family=usajobs
+   # or:
+   curl -X POST $SITE_URL/.netlify/functions/discover \
+     -H "X-Discovery-Secret: $DISCOVERY_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{"sourceFamily":"usajobs"}'
+   ```
+4. **Check queue quality:** Open `/tracker` → confirm roles are real TPM/federal PM roles with valid USAJobs URLs (`usajobs.gov/...`)
+5. **Run a second time** to verify dedup passes (zero re-ingest)
+6. **Review Reports → Source Quality:** USAJobs must show ≥ 30% recommended rate with ≥ 5 records before keeping it on
+7. **Only then enable the scheduled daily run** to include USAJobs
+
+**USAJobs rollback:** Disable `src-usajobs` in the Sources UI or unset `USAJOBS_API_KEY`. All other sources continue unaffected.
+
+**Quality threshold:** If USAJobs recommended rate < 30% with ≥ 10 records, disable it and review keyword / category configuration.
+
+### RSS / Atom Activation Prerequisites (Wave 3)
+
+Do not activate any RSS feed until:
+
+1. **Wave 2 (USAJobs) is proven or explicitly skipped** — do not add RSS to an already noisy queue
+2. **Vet the feed URL manually** — paste it in a browser and confirm it returns real PM/TPM job listings
+3. **Only allowlisted structured public feeds** — do not add arbitrary URLs; each feed must be documented in `DEFAULT_SOURCES`
+4. **Set `enabled: true`** for the specific feed in the Sources UI (each feed is individually controlled)
+5. **Run one manual RSS-only discovery:**
+   ```bash
+   ./scripts/run-discovery.sh --family=rss
+   ```
+6. **Inspect quality:** confirm titles, descriptions, and canonical URLs are real, non-scraping structured data
+7. **Verify dedup** with a second run before enabling schedule
+
+**RSS rollback:** Disable the specific feed source in the Sources UI. Other feeds and all API sources continue unaffected.
+
+---
+
+## Source Quality Governance
+
+Per source family, the following metrics are tracked and visible in Reports → Source Quality:
+
+| Metric | Source | Description |
+|---|---|---|
+| `discovered` | Per source per run | Raw roles fetched from the source before filtering |
+| `ingested` | Per source per run | Roles that passed discovery profile filter and dedup |
+| `recommended` | Scored | Roles with `recommended: true` (fit_score ≥ 70) |
+| `high_fit` | Scored | Roles with `fit_score ≥ 85` |
+| `dedup_count` | Intake | Roles rejected as duplicates (already in DB) |
+| `junk_pct` | Calculated | `(ingested - recommended) / ingested × 100` — higher = more noise |
+| `recommended_pct` | Calculated | `recommended / ingested × 100` — higher = higher signal |
+| `missing_url_count` | Intake | Roles ingested with `canonical_job_url = null` |
+| `noisy_warning` | System | Automatically flagged when junk_pct > 50% over 5+ records |
+
+### Per-source quality thresholds
+
+| Signal | Threshold | Action |
+|---|---|---|
+| `recommended_pct` < 30% with ≥ 10 records | Source is noisy | Disable, review config |
+| `junk_pct` > 60% with ≥ 10 records | Source is flooding | Disable immediately, clean pending queue |
+| `missing_url_count` > 20% of ingested | Integration issue | Disable until resolved |
+| Dedup failure (second run re-ingests same batch) | Critical bug | Disable, do not schedule |
+| Any auto-approved records | Critical: approval gate broken | Stop everything, investigate |
+
+### Answering source quality questions
+
+Use Reports → Source Quality to answer:
+- **Which source is strongest right now?** → Highest `recommended_pct` with ≥ 5 records
+- **Which source is flooding junk?** → Highest `junk_pct` with ≥ 5 records
+- **Which source should be throttled?** → Repeated noisy warnings, or `junk_pct` > 50%
+- **Is USAJobs worth keeping on?** → Only if `recommended_pct` ≥ 30% after 5+ discovery runs
+
+---
+
 ## Source types
 
 | Type | Description | Live capable | Status |

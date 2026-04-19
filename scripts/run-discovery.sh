@@ -3,9 +3,13 @@
 # run-discovery.sh — Manual discovery trigger for live discovery runs
 #
 # Usage:
-#   ./scripts/run-discovery.sh
-#   ./scripts/run-discovery.sh src-greenhouse-boards    # Greenhouse only
-#   ./scripts/run-discovery.sh src-lever-boards         # Lever only
+#   ./scripts/run-discovery.sh                          # all enabled live sources
+#   ./scripts/run-discovery.sh src-greenhouse-boards    # Greenhouse only (by source ID)
+#   ./scripts/run-discovery.sh src-lever-boards         # Lever only (by source ID)
+#   ./scripts/run-discovery.sh --family=greenhouse      # all greenhouse sources
+#   ./scripts/run-discovery.sh --family=lever           # all lever sources
+#   ./scripts/run-discovery.sh --family=usajobs         # USAJobs only (Wave 2)
+#   ./scripts/run-discovery.sh --family=rss             # all RSS feeds (Wave 3)
 #
 # Required env vars (export before running, or set in .env):
 #   SITE_URL         e.g. https://your-site.netlify.app
@@ -13,6 +17,7 @@
 #
 # Optional:
 #   SOURCE_ID        a source ID to run instead of all sources
+#   SOURCE_FAMILY    a source family to filter by (e.g. greenhouse, lever, usajobs, rss)
 #
 # Example:
 #   export SITE_URL=https://candidate-job-search.netlify.app
@@ -20,13 +25,46 @@
 #   ./scripts/run-discovery.sh                          # all enabled live sources
 #   ./scripts/run-discovery.sh src-greenhouse-boards    # Greenhouse only
 #   ./scripts/run-discovery.sh src-lever-boards         # Lever only (after LEVER_BOARDS is set)
+#   ./scripts/run-discovery.sh --family=usajobs         # USAJobs only (after USAJOBS_API_KEY set)
+#   ./scripts/run-discovery.sh --family=rss             # all enabled RSS feeds
+#
+# Source activation waves:
+#   Wave 1 (active): lever, greenhouse
+#   Wave 2 (staged): usajobs  — activate only after API key set + manual run approved
+#   Wave 3 (staged): rss      — activate only after specific feeds vetted + manual run approved
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
 SITE_URL="${SITE_URL:-}"
 DISCOVERY_SECRET="${DISCOVERY_SECRET:-}"
-SOURCE_ID="${1:-${SOURCE_ID:-}}"
+SOURCE_ID=""
+SOURCE_FAMILY=""
+
+# Parse arguments: support both positional source ID and --family=xxx flag
+for arg in "$@"; do
+  case "$arg" in
+    --family=*)
+      SOURCE_FAMILY="${arg#--family=}"
+      ;;
+    --*)
+      echo "❌  Unknown flag: $arg"
+      echo "    Use: ./scripts/run-discovery.sh [sourceId | --family=familyName]"
+      exit 1
+      ;;
+    *)
+      SOURCE_ID="$arg"
+      ;;
+  esac
+done
+
+# Fall back to env var if no positional arg given
+if [[ -z "$SOURCE_ID" ]]; then
+  SOURCE_ID="${SOURCE_ID:-}"
+fi
+if [[ -z "$SOURCE_FAMILY" ]]; then
+  SOURCE_FAMILY="${SOURCE_FAMILY:-}"
+fi
 
 # ── Validate inputs ───────────────────────────────────────────────────────────
 
@@ -47,6 +85,9 @@ fi
 if [[ -n "$SOURCE_ID" ]]; then
   PAYLOAD="{\"sourceId\":\"$SOURCE_ID\"}"
   echo "▶  Triggering discovery for source: $SOURCE_ID"
+elif [[ -n "$SOURCE_FAMILY" ]]; then
+  PAYLOAD="{\"sourceFamily\":\"$SOURCE_FAMILY\"}"
+  echo "▶  Triggering discovery for source family: $SOURCE_FAMILY"
 else
   PAYLOAD="{}"
   echo "▶  Triggering discovery for all enabled live sources"

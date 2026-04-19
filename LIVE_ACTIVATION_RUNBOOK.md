@@ -905,3 +905,130 @@ Follow this **exact** sequence:
 | USAJobs | Staged off | Code exists; requires `USAJOBS_API_KEY`; not needed yet |
 | LinkedIn | Manual only | Not automated — not scraping, not ever |
 
+
+---
+
+## 11. Multi-Source Expansion
+
+> **When to use:** After Lever + Greenhouse are stable and Netlify quota is resolved. Use this section before activating USAJobs (Wave 2) or RSS feeds (Wave 3).
+
+### Source activation model
+
+Sources are activated in waves. Never activate multiple new families simultaneously.
+
+| Wave | Sources | Status | Gate |
+|---|---|---|---|
+| Wave 1 | Lever (primary) + Greenhouse (secondary) | Active | Proven — live discovery works, dedup works, quality confirmed |
+| Wave 2 | USAJobs | Staged off | Requires API key + manual run + dedup pass + quality check |
+| Wave 3 | RSS / Atom curated feeds | Staged off | Requires vetted feed URLs + manual run + quality check |
+| Wave 4 | Additional structured sources | Not evaluated | Only after Wave 3 is clean and quality > 50% recommended |
+
+### Wave 2 — USAJobs Activation
+
+USAJobs is the US federal government job board. It provides real PM/TPM roles in federal IT programmes.
+
+**Prerequisites:**
+
+1. Netlify quota is confirmed resolved (curl test returns 200/401, not 503)
+2. Wave 1 is stable: Lever + Greenhouse clean for at least 48 hours
+3. API key registered at https://developer.usajobs.gov/ (free)
+
+**Activation steps:**
+
+```bash
+# Step 1: Set env vars in Netlify (Site Settings → Environment Variables)
+# USAJOBS_API_KEY=<your-key>
+# USAJOBS_USER_AGENT=<your-registered-email>
+# USAJOBS_KEYWORD=technical project manager  (optional; defaults to this if unset)
+
+# Step 2: Enable the source in Sources UI
+# Open /sources → find "USAJobs (Federal Government)" → Enable
+
+# Step 3: Manual run — USAJobs only
+./scripts/run-discovery.sh --family=usajobs
+# or:
+curl -X POST $SITE_URL/.netlify/functions/discover \
+  -H "X-Discovery-Secret: $DISCOVERY_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceFamily":"usajobs"}'
+
+# Step 4: Inspect queue — confirm real TPM/federal roles with usajobs.gov URLs
+# Step 5: Run again to verify dedup (second run should ingest 0)
+./scripts/run-discovery.sh --family=usajobs
+
+# Step 6: Check Reports → Source Quality
+# → recommended_pct must be >= 30% with >= 5 records to stay active
+```
+
+**Go / No-Go:**
+
+| Signal | Threshold | Action |
+|---|---|---|
+| `ok: true` first run with real roles | Required | Proceed |
+| `recommended_pct` ≥ 30% with ≥ 5 records | Required | Proceed to scheduling |
+| Second run ingests 0 (dedup works) | Required | Proceed to scheduling |
+| `recommended_pct` < 30% with ≥ 10 records | STOP | Disable, adjust keyword or disable entirely |
+| Any `canonical_job_url = null` records | STOP | API issue — do not schedule |
+| Error: `USAJOBS_API_KEY and USAJOBS_USER_AGENT env vars required` | STOP | Set env vars and redeploy |
+
+**USAJobs rollback:**
+
+Disable `src-usajobs` in the Sources UI, or unset `USAJOBS_API_KEY` in Netlify and redeploy. Lever and Greenhouse continue unaffected.
+
+### Wave 3 — RSS / Atom Activation
+
+RSS feeds are structured public job listings from approved job boards (e.g. SEEK, APSJobs).
+
+**Prerequisites:**
+
+1. Wave 2 is proven clean or explicitly decided not to use
+2. Specific feed URLs are manually verified — paste in browser, confirm real PM/TPM listings
+3. Feed URL is present in `DEFAULT_SOURCES` in `sources.js` with `enabled: false` (change to true via Sources UI only)
+
+**Activation steps:**
+
+```bash
+# Step 1: Enable the specific RSS feed in Sources UI
+# Open /sources → find the feed (e.g. "SEEK RSS (Technical PM)") → Enable
+
+# Step 2: Manual run — RSS only
+./scripts/run-discovery.sh --family=rss
+# or:
+curl -X POST $SITE_URL/.netlify/functions/discover \
+  -H "X-Discovery-Secret: $DISCOVERY_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceFamily":"rss"}'
+
+# Step 3: Inspect queue quality
+# Step 4: Verify dedup on second run
+./scripts/run-discovery.sh --family=rss
+```
+
+**Go / No-Go:** Same quality thresholds as USAJobs (recommended_pct ≥ 30%, dedup works, no null URLs).
+
+**RSS rollback:** Disable the specific feed in the Sources UI. All API sources continue unaffected.
+
+### Per-Source Quality Checks
+
+After activating any new source, use the daily digest to monitor:
+
+```bash
+curl "https://YOUR_SITE/.netlify/functions/digest?type=daily"
+# → per_source_family: breakdown by source — new_today, high_fit_today, recommended_today
+# → high_fit_roles: top roles by fit score
+# → approval_needed: count needing review
+# → blocked_by_missing_url: approved roles stuck without apply URL
+```
+
+Use Reports → Source Quality for ongoing comparison:
+- **Best source this week:** highest `recommended_pct` among active families
+- **Noisiest source:** highest `junk_pct` — consider disabling if > 60%
+- **Source leaderboard:** compare recommended, high_fit, junk counts across families
+
+### What remains OFF — do not activate without a decision
+
+| Source | Reason to keep off |
+|---|---|
+| RSS / Atom | Not yet evaluated for this candidate's market; activate as Wave 3 |
+| USAJobs | Not yet evaluated; activate as Wave 2 |
+| LinkedIn | Manual only — not automated, not scraping, not ever |

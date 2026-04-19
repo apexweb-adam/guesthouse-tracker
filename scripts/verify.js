@@ -2076,5 +2076,195 @@ assert('24z. Approval gate mandatory after source-priority pass', (() => {
   return classifyReadinessGroup(role) !== READINESS_GROUPS.READY_TO_APPLY;
 })());
 
+// ─── Section 25: Multi-Source Expansion — USAJobs/RSS hardening, activation waves, quality governance ─
+
+import { readFileSync as readFileSync25, existsSync as existsSync25 } from 'fs';
+import { join as join25, dirname as dirname25 } from 'path';
+import { fileURLToPath as fileURLToPath25 } from 'url';
+
+const __dirname_v25 = dirname25(fileURLToPath25(import.meta.url));
+
+console.log('\n== Section 25: Multi-Source Expansion (USAJobs/RSS hardening + activation waves) ==');
+
+const sourceGov25       = readFileSync25(join25(__dirname_v25, '../SOURCE_GOVERNANCE.md'), 'utf-8');
+const liveRunbook25     = readFileSync25(join25(__dirname_v25, '../LIVE_ACTIVATION_RUNBOOK.md'), 'utf-8');
+const sourcesSrc25      = readFileSync25(join25(__dirname_v25, '../netlify/functions/_shared/sources.js'), 'utf-8');
+const jobFinderSrc25    = readFileSync25(join25(__dirname_v25, '../netlify/functions/_shared/jobFinder.js'), 'utf-8');
+const discoverSrc25     = readFileSync25(join25(__dirname_v25, '../netlify/functions/discover.js'), 'utf-8');
+const digestSrc25       = readFileSync25(join25(__dirname_v25, '../netlify/functions/digest.js'), 'utf-8');
+const reportsSrc25      = readFileSync25(join25(__dirname_v25, '../src/pages/Reports.jsx'), 'utf-8');
+const dashboardSrc25    = readFileSync25(join25(__dirname_v25, '../src/pages/Dashboard.jsx'), 'utf-8');
+const runDiscoverySh25  = readFileSync25(join25(__dirname_v25, '../scripts/run-discovery.sh'), 'utf-8');
+const n8nDiscover25     = readFileSync25(join25(__dirname_v25, '../n8n/workflows/05-job-discovery.json'), 'utf-8');
+
+// ── 25a. SOURCE_GOVERNANCE.md has Source Activation Waves section ─────────────
+assert('25a. SOURCE_GOVERNANCE.md has Source Activation Waves section',
+  sourceGov25.includes('Source Activation Waves') || sourceGov25.includes('Activation Waves'));
+
+// ── 25b. SOURCE_GOVERNANCE.md shows Wave 1 as Lever + Greenhouse (active) ─────
+assert('25b. SOURCE_GOVERNANCE.md shows Wave 1 as Lever + Greenhouse (active)',
+  sourceGov25.includes('Wave 1') && sourceGov25.includes('Active'));
+
+// ── 25c. SOURCE_GOVERNANCE.md shows Wave 2 as USAJobs (staged) ───────────────
+assert('25c. SOURCE_GOVERNANCE.md shows Wave 2 as USAJobs (staged)',
+  sourceGov25.includes('Wave 2') && sourceGov25.includes('USAJobs'));
+
+// ── 25d. SOURCE_GOVERNANCE.md shows Wave 3 as RSS (staged) ───────────────────
+assert('25d. SOURCE_GOVERNANCE.md shows Wave 3 as RSS (staged)',
+  sourceGov25.includes('Wave 3') && (sourceGov25.includes('RSS') || sourceGov25.includes('rss')));
+
+// ── 25e. SOURCE_GOVERNANCE.md has USAJobs activation prerequisites ────────────
+assert('25e. SOURCE_GOVERNANCE.md has USAJobs Activation Prerequisites',
+  sourceGov25.includes('USAJobs Activation Prerequisites') || sourceGov25.includes('USAJobs activation prerequisites'));
+
+// ── 25f. SOURCE_GOVERNANCE.md USAJobs prerequisites include USAJOBS_API_KEY ───
+assert('25f. SOURCE_GOVERNANCE.md USAJobs prerequisites include USAJOBS_API_KEY',
+  sourceGov25.includes('USAJOBS_API_KEY'));
+
+// ── 25g. SOURCE_GOVERNANCE.md USAJobs prerequisites include USAJOBS_USER_AGENT ─
+assert('25g. SOURCE_GOVERNANCE.md USAJobs prerequisites include USAJOBS_USER_AGENT',
+  sourceGov25.includes('USAJOBS_USER_AGENT'));
+
+// ── 25h. SOURCE_GOVERNANCE.md has RSS / Atom Activation Prerequisites ─────────
+assert('25h. SOURCE_GOVERNANCE.md has RSS Activation Prerequisites section',
+  sourceGov25.includes('RSS') && (sourceGov25.includes('Activation Prerequisites') || sourceGov25.includes('activation prerequisites')));
+
+// ── 25i. SOURCE_GOVERNANCE.md has Source Quality Governance section ───────────
+assert('25i. SOURCE_GOVERNANCE.md has Source Quality Governance section',
+  sourceGov25.includes('Source Quality Governance') || sourceGov25.includes('quality governance'));
+
+// ── 25j. SOURCE_GOVERNANCE.md quality governance covers recommended_pct ───────
+assert('25j. SOURCE_GOVERNANCE.md quality governance covers recommended_pct threshold',
+  sourceGov25.includes('recommended_pct'));
+
+// ── 25k. SOURCE_GOVERNANCE.md quality governance covers junk_pct ─────────────
+assert('25k. SOURCE_GOVERNANCE.md quality governance covers junk_pct threshold',
+  sourceGov25.includes('junk_pct'));
+
+// ── 25l. LIVE_ACTIVATION_RUNBOOK.md has multi-source expansion section ─────────
+assert('25l. LIVE_ACTIVATION_RUNBOOK.md has multi-source expansion section (§11)',
+  liveRunbook25.includes('Multi-Source Expansion') || liveRunbook25.includes('multi-source expansion'));
+
+// ── 25m. LIVE_ACTIVATION_RUNBOOK.md §11 has Wave 2 USAJobs activation steps ───
+assert('25m. LIVE_ACTIVATION_RUNBOOK.md §11 has Wave 2 USAJobs activation steps',
+  liveRunbook25.includes('Wave 2') && liveRunbook25.includes('USAJobs'));
+
+// ── 25n. LIVE_ACTIVATION_RUNBOOK.md §11 has Wave 3 RSS activation steps ───────
+assert('25n. LIVE_ACTIVATION_RUNBOOK.md §11 has Wave 3 RSS activation steps',
+  liveRunbook25.includes('Wave 3') && (liveRunbook25.includes('RSS') || liveRunbook25.includes('Atom')));
+
+// ── 25o. LIVE_ACTIVATION_RUNBOOK.md has USAJobs rollback instruction ──────────
+assert('25o. LIVE_ACTIVATION_RUNBOOK.md has USAJobs rollback instruction',
+  liveRunbook25.includes('USAJobs rollback') || (liveRunbook25.includes('src-usajobs') && liveRunbook25.includes('rollback')));
+
+// ── 25p. run-discovery.sh supports --family flag ──────────────────────────────
+assert('25p. run-discovery.sh supports --family flag',
+  runDiscoverySh25.includes('--family=') || runDiscoverySh25.includes('family'));
+
+// ── 25q. run-discovery.sh has --family=usajobs example ───────────────────────
+assert('25q. run-discovery.sh has --family=usajobs example',
+  runDiscoverySh25.includes('usajobs'));
+
+// ── 25r. run-discovery.sh has --family=rss example ───────────────────────────
+assert('25r. run-discovery.sh has --family=rss example',
+  runDiscoverySh25.includes('rss') || runDiscoverySh25.includes('RSS'));
+
+// ── 25s. n8n 05-job-discovery.json has USAJOBS-ONLY RUN note ─────────────────
+assert('25s. n8n 05-job-discovery.json has USAJOBS-ONLY RUN note',
+  n8nDiscover25.includes('USAJOBS-ONLY RUN'));
+
+// ── 25t. n8n 05-job-discovery.json has source activation wave note ────────────
+assert('25t. n8n 05-job-discovery.json has source activation wave note',
+  n8nDiscover25.includes('Wave 1') || n8nDiscover25.includes('SOURCE ACTIVATION WAVES'));
+
+// ── 25u. sources.js USAJobs source has enabled: false (not activated by default) ─
+assert('25u. sources.js USAJobs source is off by default (enabled: false)',
+  (() => {
+    // Find the usajobs block and confirm enabled: false appears near it
+    const idx = sourcesSrc25.indexOf("'src-usajobs'");
+    if (idx < 0) return false;
+    const snippet = sourcesSrc25.slice(idx, idx + 300);
+    return snippet.includes('enabled: false');
+  })()
+);
+
+// ── 25v. sources.js RSS sources have enabled: false (not activated by default) ─
+assert('25v. sources.js RSS sources are off by default (enabled: false)',
+  (() => {
+    const idx = sourcesSrc25.indexOf("'src-rss-seek'");
+    if (idx < 0) return false;
+    const snippet = sourcesSrc25.slice(idx, idx + 300);
+    return snippet.includes('enabled: false');
+  })()
+);
+
+// ── 25w. discover.js validates USAJobs config (USAJOBS_API_KEY) ───────────────
+assert('25w. discover.js validates USAJobs config before running',
+  discoverSrc25.includes('USAJOBS_API_KEY') && discoverSrc25.includes('USAJOBS_USER_AGENT'));
+
+// ── 25x. discover.js supports sourceFamily body param (multi-source filter) ───
+assert('25x. discover.js supports sourceFamily body param for per-family runs',
+  discoverSrc25.includes('sourceFamily'));
+
+// ── 25y. digest.js per_source_family breakdown covers usajobs source family ───
+assert('25y. digest.js per_source_family breakdown includes source_family key',
+  digestSrc25.includes('per_source_family') && digestSrc25.includes('source_family'));
+
+// ── 25z. Reports.jsx SourceQualityPanel includes usajobs in SF_META ───────────
+assert('25z. Reports.jsx SourceQualityPanel includes usajobs in source family metadata',
+  reportsSrc25.toLowerCase().includes('usajobs'));
+
+// ── 25aa. Dashboard.jsx BestNewRolesPanel has source_family badge ─────────────
+assert('25aa. Dashboard.jsx BestNewRolesPanel has source_family badge',
+  dashboardSrc25.includes('source_family'));
+
+// ── 25ab. jobFinder.js fetchUSAJobsRoles function exists ─────────────────────
+assert('25ab. jobFinder.js fetchUSAJobsRoles adapter exists',
+  jobFinderSrc25.includes('fetchUSAJobsRoles'));
+
+// ── 25ac. jobFinder.js fetchRSSFeed function exists ──────────────────────────
+assert('25ac. jobFinder.js fetchRSSFeed adapter exists',
+  jobFinderSrc25.includes('fetchRSSFeed'));
+
+// ── 25ad. jobFinder.js USAJobs adapter validates API key ─────────────────────
+assert('25ad. jobFinder.js USAJobs adapter validates USAJOBS_API_KEY before fetching',
+  jobFinderSrc25.includes('USAJOBS_API_KEY') && jobFinderSrc25.includes('USAJOBS_USER_AGENT'));
+
+// ── 25ae. Lever source unaffected by multi-source changes (still present) ─────
+assert('25ae. Lever source (src-lever-boards) still present in sources.js',
+  sourcesSrc25.includes('src-lever-boards'));
+
+// ── 25af. Greenhouse source unaffected (still present) ───────────────────────
+assert('25af. Greenhouse source (src-greenhouse-boards) still present in sources.js',
+  sourcesSrc25.includes('src-greenhouse-boards'));
+
+// ── 25ag. Hierarchy still intact after multi-source changes ──────────────────
+const tpmCheck25 = scoreOpportunity('Technical Project Manager', 'Lead SDLC delivery with Agile, Jira, stakeholders. PMP preferred.');
+assert('25ag. Scoring hierarchy intact after multi-source expansion (TPM = TPM lane)',
+  tpmCheck25.lane === LANES.TPM);
+
+// ── 25ah. Approval gate still mandatory with usajobs source_family ────────────
+assert('25ah. Approval gate mandatory for usajobs-sourced roles', (() => {
+  const usajobsRole = {
+    approval_state: 'pending',
+    status: 'discovered',
+    pack_readiness_score: 95,
+    application_url: 'https://www.usajobs.gov/job/123456',
+    fit_score: 88,
+    recommended: true,
+    source_family: 'usajobs',
+  };
+  return classifyReadinessGroup(usajobsRole) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
+// ── 25ai. LinkedIn still not automated in any source ─────────────────────────
+assert('25ai. No sources.js entry claims LinkedIn is automated',
+  !sourcesSrc25.toLowerCase().includes('linkedin is automated') &&
+  !sourcesSrc25.toLowerCase().includes('linkedin scraping'));
+
+// ── 25aj. digest.js has per-source high_fit_today tracking ───────────────────
+assert('25aj. digest.js tracks high_fit_today per source family',
+  digestSrc25.includes('high_fit_today'));
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

@@ -21,7 +21,10 @@
       "name": "Schedule Trigger (Daily 7am UTC)",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
-      "position": [200, 300]
+      "position": [
+        200,
+        300
+      ]
     },
     {
       "parameters": {},
@@ -29,7 +32,10 @@
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [200, 480]
+      "position": [
+        200,
+        480
+      ]
     },
     {
       "parameters": {
@@ -61,7 +67,10 @@
       "name": "POST /discover",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 390]
+      "position": [
+        500,
+        390
+      ]
     },
     {
       "parameters": {
@@ -71,7 +80,10 @@
       "name": "Log Discovery Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [800, 390]
+      "position": [
+        800,
+        390
+      ]
     },
     {
       "parameters": {
@@ -95,7 +107,10 @@
       "name": "Any New Jobs?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1050, 390]
+      "position": [
+        1050,
+        390
+      ]
     },
     {
       "parameters": {
@@ -107,7 +122,10 @@
       "name": "Fetch Approval Queue",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1300, 300]
+      "position": [
+        1300,
+        300
+      ]
     },
     {
       "parameters": {
@@ -117,7 +135,10 @@
       "name": "Build Event Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 480]
+      "position": [
+        1300,
+        480
+      ]
     },
     {
       "parameters": {
@@ -141,33 +162,96 @@
       "name": "Dispatch /webhooks",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1550, 480]
+      "position": [
+        1550,
+        480
+      ]
     }
   ],
   "connections": {
     "Schedule Trigger (Daily 7am UTC)": {
-      "main": [[{ "node": "POST /discover", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "POST /discover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Manual Trigger": {
-      "main": [[{ "node": "POST /discover", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "POST /discover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "POST /discover": {
-      "main": [[{ "node": "Log Discovery Result", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Log Discovery Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Log Discovery Result": {
-      "main": [[{ "node": "Any New Jobs?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Any New Jobs?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Any New Jobs?": {
       "main": [
-        [{ "node": "Fetch Approval Queue", "type": "main", "index": 0 }],
-        [{ "node": "Build Event Payload", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Fetch Approval Queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Event Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Any New Jobs? (false)": {
-      "main": [[{ "node": "Build Event Payload", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Event Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Event Payload": {
-      "main": [[{ "node": "Dispatch /webhooks", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Dispatch /webhooks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -192,6 +276,11 @@
     "SOURCE-FAMILY RUN: POST body {\"sourceFamily\":\"greenhouse\"} to run all sources of that family",
     "LEVER ACTIVATION ORDER: (1) Set LEVER_BOARDS in Netlify env, (2) enable src-lever-boards in Sources UI, (3) run this workflow manually once, (4) verify queue quality, (5) run a second time to confirm dedup, (6) only then keep the schedule active.",
     "DO NOT activate multiple new source families simultaneously. Prove Lever clean before enabling others.",
-    "ROLLBACK: To disable Lever only, disable src-lever-boards in the Sources UI or set LEVER_BOARDS= (empty) in Netlify and redeploy. Greenhouse remains unaffected."
+    "ROLLBACK: To disable Lever only, disable src-lever-boards in the Sources UI or set LEVER_BOARDS= (empty) in Netlify and redeploy. Greenhouse remains unaffected.",
+    "USAJOBS-ONLY RUN: POST body {\"sourceFamily\":\"usajobs\"} — only works when USAJOBS_API_KEY and USAJOBS_USER_AGENT env vars are set and src-usajobs is enabled.",
+    "RSS-ONLY RUN: POST body {\"sourceFamily\":\"rss\"} — only works when at least one RSS source is enabled in the Sources UI.",
+    "USAJOBS ACTIVATION (Wave 2): (1) Register key at developer.usajobs.gov, (2) set USAJOBS_API_KEY and USAJOBS_USER_AGENT in Netlify, (3) enable src-usajobs in Sources UI, (4) run this workflow manually with {\"sourceFamily\":\"usajobs\"}, (5) verify queue quality and dedup, (6) only then include in daily schedule.",
+    "SOURCE ACTIVATION WAVES: Wave 1 (active) = Lever + Greenhouse. Wave 2 (staged) = USAJobs. Wave 3 (staged) = RSS. Do not activate Wave 2/3 until Wave 1 is clean and stable.",
+    "QUALITY GATE: Before enabling any new source family in the daily schedule, it must pass: (1) manual run with real roles, (2) second-run dedup (zero re-ingest), (3) recommended_pct >= 30% with >= 5 records in Reports > Source Quality."
   ]
 }
