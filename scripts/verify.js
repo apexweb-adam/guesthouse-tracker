@@ -1938,5 +1938,143 @@ assert('23v. Approval gate still mandatory', (() => {
   return classifyReadinessGroup(liveRole) !== READINESS_GROUPS.READY_TO_APPLY;
 })());
 
+// ─── Section 24: Post-Lever-Rollout Source Priority + Quota Safety ─────────────
+
+import { readFileSync as readFileSync24, existsSync as existsSync24 } from 'fs';
+import { join as join24, dirname as dirname24 } from 'path';
+import { fileURLToPath as fileURLToPath24 } from 'url';
+
+const __dirname_v24 = dirname24(fileURLToPath24(import.meta.url));
+
+console.log('\n== Section 24: Post-Lever-Rollout Source Priority + Quota Safety ==');
+
+const leverRunbook24    = readFileSync24(join24(__dirname_v24, '../LEVER_ROLLOUT_RUNBOOK.md'), 'utf-8');
+const liveRunbook24     = readFileSync24(join24(__dirname_v24, '../LIVE_ACTIVATION_RUNBOOK.md'), 'utf-8');
+const deployRunbook24   = readFileSync24(join24(__dirname_v24, '../DEPLOYMENT_RUNBOOK.md'), 'utf-8');
+const sourceGov24       = readFileSync24(join24(__dirname_v24, '../SOURCE_GOVERNANCE.md'), 'utf-8');
+const maxAuto24         = readFileSync24(join24(__dirname_v24, '../MAX_AUTOMATION_README.md'), 'utf-8');
+const autoRunbook24     = readFileSync24(join24(__dirname_v24, '../AUTOMATION_RUNBOOK.md'), 'utf-8');
+const readme24          = readFileSync24(join24(__dirname_v24, '../README.md'), 'utf-8');
+
+// 24a. emesent is not present in any active rollout doc
+const allDocs24 = leverRunbook24 + liveRunbook24 + deployRunbook24 + sourceGov24 + maxAuto24 + autoRunbook24 + readme24;
+assert('24a. emesent not present in any active rollout doc', !allDocs24.includes('emesent'));
+
+// 24b. LEVER_ROLLOUT_RUNBOOK.md declares Lever as PRIMARY source
+assert('24b. LEVER_ROLLOUT_RUNBOOK.md declares Lever as PRIMARY source',
+  leverRunbook24.includes('PRIMARY') || leverRunbook24.includes('primary source') || leverRunbook24.includes('primary live source'));
+
+// 24c. LEVER_ROLLOUT_RUNBOOK.md includes verified slugs (aerostrat / thinkahead / immutable)
+assert('24c. LEVER_ROLLOUT_RUNBOOK.md includes verified working slugs',
+  leverRunbook24.includes('aerostrat') || leverRunbook24.includes('thinkahead') || leverRunbook24.includes('immutable'));
+
+// 24d. LEVER_ROLLOUT_RUNBOOK.md has post-quota section
+assert('24d. LEVER_ROLLOUT_RUNBOOK.md has post-quota next steps section',
+  leverRunbook24.includes('Post-Quota') || leverRunbook24.includes('post-quota') || leverRunbook24.includes('usage_exceeded'));
+
+// 24e. LEVER_ROLLOUT_RUNBOOK.md mentions 503 or usage_exceeded
+assert('24e. LEVER_ROLLOUT_RUNBOOK.md mentions 503 usage_exceeded',
+  leverRunbook24.includes('503') || leverRunbook24.includes('usage_exceeded'));
+
+// 24f. LEVER_ROLLOUT_RUNBOOK.md post-quota steps include verify Apply Pack through live path
+assert('24f. LEVER_ROLLOUT_RUNBOOK.md post-quota steps include Apply Pack verification',
+  leverRunbook24.includes('Apply Pack'));
+
+// 24g. LEVER_ROLLOUT_RUNBOOK.md states RSS and USAJobs are off
+assert('24g. LEVER_ROLLOUT_RUNBOOK.md states RSS and USAJobs are off/staged',
+  (leverRunbook24.includes('RSS') && leverRunbook24.includes('off')) ||
+  (leverRunbook24.includes('RSS') && leverRunbook24.includes('staged')) ||
+  leverRunbook24.includes('Do not activate RSS'));
+
+// 24h. LIVE_ACTIVATION_RUNBOOK.md has source priority section with Lever as primary
+assert('24h. LIVE_ACTIVATION_RUNBOOK.md shows Lever as primary source',
+  liveRunbook24.includes('Lever') && (liveRunbook24.includes('Primary') || liveRunbook24.includes('primary')));
+
+// 24i. LIVE_ACTIVATION_RUNBOOK.md has post-quota section
+assert('24i. LIVE_ACTIVATION_RUNBOOK.md has post-quota section',
+  liveRunbook24.includes('Post-Quota') || liveRunbook24.includes('post-quota') || liveRunbook24.includes('usage_exceeded'));
+
+// 24j. LIVE_ACTIVATION_RUNBOOK.md documents 503 usage_exceeded as a blocker
+assert('24j. LIVE_ACTIVATION_RUNBOOK.md documents 503 usage_exceeded blocker',
+  liveRunbook24.includes('503') || liveRunbook24.includes('usage_exceeded'));
+
+// 24k. LIVE_ACTIVATION_RUNBOOK.md post-quota steps include Lever discovery first
+assert('24k. LIVE_ACTIVATION_RUNBOOK.md post-quota sequence runs Lever first',
+  liveRunbook24.includes('Lever') && liveRunbook24.includes('post-quota') || liveRunbook24.includes('Lever-first'));
+
+// 24l. LIVE_ACTIVATION_RUNBOOK.md states RSS and USAJobs are off
+assert('24l. LIVE_ACTIVATION_RUNBOOK.md states RSS and USAJobs are staged/off',
+  (liveRunbook24.includes('RSS') || liveRunbook24.includes('rss')) &&
+  (liveRunbook24.includes('off') || liveRunbook24.includes('Staged') || liveRunbook24.includes('staged')));
+
+// 24m. DEPLOYMENT_RUNBOOK.md shows Lever as first/primary recommended source
+assert('24m. DEPLOYMENT_RUNBOOK.md recommends Lever as primary live source',
+  deployRunbook24.includes('Lever') && (deployRunbook24.includes('primary') || deployRunbook24.includes('Primary') || deployRunbook24.includes('recommended primary')));
+
+// 24n. DEPLOYMENT_RUNBOOK.md includes quota warning
+assert('24n. DEPLOYMENT_RUNBOOK.md includes Netlify quota warning',
+  deployRunbook24.includes('503') || deployRunbook24.includes('usage_exceeded') || deployRunbook24.includes('quota'));
+
+// 24o. SOURCE_GOVERNANCE.md has current source priority table
+assert('24o. SOURCE_GOVERNANCE.md has current source priority section',
+  sourceGov24.includes('Current Source Priority') || sourceGov24.includes('Operating Truth') || sourceGov24.includes('PRIMARY'));
+
+// 24p. SOURCE_GOVERNANCE.md shows Lever as PRIMARY
+assert('24p. SOURCE_GOVERNANCE.md shows lever as PRIMARY',
+  sourceGov24.includes('lever') && sourceGov24.includes('PRIMARY'));
+
+// 24q. SOURCE_GOVERNANCE.md shows RSS as staged off (not "Active")
+assert('24q. SOURCE_GOVERNANCE.md shows rss as staged off',
+  sourceGov24.toLowerCase().includes('rss') &&
+  (sourceGov24.includes('Staged off') || sourceGov24.includes('staged off') || sourceGov24.includes('Not activated')));
+
+// 24r. MAX_AUTOMATION_README.md shows Lever as PRIMARY
+assert('24r. MAX_AUTOMATION_README.md shows Lever as PRIMARY source',
+  maxAuto24.includes('lever') && maxAuto24.includes('PRIMARY'));
+
+// 24s. MAX_AUTOMATION_README.md uses verified Lever slugs in env example
+assert('24s. MAX_AUTOMATION_README.md uses verified Lever slugs',
+  maxAuto24.includes('aerostrat') || maxAuto24.includes('thinkahead') || maxAuto24.includes('immutable'));
+
+// 24t. AUTOMATION_RUNBOOK.md has quota/503 documentation
+assert('24t. AUTOMATION_RUNBOOK.md documents Netlify quota gate',
+  autoRunbook24.includes('503') || autoRunbook24.includes('usage_exceeded') || autoRunbook24.includes('quota'));
+
+// 24u. AUTOMATION_RUNBOOK.md has schedule gate section
+assert('24u. AUTOMATION_RUNBOOK.md has schedule gate / quota check',
+  autoRunbook24.includes('Schedule gate') || autoRunbook24.includes('schedule gate') || autoRunbook24.includes('quota'));
+
+// 24v. README.md shows Lever as primary
+assert('24v. README.md shows Lever as PRIMARY source',
+  readme24.includes('Lever') && (readme24.includes('PRIMARY') || readme24.includes('primary')));
+
+// 24w. README.md has quota warning
+assert('24w. README.md includes quota/503 warning',
+  readme24.includes('503') || readme24.includes('usage_exceeded') || readme24.includes('quota'));
+
+// 24x. No doc states LinkedIn is automated or scraped (negative — should not claim it IS)
+assert('24x. No doc claims LinkedIn IS automated or scraped',
+  !allDocs24.toLowerCase().includes('linkedin is automated') &&
+  !allDocs24.toLowerCase().includes('linkedin scraping is') &&
+  !allDocs24.toLowerCase().includes('scraping linkedin'));
+
+// 24y. Hierarchy still intact after all changes
+const tpmCheck24 = scoreOpportunity('Senior Technical Project Manager', 'Lead SDLC delivery with agile teams, Jira, stakeholders. PMP preferred. Confluence, roadmap, sprint planning.');
+assert('24y. TPM hierarchy intact after source-priority pass', tpmCheck24.lane === LANES.TPM);
+
+// 24z. Approval gate still mandatory
+assert('24z. Approval gate mandatory after source-priority pass', (() => {
+  const role = {
+    approval_state: 'pending',
+    status: 'discovered',
+    pack_readiness_score: 95,
+    application_url: 'https://jobs.lever.co/aerostrat/abc',
+    fit_score: 94,
+    recommended: true,
+    source_family: 'lever',
+  };
+  return classifyReadinessGroup(role) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

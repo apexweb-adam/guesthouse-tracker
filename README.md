@@ -396,7 +396,17 @@ The `/opportunities` PATCH handler now also records `status_changed` events when
 
 ## Automation-Readiness Status
 
-The system is now **activation-ready** for the first live structured discovery run. Pre-flight checklist:
+The system is **live and discovery-proven** for both Lever and Greenhouse. Current source operating truth:
+
+| Source | Status | Notes |
+|---|---|---|
+| **Lever** | **Active — PRIMARY** | Higher signal for TPM/Delivery lanes. Set `LEVER_BOARDS`. |
+| **Greenhouse** | **Active — secondary** | Stable but more saturated. Set `GREENHOUSE_BOARDS`. |
+| **RSS** | Staged off | Code exists; not yet activated. |
+| **USAJobs** | Staged off | Code exists; requires API key. Not needed yet. |
+| **LinkedIn** | Manual only | Not automated — not scraping, not ever. |
+
+> ⚠️ **Netlify quota:** If Netlify Functions return `503 usage_exceeded`, do NOT enable scheduled automation. This is a plan issue, not a code issue. See `LEVER_ROLLOUT_RUNBOOK.md §15` for the post-quota activation sequence.
 
 | Item | Status |
 |---|---|
@@ -406,6 +416,7 @@ The system is now **activation-ready** for the first live structured discovery r
 | Generic PATCH status changes recorded | ✅ |
 | `/discover` auth gate (DISCOVERY_SECRET required) | ✅ |
 | Greenhouse adapter + GREENHOUSE_BOARDS config validation | ✅ |
+| Lever adapter + LEVER_BOARDS config validation | ✅ |
 | Secondary dedup via `source_job_id` (prevents re-ingestion) | ✅ |
 | Primary dedup via title+company+URL hash | ✅ |
 | Source config validation (clear errors on missing env vars) | ✅ |
@@ -419,24 +430,18 @@ The system is now **activation-ready** for the first live structured discovery r
 | Approval gate enforced (no bypass) | ✅ |
 | Structured sources only (no scraping) | ✅ |
 | Demo mode isolated from live data | ✅ |
-| 636 automated tests passing | ✅ |
+| 658+ automated tests passing | ✅ |
 
-**First live rollout — activation sequence:**
-1. Run all 4 Supabase migrations in order (`001` → `002` → `003` → `004`)
-2. Set Netlify env vars: `VITE_DEMO_MODE=false`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `DISCOVERY_SECRET`
-3. Set `GREENHOUSE_BOARDS` to one or more public board slugs (e.g. `atlassian,servicenow`)
-4. Enable the Greenhouse source: in sources config or DB, set `enabled: true` for `src-greenhouse-boards`
-5. Set `LIVE_INTAKE_ENABLED=true` in Netlify
-6. Deploy — verify the site loads without demo badge
-7. Test auth gate: `curl -X POST .../discover -d '{}' → expect 401`
-8. Run first live discovery: `./scripts/run-discovery.sh`
-9. Open `/tracker` → Approval Queue — approve strong TPM/Delivery roles
-10. Import n8n workflow `05-job-discovery.json` → test manual trigger → activate schedule
-11. Run `./scripts/check-live.sh` to confirm all endpoints healthy
-12. Run a second discovery → confirm `total_ingested: 0` (dedup working)
+**Live rollout — post-quota activation sequence (Lever-first):**
+1. Confirm Netlify quota not exhausted: `curl https://YOUR_SITE/.netlify/functions/discover → expect 200/401, not 503`
+2. Run Lever discovery: `./scripts/run-discovery.sh src-lever-boards`
+3. Approve one real Lever role through the live app → verify Apply Pack links to `jobs.lever.co/...`
+4. Enable n8n workflow `05-job-discovery.json` → daily schedule at 7am UTC
+5. Compare Lever vs Greenhouse quality over 24–48h via Reports → Source Quality
+6. Only after that, consider any additional source
 
 **Rollback / kill switch:**
 - Set `LIVE_INTAKE_ENABLED=false` in Netlify → redeploy (stops all automated intake immediately)
-- Remove bad records: `DELETE FROM opportunities WHERE is_demo_record = FALSE AND approval_state = 'pending' AND discovered_at > 'YYYY-MM-DD'`
+- Remove bad records: `DELETE FROM opportunities WHERE approval_state = 'pending' AND discovered_at > 'YYYY-MM-DD'`
 
-See `LIVE_ACTIVATION_RUNBOOK.md` for complete step-by-step instructions, post-run validation checklist, and rollback procedures.
+See `LIVE_ACTIVATION_RUNBOOK.md` and `LEVER_ROLLOUT_RUNBOOK.md` for complete step-by-step instructions, post-run validation checklist, and rollback procedures.

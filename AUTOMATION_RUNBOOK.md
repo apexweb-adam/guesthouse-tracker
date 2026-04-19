@@ -56,7 +56,9 @@ curl https://your-site.netlify.app/.netlify/functions/sources
 2. See per-source summaries and recent log entries
 
 **Via n8n:**
-- Workflow `05-job-discovery.json` runs every 6 hours and alerts on failing sources via Zapier
+- Workflow `05-job-discovery.json` runs daily at 7am UTC. If any source returns errors, it alerts via webhook/Zapier.
+
+> ⚠️ **Quota check:** If Netlify Functions are returning `503 usage_exceeded`, source health monitoring will also fail. This is a Netlify account plan issue. Check the Netlify dashboard for quota remaining and reset date. Do not enable or adjust n8n schedules while quota is exhausted.
 
 ---
 
@@ -160,3 +162,42 @@ This leaves the website fully functional (manual intake, approval queue, tracker
 | `WEBHOOK_URL_INGESTION_COMPLETE` | No | — | Per-event webhook URL override |
 | `WEBHOOK_SECRET` | No | — | Optional shared secret sent as `X-Webhook-Secret` header |
 | `N8N_SITE_URL` | n8n only | — | Your Netlify site URL, set in n8n environment variables |
+
+---
+
+## Netlify Quota and Schedule Gate
+
+### Do not enable schedules if Netlify returns 503
+
+If your Netlify Functions return `503 usage_exceeded`, this means:
+- The monthly function invocation limit for your plan is exhausted
+- ALL Netlify Functions are unavailable until the quota resets
+- Scheduled automation, manual discovery, and the website API are all affected
+
+**This is a plan/account issue — not a code bug.** Check: Netlify dashboard → Team settings → Billing.
+
+### Schedule gate: confirm before enabling n8n discovery
+
+Before activating any n8n scheduled discovery workflow:
+
+```bash
+# Must return 200 or 401 — NOT 503
+curl -s -o /dev/null -w "%{http_code}" \
+  -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+- ✅ `200` or `401` → quota OK, safe to enable schedules
+- ❌ `503` → quota exhausted — do not enable schedules, wait or upgrade plan
+
+### Current scheduled automation (post-quota)
+
+| Workflow | Schedule | What it does |
+|---|---|---|
+| `05-job-discovery.json` | Daily 7am UTC | Runs `/discover` for all enabled sources (Lever + Greenhouse) |
+| `06-daily-approval-digest.json` | Daily 8am UTC | Fetches daily digest; sends approval-needed summary |
+| `07-weekly-readiness-summary.json` | Monday 9am UTC | Fetches weekly digest; sends readiness summary |
+
+**RSS and USAJobs are NOT in the current active schedule.** Do not add them without a separate decision.

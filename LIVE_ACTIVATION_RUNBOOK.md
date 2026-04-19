@@ -1,7 +1,15 @@
 # Live Intake Activation Runbook
 
-**Product:** AI Job Search OS — Sample Candidate  
-**First recommended live source:** Greenhouse (public board API — no auth required)
+**Product:** AI Job Search OS — Sample Candidate
+
+**Current source priority (operating truth as of this version):**
+- **Lever** — Primary source. Consistently higher signal for TPM/Delivery lanes.
+- **Greenhouse** — Secondary source. Active but more saturated; used alongside Lever.
+- **RSS** — Staged off. Do not activate yet.
+- **USAJobs** — Staged off. Do not activate without a separate decision.
+- **LinkedIn** — Manual reference only. Not automated.
+
+> ⚠️ **Netlify quota note:** If your Netlify account returns `503 usage_exceeded` on function calls, do NOT enable scheduled automation. See §10 (Post-Quota Next Steps) before enabling any n8n schedules.
 
 This runbook covers:
 - [Pre-Activation Prerequisites](#1-pre-activation-prerequisites)
@@ -14,6 +22,7 @@ This runbook covers:
 - [Kill Switch / Rollback](#7-kill-switch--rollback)
 - [What Remains Manual](#8-what-remains-manual)
 - [Recommended Env Vars Reference](#9-recommended-env-vars-reference)
+- [Post-Quota Next Steps](#10-post-quota-next-steps)
 
 ---
 
@@ -165,11 +174,15 @@ Follow this **exact** order:
 
 ## 3. First Live Source: Greenhouse Rollout
 
-**Greenhouse is the recommended first live source** because:
+**Greenhouse was the first live source activated.** It is a solid, stable secondary source. Lever has since been proven as the higher-signal primary source — see LEVER_ROLLOUT_RUNBOOK.md for Lever-specific guidance.
+
+Greenhouse is still active and worthwhile as a secondary source. This section documents the Greenhouse rollout process for operators who haven't yet activated it, or who want to understand the architecture.
+
+**Why Greenhouse (as a secondary source):**
 - Public board API, no auth required
 - Structured JSON with reliable job IDs (dedup by `source_job_id`)
 - Deterministic `canonical_job_url` (boards.greenhouse.io/…)
-- High-quality data: real ATS postings, not aggregated noise
+- More saturated market, but still produces TPM/Delivery roles
 
 ### 3a. Find Board Tokens
 
@@ -673,7 +686,17 @@ LIVE_INTAKE_ENABLED=false
 MAX_RECORDS_PER_RUN=50
 ```
 
-### Required for Greenhouse (first live source)
+### Required for Lever (primary source)
+
+```bash
+# Comma-separated company slugs — use verified slugs only
+# Verified working: aerostrat, thinkahead, immutable
+LEVER_BOARDS=aerostrat,thinkahead,immutable
+```
+
+No auth required — public postings API. For more slugs, see LEVER_ROLLOUT_RUNBOOK.md §2.
+
+### Required for Greenhouse (secondary source)
 
 ```bash
 # Comma-separated board tokens — add after verifying each token exists
@@ -681,15 +704,6 @@ GREENHOUSE_BOARDS=atlassian,servicenow
 ```
 
 No auth required — these are public job boards.
-
-### Required for Lever (second source, optional)
-
-```bash
-# Comma-separated company slugs
-LEVER_BOARDS=atlassian,canva
-```
-
-No auth required — public postings API.
 
 ### Required for USAJobs (US federal — optional)
 
@@ -835,3 +849,59 @@ curl "https://YOUR_SITE/.netlify/functions/digest?type=daily"
 # → digest.per_source_family — breakdown by source
 # → digest.approval_needed — count needing review
 ```
+
+---
+
+## 10. Post-Quota Next Steps
+
+> **When to use:** Only after confirming Netlify Functions no longer return `503 usage_exceeded`. Do not enable any scheduled automation while quota is exhausted.
+
+### What `503 usage_exceeded` means
+
+Netlify Free tier limits monthly function invocations. When exhausted, all Netlify Functions return HTTP 503. This affects `/discover`, all API endpoints, and all n8n-triggered workflows.
+
+**This is a Netlify account plan issue — not a code bug.** Options to resolve:
+- Wait for the monthly quota to reset (check Netlify dashboard for reset date)
+- Upgrade to Netlify Pro for higher function limits
+
+### Confirm quota is resolved before scheduling
+
+```bash
+# Should return 200 (or 401 if wrong secret), NOT 503
+curl -s -o /dev/null -w "%{http_code}" \
+  -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+- `200` or `401` → quota OK, safe to proceed
+- `503` → quota still exhausted — **do not proceed with scheduling**
+
+### Lever-first post-quota sequence (in order)
+
+Follow this **exact** sequence:
+
+1. Confirm curl test above returns 200/401, not 503
+2. Run one real Lever discovery through the deployed endpoint:
+   ```bash
+   curl -X POST https://YOUR_SITE/.netlify/functions/discover \
+     -H "X-Discovery-Secret: YOUR_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{"sourceId":"src-lever-boards"}'
+   ```
+   Expected: `ok: true`, `total_ingested > 0`, no errors
+3. Approve one real Lever role through the live app
+4. Verify Apply Pack generation through the live path — confirm the Apply Pack URL links to `jobs.lever.co/...`
+5. Only then enable the n8n daily schedule (workflow `05-job-discovery.json` at 7am UTC)
+6. Compare Lever vs Greenhouse quality over 24–48 hours via Reports → Source Quality
+7. Only after that consider any additional source — but do not activate RSS or USAJobs without a separate decision
+
+### What remains off (do not activate without a separate decision)
+
+| Source | Status | Reason |
+|---|---|---|
+| RSS / Atom feeds | Staged off | Code exists; not activated — quality not yet evaluated |
+| USAJobs | Staged off | Code exists; requires `USAJOBS_API_KEY`; not needed yet |
+| LinkedIn | Manual only | Not automated — not scraping, not ever |
+

@@ -50,7 +50,7 @@
 ## The apply flow (find → score → approve → prepare → apply → track)
 
 ```
-1. DISCOVER   Job found via Greenhouse or Lever — canonical_job_url stored
+1. DISCOVER   Job found via Lever (primary) or Greenhouse (secondary) — canonical_job_url stored
 2. QUEUE      Recommended jobs enter approval queue (profile-filtered, scored, classified)
 3. APPROVE    Human approves or rejects each role
 4. PACK READY Apply Pack auto-generated: resume recommendation + checklist + keywords + outreach drafts
@@ -67,19 +67,21 @@ The system discovers real jobs from governed structured sources. No scraping, no
 
 | Source family | How it works | Auth | Status |
 |---|---|---|---|
-| `greenhouse` | Greenhouse public boards JSON API — `boards-api.greenhouse.io/v1/boards/{token}/jobs` | None (public) | **Active** |
-| `lever` | Lever public postings JSON API — `api.lever.co/v0/postings/{slug}` | None (public) | **Active** |
-| `usajobs` | USAJobs REST API — `data.usajobs.gov/api/search` | USAJOBS_API_KEY required | Not activated |
-| `seek` | SEEK RSS/Atom feed | None (public) | Not activated |
-| `apsjobs` | Australian Public Service Jobs RSS | None (public) | Not activated |
-| `rss` | Any approved RSS/Atom feed | None | Not activated |
+| `lever` | Lever public postings JSON API — `api.lever.co/v0/postings/{slug}` | None (public) | **Active — PRIMARY** |
+| `greenhouse` | Greenhouse public boards JSON API — `boards-api.greenhouse.io/v1/boards/{token}/jobs` | None (public) | **Active — secondary** |
+| `usajobs` | USAJobs REST API — `data.usajobs.gov/api/search` | USAJOBS_API_KEY required | Staged off |
+| `seek` | SEEK RSS/Atom feed | None (public) | Staged off |
+| `apsjobs` | Australian Public Service Jobs RSS | None (public) | Staged off |
+| `rss` | Any approved RSS/Atom feed | None | Staged off |
 | `linkedin` | NOT automated. Email intake only — no browser automation, no scraping. | N/A | Manual only |
 
 ### env vars required per source family
 
 ```
-GREENHOUSE_BOARDS=telstra,anz,atlassian      # comma-separated board tokens (active)
-LEVER_BOARDS=canva,xero,atlassian            # comma-separated company slugs (active)
+# Lever — PRIMARY source (higher signal for TPM/Delivery lanes)
+# Use verified slugs: aerostrat, thinkahead, immutable are confirmed working
+LEVER_BOARDS=aerostrat,thinkahead,immutable  # comma-separated company slugs (active — primary)
+GREENHOUSE_BOARDS=atlassian,servicenow       # comma-separated board tokens (active — secondary)
 # USAJOBS_API_KEY=your-key                   # not activated in current rollout
 # USAJOBS_USER_AGENT=your-registered-email   # not activated in current rollout
 LIVE_INTAKE_ENABLED=true                     # global kill switch — must be true

@@ -1,8 +1,17 @@
-# Lever Second Source Rollout Runbook
+# Lever Rollout Runbook
 
-**Status:** Lever is implementation-ready. This runbook guides the safe activation, validation, and rollback for Lever as the second live discovery source.
+**Status: Lever is the PRIMARY live discovery source.**
+Lever has been proven in live discovery and consistently returns higher-signal results than Greenhouse for TPM and Delivery Manager roles.
 
-**Prerequisite:** Greenhouse first-rollout must already be complete and clean (one full discovery cycle + dedup cycle verified).
+**Source priority (current operating truth):**
+- **Lever** — Primary source. Higher signal, better role quality for TPM/Delivery lanes.
+- **Greenhouse** — Secondary source. More saturated, lower signal, but still active.
+- **RSS / USAJobs** — Staged off. Do not activate.
+- **LinkedIn** — Manual reference only. Not automated. Not scraping.
+
+**Activation prerequisite:** Greenhouse first-rollout must already be complete (one full discovery cycle + dedup cycle verified). Lever can run alongside Greenhouse or independently.
+
+> ⚠️ **Netlify quota note:** If your Netlify account returns `503 usage_exceeded` on function calls, scheduled automation cannot run safely. See §15 (Post-Quota Next Steps) before enabling n8n schedules.
 
 ---
 
@@ -35,12 +44,19 @@ https://jobs.lever.co/{slug}
 https://api.lever.co/v0/postings/{slug}?mode=json
 ```
 
-**Example valid slugs to check:**
+**Verified working slugs (confirmed in live discovery):**
+- `aerostrat` → https://jobs.lever.co/aerostrat
+- `thinkahead` → https://jobs.lever.co/thinkahead
+- `immutable` → https://jobs.lever.co/immutable
+
+**Additional slugs to check (verify before adding):**
 - `atlassian` → https://jobs.lever.co/atlassian
 - `canva` → https://jobs.lever.co/canva
 - `buildkite` → https://jobs.lever.co/buildkite
 - `deputy` → https://jobs.lever.co/deputy
 - `go1` → https://jobs.lever.co/go1
+
+> Always verify the slug is still active — company boards come and go. A 404 or empty array means the slug is no longer valid.
 
 **Verification step:** Open the API URL in your browser and confirm it returns a JSON array. If the slug is wrong or the company has no live postings, the array will be empty or you'll get a 404.
 
@@ -54,7 +70,7 @@ Set these in Netlify (Site Settings → Environment Variables):
 
 | Variable | Value | Notes |
 |---|---|---|
-| `LEVER_BOARDS` | `atlassian,canva` (comma-separated slugs) | Required for Lever source |
+| `LEVER_BOARDS` | `aerostrat,thinkahead,immutable` (comma-separated slugs) | Required for Lever source. Use verified slugs only. |
 | `LIVE_INTAKE_ENABLED` | `true` | Must already be true from Greenhouse rollout |
 | `MAX_RECORDS_PER_RUN` | `50` | Already set — no change needed |
 
@@ -305,6 +321,7 @@ Check via Reports → Source Quality for the recommended rate and lane distribut
 - Do not delete approved records under any circumstances
 - Do not manually edit Lever job data — let the pipeline normalise it
 - Do not add VITE_ prefix to LEVER_BOARDS
+- Do not activate RSS, USAJobs, or any additional sources in this same pass
 
 ---
 
@@ -312,13 +329,75 @@ Check via Reports → Source Quality for the recommended rate and lane distribut
 
 Before going live with Lever:
 
-- [ ] `LEVER_BOARDS` set in Netlify (no `VITE_` prefix)
-- [ ] Lever slugs manually verified at `jobs.lever.co/{slug}`
+- [ ] `LEVER_BOARDS` set in Netlify (no `VITE_` prefix) — use verified slugs only
+- [ ] Lever slugs manually verified at `jobs.lever.co/{slug}` and `api.lever.co/v0/postings/{slug}?mode=json`
 - [ ] `LIVE_INTAKE_ENABLED=true` already set
 - [ ] `DISCOVERY_SECRET` already set
 - [ ] `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` already set
 - [ ] All 4 Supabase migrations already run (001–004)
 - [ ] Greenhouse already active and clean
+- [ ] Netlify function quota not exhausted (test `/discover` returns 200, not 503)
+
+---
+
+## §15 Post-Quota Next Steps (After Netlify Quota Is Resolved)
+
+> **When to use this section:** Only after confirming that Netlify Functions no longer return `503 usage_exceeded`. Do not attempt to enable scheduled automation while quota is exhausted.
+
+### What `503 usage_exceeded` means
+
+Netlify Free tier limits the number of function invocations per month. When that limit is exhausted, all Netlify Functions return HTTP 503. This affects:
+- All `/discover` calls (scheduled and manual)
+- All API endpoints the website relies on
+- The n8n workflows that call those endpoints
+
+**This is a Netlify account plan issue — not a code issue.**
+
+### How to verify quota is resolved
+
+```bash
+# Test with your actual secret
+curl -s -o /dev/null -w "%{http_code}" \
+  -X POST https://YOUR_SITE/.netlify/functions/discover \
+  -H "X-Discovery-Secret: YOUR_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+# Expected: 200 or 401 (auth test)
+# Bad: 503 → quota still exhausted — do not proceed
+```
+
+If this returns `503`, do not enable any schedules. Options:
+- Wait for the monthly quota to reset
+- Upgrade your Netlify plan (Pro has higher limits)
+- Use Netlify CLI to test locally against the live Supabase DB directly
+
+### Exact post-quota sequence (Lever-first)
+
+Follow this **exact** order after quota is confirmed resolved:
+
+1. **Confirm the endpoint is live** — curl test above returns 200 or 401, not 503
+2. **Run one real Lever discovery through the deployed Netlify endpoint**
+   ```bash
+   curl -X POST https://YOUR_SITE/.netlify/functions/discover \
+     -H "X-Discovery-Secret: YOUR_SECRET" \
+     -H "Content-Type: application/json" \
+     -d '{"sourceId":"src-lever-boards"}'
+   ```
+   → Expect `ok: true`, `total_ingested > 0`, no errors
+3. **Approve one real Lever role through the live app** — Open `/queue`, approve one strong TPM/Delivery role
+4. **Verify Apply Pack generation through the live path** — Check the approved role has an Apply Pack with a valid `jobs.lever.co/...` URL
+5. **Only then enable the n8n scheduled daily discovery** (workflow `05-job-discovery.json`, Lever-first daily at 7am UTC)
+6. **Compare Lever vs Greenhouse quality** over 24–48 hours via Reports → Source Quality
+7. **Only after that consider any additional source** — but do not activate RSS or USAJobs yet
+
+### Lever-first scheduling strategy (post-quota)
+
+- **Primary daily run:** Lever discovery at 7am UTC (`src-lever-boards`)
+- **Secondary run:** Greenhouse discovery less frequently or alongside Lever
+- **RSS:** Staged off — do not activate
+- **USAJobs:** Staged off — do not activate without separate decision
+
+This is not a code change — it is managed by which sources are enabled in the Sources UI and which are configured via env vars.
 
 ---
 

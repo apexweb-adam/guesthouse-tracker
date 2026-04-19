@@ -96,38 +96,40 @@ netlify deploy --prod
 
 ## 4. Enabling Live Source Intake
 
-> **WARNING:** Only enable after you have verified your RSS/API sources return valid structured data.
+> **WARNING:** Only enable after you have verified your Lever and/or Greenhouse sources return valid structured data. Do not enable scheduled automation if Netlify returns `503 usage_exceeded` — that is a quota/plan issue, not a code issue.
 
 1. Set `LIVE_INTAKE_ENABLED=true` in Netlify environment variables
-2. Go to Sources page → enable individual RSS/API sources (start with `src-rss-seek` only)
-3. The scheduled function (`ingest-scheduled`) runs every 2 hours automatically
+2. Go to Sources page → enable **Lever** first (primary source), then Greenhouse (secondary)
+3. The scheduled function fires daily at 7am UTC automatically (via n8n workflow 05)
 4. Monitor the Sources page for ingestion health, failure counts, and High Review percentage
 5. If a source shows a "Noisy source" warning (>50% low-fit records), disable it and review
 
 **Kill switch:** Set `LIVE_INTAKE_ENABLED=false` and redeploy to immediately stop all automated intake.
 
-### First Live Source: Greenhouse (Recommended)
+### First Live Source: Lever (Current Primary)
 
-**Greenhouse is the recommended first live source** (see `LIVE_ACTIVATION_RUNBOOK.md` for the complete one-source rollout checklist).
-
-Greenhouse is preferred over SEEK RSS because the API returns structured JSON with reliable job IDs, making dedup and Apply Pack URL flow more reliable.
+**Lever is now the recommended primary live source** (higher signal for TPM/Delivery lanes than Greenhouse).
+For the complete Lever rollout checklist, see `LEVER_ROLLOUT_RUNBOOK.md`.
 
 **Steps:**
 1. Confirm `LIVE_INTAKE_ENABLED=true`, `MAX_RECORDS_PER_RUN=50`, and `DISCOVERY_SECRET` are set
-2. Set `GREENHOUSE_BOARDS` to 2–3 company board tokens (e.g. `atlassian,servicenow`)
-3. In the Sources page, click **Enable** next to "Greenhouse Job Boards (configured companies)"
-4. Trigger a manual discovery run: `curl -X POST https://your-site/.netlify/functions/discover -H "X-Discovery-Secret: your-secret" -d '{}'`
+2. Set `LEVER_BOARDS` to 2–3 verified company slugs (e.g. `aerostrat,thinkahead,immutable`)
+3. In the Sources page, click **Enable** next to "Lever Job Postings (configured companies)"
+4. Trigger a manual discovery run: `curl -X POST https://your-site/.netlify/functions/discover -H "X-Discovery-Secret: your-secret" -d '{"sourceId":"src-lever-boards"}'`
 5. Verify in the Sources page: Last Run timestamp updated, Imported count > 0, no failures
 6. Verify in the Discovered Jobs view: new records appear with correct lane/score
 7. Check that generic Ops/PM roles score below 70 and are NOT recommended
 8. After verifying dedup (second run shows 0 new records), proceed to approve strong-fit records
-9. After 48h, check High Review % — if >50%, review the board token list
+
+**Greenhouse (secondary):**
+Set `GREENHOUSE_BOARDS` to 2–3 company board tokens (e.g. `atlassian,servicenow`) and enable `src-greenhouse-boards` in the Sources UI. Greenhouse is still active and useful alongside Lever.
 
 **Do NOT enable yet:**
-- Email intake (`src-rss-linkedin-jobs`) — requires email forwarding setup
-- Multiple live sources simultaneously — enable one at a time
+- RSS sources — not yet activated; evaluate quality before enabling
+- USAJobs — requires `USAJOBS_API_KEY`; staged off for now
+- Multiple additional sources simultaneously — enable one at a time
 
-See `LIVE_ACTIVATION_RUNBOOK.md` for a detailed activation checklist, verification steps, and rollback procedure.
+> ⚠️ If Netlify Functions return `503 usage_exceeded`, do not enable any scheduled automation. See `LEVER_ROLLOUT_RUNBOOK.md §15` for the post-quota sequence.
 
 ---
 

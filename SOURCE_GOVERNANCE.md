@@ -1,14 +1,28 @@
 # SOURCE_GOVERNANCE.md
 
+## Current Source Priority (Operating Truth)
+
+| Source family | Status | Notes |
+|---|---|---|
+| `lever` | **Active — PRIMARY** | Lever is the highest-signal source for TPM/Delivery lanes. Set `LEVER_BOARDS` env var. |
+| `greenhouse` | **Active — secondary** | Stable but more saturated. Set `GREENHOUSE_BOARDS` env var. |
+| `rss` | Staged off | Code exists; feed support is built. Not activated — evaluate quality before enabling. |
+| `usajobs` | Staged off | Code exists; requires `USAJOBS_API_KEY`. Not needed yet. |
+| `linkedin` | Manual only | Not automated. No scraping. URL used as reference only in manual intake. |
+
+> Source quality is an observed operational result, not a permanent truth. Re-evaluate Lever vs Greenhouse quality monthly via Reports → Source Quality. Lever is currently higher signal based on live discovery results; this may change as market conditions change.
+
+---
+
 ## Source types
 
 | Type | Description | Live capable | Status |
 |---|---|---|---|
 | `manual` | Hand-entered via the Import page or API | No | Active |
 | `csv` | CSV upload / paste via Import page | No | Active |
-| `rss` | Structured RSS/Atom job feeds from approved job boards | Yes (with LIVE_INTAKE_ENABLED=true) | Active (demo-safe) |
+| `rss` | Structured RSS/Atom job feeds from approved job boards | Yes (with LIVE_INTAKE_ENABLED=true) | Staged off (not activated) |
 | `email` | Structured job alert emails (Gmail label parsing) | Yes (via n8n email trigger) | Staged |
-| `api` | Approved public ATS / job board APIs | Yes | Staged |
+| `api` | Approved public ATS / job board APIs | Yes | Active (Lever + Greenhouse) |
 | `demo` | Local demo payload for testing | No | Active (demo only) |
 
 ### Not supported (rejected on intake)
