@@ -1,9 +1,9 @@
 {
   "name": "05 — Job Discovery Run (Scheduled + Manual)",
-  "_comment": "ARCHITECTURE NOTE: n8n does NOT re-implement scoring, dedup, classification, or discovery profile logic. It only triggers POST /discover on the Netlify function. Set SITE_URL and DISCOVERY_SECRET env vars in n8n. DISCOVERY_SECRET must match the server env var of the same name.",
+  "_comment": "ARCHITECTURE NOTE: n8n does NOT re-implement scoring, dedup, classification, or discovery profile logic. It only triggers POST /discover on the Netlify function. Set SITE_URL and DISCOVERY_SECRET env vars in n8n. DISCOVERY_SECRET must match the server env var of the same name. TIMEOUT FIX (2026-04): Each source family now has its own HTTP Request node so a slow or failed source is isolated and cannot crash the whole workflow. Guard Code nodes validate the response shape before reading fields, preventing 'Unknown error' when a 504 HTML page is received instead of JSON.",
   "_daily_schedule": {
     "schedule": "0 7 * * * (daily at 7am UTC)",
-    "note": "Changed from every-6h to daily. For source-specific runs use manual trigger or POST body with sourceId or sourceFamily."
+    "note": "Changed from every-6h to daily. Each source family (Lever, Greenhouse) runs as a separate HTTP call so a single-source timeout does not abort the whole run."
   },
   "nodes": [
     {
@@ -56,15 +56,15 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "{}",
+        "body": "{\"sourceFamily\":\"lever\"}",
         "options": {
-          "timeout": 60000,
+          "timeout": 30000,
           "fullResponse": true,
           "ignoreHttpStatusErrors": true
         }
       },
-      "id": "trigger-discover",
-      "name": "POST /discover",
+      "id": "trigger-discover-lever",
+      "name": "POST /discover — Lever",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
@@ -74,14 +74,75 @@
     },
     {
       "parameters": {
-        "jsCode": "// Log the discovery result. All scoring/dedup logic ran inside the function.\n// This node only logs — it does not re-implement any business logic.\nconst res = $input.first();\nconst status = res.json?.statusCode || 200;\nconst body = typeof res.json?.body === 'string' ? JSON.parse(res.json.body) : (res.json || {});\n\nif (status === 401) {\n  console.error('[discovery] UNAUTHORIZED — check DISCOVERY_SECRET env var in n8n and Netlify');\n  return [{ json: { ok: false, error: 'unauthorized', status } }];\n}\n\nif (status !== 200 || body.ok === false) {\n  console.warn('[discovery] Run skipped or failed:', body.message || body.error || JSON.stringify(body));\n  return [{ json: { ok: false, message: body.message || body.error, status } }];\n}\n\nif (body.mode === 'demo') {\n  console.log('[discovery] Demo mode — no real discovery ran.');\n  return [{ json: { ok: true, mode: 'demo' } }];\n}\n\nconsole.log(\n  `[discovery] Run complete: ${body.sources_run} source(s), ` +\n  `${body.total_discovered} discovered, ${body.total_ingested} ingested`\n);\n\nreturn [{ json: body }];"
+        "jsCode": "// Guard: validate the Lever discovery HTTP response before proceeding.\n// A 504 gateway timeout returns an HTML page — JSON.parse on that throws.\n// This node catches that and produces a clean, isolated error so the workflow\n// can continue to the Greenhouse step regardless of what Lever did.\nconst res = $input.first();\nconst httpStatus = res.json?.statusCode ?? 200;\nlet body;\ntry {\n  body = typeof res.json?.body === 'string' ? JSON.parse(res.json.body) : (res.json || {});\n} catch (parseErr) {\n  const raw = String(res.json?.body || '').slice(0, 300);\n  console.error('[discovery:lever] Non-JSON response from /discover (likely 504 timeout):', raw);\n  return [{ json: { ok: false, source_family: 'lever', error: 'non_json_response', status: httpStatus, raw_preview: raw } }];\n}\nif (httpStatus === 401) {\n  console.error('[discovery:lever] UNAUTHORIZED — check DISCOVERY_SECRET in n8n and Netlify');\n  return [{ json: { ok: false, source_family: 'lever', error: 'unauthorized', status: 401 } }];\n}\nif (httpStatus !== 200 || body.ok === false) {\n  console.warn('[discovery:lever] Run failed or skipped:', body.message || body.error || `HTTP ${httpStatus}`);\n  return [{ json: { ok: false, source_family: 'lever', error: body.message || body.error || `HTTP ${httpStatus}`, status: httpStatus } }];\n}\nif (body.mode === 'demo') {\n  return [{ json: { ok: true, source_family: 'lever', mode: 'demo' } }];\n}\nconsole.log(`[discovery:lever] ${body.total_discovered ?? 0} discovered, ${body.total_ingested ?? 0} ingested`);\nreturn [{ json: { ok: true, source_family: 'lever', ...body } }];"
       },
-      "id": "log-result",
-      "name": "Log Discovery Result",
+      "id": "guard-lever",
+      "name": "Guard Lever Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        800,
+        750,
+        390
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SITE_URL }}/.netlify/functions/discover",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Discovery-Secret",
+              "value": "={{ $env.DISCOVERY_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "{\"sourceFamily\":\"greenhouse\"}",
+        "options": {
+          "timeout": 30000,
+          "fullResponse": true,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "id": "trigger-discover-greenhouse",
+      "name": "POST /discover — Greenhouse",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1000,
+        390
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Guard: validate the Greenhouse discovery HTTP response before proceeding.\n// A 504 gateway timeout returns an HTML page — JSON.parse on that throws.\n// This node catches that and produces a clean, isolated error.\nconst res = $input.first();\nconst httpStatus = res.json?.statusCode ?? 200;\nlet body;\ntry {\n  body = typeof res.json?.body === 'string' ? JSON.parse(res.json.body) : (res.json || {});\n} catch (parseErr) {\n  const raw = String(res.json?.body || '').slice(0, 300);\n  console.error('[discovery:greenhouse] Non-JSON response from /discover (likely 504 timeout):', raw);\n  return [{ json: { ok: false, source_family: 'greenhouse', error: 'non_json_response', status: httpStatus, raw_preview: raw } }];\n}\nif (httpStatus === 401) {\n  console.error('[discovery:greenhouse] UNAUTHORIZED — check DISCOVERY_SECRET in n8n and Netlify');\n  return [{ json: { ok: false, source_family: 'greenhouse', error: 'unauthorized', status: 401 } }];\n}\nif (httpStatus !== 200 || body.ok === false) {\n  console.warn('[discovery:greenhouse] Run failed or skipped:', body.message || body.error || `HTTP ${httpStatus}`);\n  return [{ json: { ok: false, source_family: 'greenhouse', error: body.message || body.error || `HTTP ${httpStatus}`, status: httpStatus } }];\n}\nif (body.mode === 'demo') {\n  return [{ json: { ok: true, source_family: 'greenhouse', mode: 'demo' } }];\n}\nconsole.log(`[discovery:greenhouse] ${body.total_discovered ?? 0} discovered, ${body.total_ingested ?? 0} ingested`);\nreturn [{ json: { ok: true, source_family: 'greenhouse', ...body } }];"
+      },
+      "id": "guard-greenhouse",
+      "name": "Guard Greenhouse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        390
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge results from both source families into a single summary.\n// Lever result is retrieved from the named upstream node; Greenhouse from $input.\n// If one source timed out (ok:false), its error is recorded but the other source's\n// results are preserved — a single-source failure does not abort the whole run.\nconst leverResult = $('Guard Lever Response').first().json;\nconst ghResult = $input.first().json;\n\nconst totalDiscovered = (leverResult.total_discovered ?? 0) + (ghResult.total_discovered ?? 0);\nconst totalIngested = (leverResult.total_ingested ?? 0) + (ghResult.total_ingested ?? 0);\nconst totalRecommended = (leverResult.total_recommended ?? 0) + (ghResult.total_recommended ?? 0);\nconst sourcesRun = (leverResult.sources_run ?? 0) + (ghResult.sources_run ?? 0);\n\nconst sourceErrors = [];\nif (leverResult.ok === false) sourceErrors.push({ source_family: 'lever', error: leverResult.error });\nif (ghResult.ok === false) sourceErrors.push({ source_family: 'greenhouse', error: ghResult.error });\n\nconst ok = leverResult.ok !== false || ghResult.ok !== false;\nconst mode = leverResult.mode || ghResult.mode || 'live';\n\nif (sourceErrors.length > 0) {\n  console.warn('[discovery] Source-level errors (isolated, other sources unaffected):', JSON.stringify(sourceErrors));\n}\n\nconsole.log(`[discovery] Merged: ${sourcesRun} source(s), ${totalDiscovered} discovered, ${totalIngested} ingested`);\n\nreturn [{ json: {\n  ok,\n  mode,\n  sources_run: sourcesRun,\n  total_discovered: totalDiscovered,\n  total_ingested: totalIngested,\n  total_recommended: totalRecommended,\n  source_errors: sourceErrors,\n  lever: leverResult.ok !== false\n    ? { discovered: leverResult.total_discovered ?? 0, ingested: leverResult.total_ingested ?? 0 }\n    : { error: leverResult.error },\n  greenhouse: ghResult.ok !== false\n    ? { discovered: ghResult.total_discovered ?? 0, ingested: ghResult.total_ingested ?? 0 }\n    : { error: ghResult.error },\n} }];"
+      },
+      "id": "merge-results",
+      "name": "Merge Discovery Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
         390
       ]
     },
@@ -108,7 +169,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        1050,
+        1750,
         390
       ]
     },
@@ -123,20 +184,20 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        1300,
+        2000,
         300
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Forward the discovery_run_complete event summary to webhooks.\n// The /webhooks function dispatches to WEBHOOK_URL or WEBHOOK_URL_DISCOVERY_RUN_COMPLETE.\nconst body = $input.first().json;\nreturn [{ json: {\n  event: 'discovery_run_complete',\n  payload: {\n    sources_run: body.sources_run,\n    total_discovered: body.total_discovered,\n    total_ingested: body.total_ingested,\n    timestamp: new Date().toISOString()\n  }\n}}];"
+        "jsCode": "// Forward the discovery_run_complete event summary to webhooks.\n// The /webhooks function dispatches to WEBHOOK_URL or WEBHOOK_URL_DISCOVERY_RUN_COMPLETE.\nconst body = $input.first().json;\nreturn [{ json: {\n  event: 'discovery_run_complete',\n  payload: {\n    sources_run: body.sources_run,\n    total_discovered: body.total_discovered,\n    total_ingested: body.total_ingested,\n    source_errors: body.source_errors || [],\n    timestamp: new Date().toISOString()\n  }\n}}];"
       },
       "id": "build-event-payload",
       "name": "Build Event Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1300,
+        2000,
         480
       ]
     },
@@ -163,7 +224,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        1550,
+        2250,
         480
       ]
     }
@@ -173,7 +234,7 @@
       "main": [
         [
           {
-            "node": "POST /discover",
+            "node": "POST /discover — Lever",
             "type": "main",
             "index": 0
           }
@@ -184,25 +245,58 @@
       "main": [
         [
           {
-            "node": "POST /discover",
+            "node": "POST /discover — Lever",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "POST /discover": {
+    "POST /discover — Lever": {
       "main": [
         [
           {
-            "node": "Log Discovery Result",
+            "node": "Guard Lever Response",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Log Discovery Result": {
+    "Guard Lever Response": {
+      "main": [
+        [
+          {
+            "node": "POST /discover — Greenhouse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /discover — Greenhouse": {
+      "main": [
+        [
+          {
+            "node": "Guard Greenhouse Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard Greenhouse Response": {
+      "main": [
+        [
+          {
+            "node": "Merge Discovery Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Discovery Results": {
       "main": [
         [
           {
@@ -222,17 +316,6 @@
             "index": 0
           }
         ],
-        [
-          {
-            "node": "Build Event Payload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Any New Jobs? (false)": {
-      "main": [
         [
           {
             "node": "Build Event Payload",
@@ -266,20 +349,20 @@
     "Manual trigger is available for on-demand discovery runs from the n8n UI.",
     "DISCOVERY_SECRET is passed as X-Discovery-Secret header — must match server env var.",
     "All scoring, dedup, and classification happen inside the Netlify function. n8n only triggers it.",
+    "TIMEOUT FIX (2026-04): The workflow now sends two separate POST /discover calls — one for Lever (sourceFamily:lever) and one for Greenhouse (sourceFamily:greenhouse). Each call is isolated: a 504 or timeout on one source does not crash the other. Guard Code nodes catch non-JSON responses (e.g. 504 HTML pages) and produce a clean error object. The Merge node combines both results and logs source-level errors.",
     "If /discover returns 401, check DISCOVERY_SECRET in both n8n and Netlify environments.",
-    "If discovery is disabled (LIVE_INTAKE_ENABLED != true), the function returns ok:false with a message — n8n logs and continues.",
-    "Combine with workflow 02 (approval digest) to notify when the queue grows after a discovery run.",
-    "LEVER SUPPORT: Lever is the second live source. Set LEVER_BOARDS env var (comma-separated company slugs, e.g. atlassian,canva) in Netlify. Enable the src-lever-boards source in the Sources UI. No changes to this workflow are needed — /discover handles both Greenhouse and Lever.",
-    "SOURCE-SPECIFIC TESTING: To test a single source, POST with body {\"sourceId\":\"src-greenhouse-boards\"} or {\"sourceId\":\"src-lever-boards\"} instead of an empty body. The manual trigger in this workflow always runs all enabled sources.",
-    "GREENHOUSE-ONLY RUN: POST body {\"sourceId\":\"src-greenhouse-boards\"}",
-    "LEVER-ONLY RUN: POST body {\"sourceId\":\"src-lever-boards\"}",
-    "SOURCE-FAMILY RUN: POST body {\"sourceFamily\":\"greenhouse\"} to run all sources of that family",
+    "If discovery is disabled (LIVE_INTAKE_ENABLED != true), each source-family call returns ok:false with a message — n8n logs and continues.",
+    "LEVER SUPPORT: Set LEVER_BOARDS env var (comma-separated company slugs, e.g. atlassian,canva) in Netlify. Enable the src-lever-boards source in the Sources UI.",
+    "GREENHOUSE SUPPORT: Set GREENHOUSE_BOARDS env var (comma-separated board tokens) in Netlify. Enable the src-greenhouse-boards source in the Sources UI.",
+    "SOURCE-SPECIFIC TESTING: Each source family now has its own HTTP Request node. To test a single family, run the corresponding 'POST /discover — <Family>' node manually from the n8n UI.",
+    "GREENHOUSE-ONLY RUN: Use the 'POST /discover — Greenhouse' node (body: {\"sourceFamily\":\"greenhouse\"}) for an isolated Greenhouse test.",
+    "LEVER-ONLY RUN: Use the 'POST /discover — Lever' node (body: {\"sourceFamily\":\"lever\"}) for an isolated Lever test.",
+    "USAJOBS-ONLY RUN: Add a 'POST /discover — USAJobs' node with body {\"sourceFamily\":\"usajobs\"} — only works when USAJOBS_API_KEY and USAJOBS_USER_AGENT env vars are set and src-usajobs is enabled.",
     "LEVER ACTIVATION ORDER: (1) Set LEVER_BOARDS in Netlify env, (2) enable src-lever-boards in Sources UI, (3) run this workflow manually once, (4) verify queue quality, (5) run a second time to confirm dedup, (6) only then keep the schedule active.",
     "DO NOT activate multiple new source families simultaneously. Prove Lever clean before enabling others.",
-    "ROLLBACK: To disable Lever only, disable src-lever-boards in the Sources UI or set LEVER_BOARDS= (empty) in Netlify and redeploy. Greenhouse remains unaffected.",
-    "USAJOBS-ONLY RUN: POST body {\"sourceFamily\":\"usajobs\"} — only works when USAJOBS_API_KEY and USAJOBS_USER_AGENT env vars are set and src-usajobs is enabled.",
-    "RSS-ONLY RUN: POST body {\"sourceFamily\":\"rss\"} — only works when at least one RSS source is enabled in the Sources UI.",
-    "USAJOBS ACTIVATION (Wave 2): (1) Register key at developer.usajobs.gov, (2) set USAJOBS_API_KEY and USAJOBS_USER_AGENT in Netlify, (3) enable src-usajobs in Sources UI, (4) run this workflow manually with {\"sourceFamily\":\"usajobs\"}, (5) verify queue quality and dedup, (6) only then include in daily schedule.",
+    "ROLLBACK: To disable Lever only, disable src-lever-boards in the Sources UI or set LEVER_BOARDS= (empty) in Netlify and redeploy. Greenhouse remains unaffected. The Lever guard node will return ok:false with a clear message.",
+    "ADDING MORE SOURCES (USAJobs, RSS): Add a new 'POST /discover — <Family>' HTTP Request node + Guard Code node pair after the Greenhouse guard, then update the Merge node to include the new result. Do not change the Merge node's reference to $('Guard Lever Response') or $('Guard Greenhouse Response').",
+    "USAJOBS ACTIVATION (Wave 2): (1) Register key at developer.usajobs.gov, (2) set USAJOBS_API_KEY and USAJOBS_USER_AGENT in Netlify, (3) enable src-usajobs in Sources UI, (4) add a POST /discover — USAJobs node with body {\"sourceFamily\":\"usajobs\"}, (5) verify quality and dedup before including in daily schedule.",
     "SOURCE ACTIVATION WAVES: Wave 1 (active) = Lever + Greenhouse. Wave 2 (staged) = USAJobs. Wave 3 (staged) = RSS. Do not activate Wave 2/3 until Wave 1 is clean and stable.",
     "QUALITY GATE: Before enabling any new source family in the daily schedule, it must pass: (1) manual run with real roles, (2) second-run dedup (zero re-ingest), (3) recommended_pct >= 30% with >= 5 records in Reports > Source Quality."
   ]
