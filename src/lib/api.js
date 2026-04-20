@@ -802,16 +802,17 @@ export async function updateApplyStatus(id, status) {
 
 // ─── Discovery Trigger ─────────────────────────────────────────────────────
 /**
- * Trigger a job discovery run via POST /discover.
- * Requires the DISCOVERY_SECRET env var to be configured server-side.
- * The secret is passed via the UI only in demo mode (no-op) or via a
- * server-to-server call in live mode.
+ * Trigger a job discovery run from the browser.
+ *
+ * Calls POST /trigger-discover — a server-side proxy that injects the
+ * DISCOVERY_SECRET before forwarding to /discover.  The secret is never
+ * exposed to the browser.
  *
  * @param {object} opts
- * @param {string} [opts.sourceId]        — run a single source
- * @param {string} [opts.discoverySecret] — caller must pass DISCOVERY_SECRET
+ * @param {string} [opts.sourceId]     — run a single source
+ * @param {string} [opts.sourceFamily] — run all sources in a family
  */
-export async function triggerDiscover({ sourceId, discoverySecret } = {}) {
+export async function triggerDiscover({ sourceId, sourceFamily } = {}) {
   if (isDemoMode()) {
     return {
       ok: true,
@@ -821,12 +822,13 @@ export async function triggerDiscover({ sourceId, discoverySecret } = {}) {
       ingested: 0,
     };
   }
-  const headers = { 'Content-Type': 'application/json' };
-  if (discoverySecret) headers['X-Discovery-Secret'] = discoverySecret;
-  const res = await fetch(`${BASE}/discover`, {
+  const body = {};
+  if (sourceId) body.sourceId = sourceId;
+  if (sourceFamily) body.sourceFamily = sourceFamily;
+  const res = await fetch(`${BASE}/trigger-discover`, {
     method: 'POST',
-    headers,
-    body: JSON.stringify(sourceId ? { sourceId } : {}),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

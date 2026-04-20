@@ -227,7 +227,8 @@ export default function Discovered() {
     setLastRunResult(null);
     try {
       // In demo mode this is a safe no-op.
-      // In live mode the caller needs DISCOVERY_SECRET in env and configured sources.
+      // In live mode, trigger-discover (server-side proxy) injects DISCOVERY_SECRET
+      // before calling /discover — the secret is never sent from the browser.
       const result = await triggerDiscover({});
       setLastRunResult(result);
       if (result.total_ingested > 0) {
