@@ -16,3 +16,6 @@
 [functions]
   node_bundler = "esbuild"
   included_files = ["netlify/functions/_shared/**"]
+  # Increase timeout to 26 s (Netlify max) so that discovery runs against external
+  # APIs (Greenhouse, Lever, USAJobs) don't time out under normal load.
+  timeout = 26

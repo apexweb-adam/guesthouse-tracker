@@ -51,37 +51,13 @@ function isAuthorized(event) {
   return secretHeader === secret;
 }
 
-export const handler = async (event) => {
-  // Demo mode guard — secret not required in demo (nothing real runs)
-  if (isDemoMode()) {
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ok: true,
-        mode: 'demo',
-        message: 'Discovery skipped in demo mode. Real job discovery requires LIVE_INTAKE_ENABLED=true and real source configuration.',
-        discovered: 0,
-        ingested: 0,
-      }),
-    };
-  }
-
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'POST required' }) };
-  }
-
-  // Auth check — reject unauthorized callers
-  if (!isAuthorized(event)) {
-    return {
-      statusCode: 401,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error: 'Unauthorized. Set DISCOVERY_SECRET and send it as: Authorization: Bearer <secret> or X-Discovery-Secret: <secret>',
-      }),
-    };
-  }
-
+/**
+ * Core discovery logic — runs without an auth check.
+ * Called by handler (after auth) and by trigger-discover (server-side proxy).
+ *
+ * @param {object} body - Already-parsed request body: { sourceId?, sourceFamily? }
+ */
+export async function runDiscovery(body = {}) {
   // Global kill switch
   if (!isLiveIntakeEnabled()) {
     return {
@@ -95,9 +71,6 @@ export const handler = async (event) => {
       }),
     };
   }
-
-  let body = {};
-  try { body = event.body ? JSON.parse(event.body) : {}; } catch {}
 
   const { sourceId, sourceFamily } = body;
 
@@ -268,4 +241,46 @@ export const handler = async (event) => {
       results,
     }),
   };
+}
+
+/**
+ * HTTP handler — enforces auth before delegating to runDiscovery.
+ * External callers (n8n, cron, CI) must supply the DISCOVERY_SECRET.
+ * Browser callers should use /trigger-discover instead.
+ */
+export const handler = async (event) => {
+  // Demo mode guard — secret not required in demo (nothing real runs)
+  if (isDemoMode()) {
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ok: true,
+        mode: 'demo',
+        message: 'Discovery skipped in demo mode. Real job discovery requires LIVE_INTAKE_ENABLED=true and real source configuration.',
+        discovered: 0,
+        ingested: 0,
+      }),
+    };
+  }
+
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: JSON.stringify({ error: 'POST required' }) };
+  }
+
+  // Auth check — reject unauthorized callers
+  if (!isAuthorized(event)) {
+    return {
+      statusCode: 401,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: 'Unauthorized. Set DISCOVERY_SECRET and send it as: Authorization: Bearer <secret> or X-Discovery-Secret: <secret>',
+      }),
+    };
+  }
+
+  let body = {};
+  try { body = event.body ? JSON.parse(event.body) : {}; } catch {}
+
+  return runDiscovery(body);
 };

@@ -534,6 +534,19 @@ assert('OpportunityDetail distinguishes demo vs live', oppDetailSrc.includes('De
 const envSrc = readFileSync(join(__dirname_v, '../.env.example'), 'utf-8');
 assert('.env.example documents DISCOVERY_SECRET', envSrc.includes('DISCOVERY_SECRET'));
 
+// 11r. trigger-discover.js is the browser proxy — uses runDiscovery, not handler
+const triggerDiscoverSrc = readFileSync(join(__dirname_v, '../netlify/functions/trigger-discover.js'), 'utf-8');
+assert('trigger-discover.js imports runDiscovery (not handler) from discover.js', triggerDiscoverSrc.includes("import { runDiscovery }") && triggerDiscoverSrc.includes("from './discover.js'"));
+assert('trigger-discover.js does NOT re-export or import the discover handler', !triggerDiscoverSrc.includes('handler as discoverHandler') && !triggerDiscoverSrc.includes('import { handler }'));
+assert('trigger-discover.js calls runDiscovery directly', triggerDiscoverSrc.includes('return runDiscovery(body)') || triggerDiscoverSrc.includes('runDiscovery(body)'));
+assert('trigger-discover.js does not construct synthetic auth header', !triggerDiscoverSrc.includes('authorization: `Bearer'));
+assert('discover.js exports runDiscovery as named export', discoverSrc.includes('export async function runDiscovery('));
+assert('discover.js handler delegates to runDiscovery after auth check', discoverSrc.includes('return runDiscovery(body)'));
+
+// 11s. netlify.toml sets function timeout to handle slow external API calls
+const netlifySrc = readFileSync(join(__dirname_v, '../netlify.toml'), 'utf-8');
+assert('netlify.toml sets function timeout >= 26', netlifySrc.includes('timeout = 26'));
+
 // ─── 12. Live Intake Activation Hardening ─────────────────────────────────────
 
 console.log('\n== 12. Live Intake Activation Hardening ==');
