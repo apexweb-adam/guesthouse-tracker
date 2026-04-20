@@ -28,16 +28,17 @@ export const handler = async (event) => {
     };
   }
 
-  // Build a synthetic event that looks like a server-to-server call by
-  // injecting the DISCOVERY_SECRET into the Authorization header.
+  // Build a synthetic event with only safe, known-good headers.
+  // Do NOT spread event.headers — it could allow header-injection attacks where
+  // a browser caller crafts an Authorization header and bypasses the secret logic.
   const secret = process.env.DISCOVERY_SECRET || '';
   const syntheticEvent = {
-    ...event,
     httpMethod: 'POST',
     headers: {
-      ...(event.headers || {}),
+      'content-type': 'application/json',
       authorization: `Bearer ${secret}`,
     },
+    body: event.body || '{}',
   };
 
   return discoverHandler(syntheticEvent);

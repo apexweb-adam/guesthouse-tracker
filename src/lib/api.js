@@ -804,9 +804,10 @@ export async function updateApplyStatus(id, status) {
 /**
  * Trigger a job discovery run from the browser.
  *
- * Calls POST /trigger-discover — a server-side proxy that injects the
- * DISCOVERY_SECRET before forwarding to /discover.  The secret is never
- * exposed to the browser.
+ * Calls POST /trigger-discover — a server-side proxy that reads DISCOVERY_SECRET
+ * from process.env and injects it before forwarding to /discover.  The secret is
+ * never sent from or exposed to the browser.  Callers should NOT attempt to pass
+ * a secret; this function has no secret parameter.
  *
  * @param {object} opts
  * @param {string} [opts.sourceId]     — run a single source
