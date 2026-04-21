@@ -427,9 +427,9 @@ assert('SOURCE_FAMILIES.USAJOBS defined', SOURCE_FAMILIES.USAJOBS === 'usajobs')
 assert('SOURCE_FAMILIES.DEMO defined', SOURCE_FAMILIES.DEMO === 'demo');
 assert('LinkedIn is not a source family that enables automation', SOURCE_FAMILIES.LINKEDIN === 'linkedin');
 
-// 10k. Demo records all have source_family='demo'
-const allDemoFamily = DEMO_OPPORTUNITIES.every(d => d.source_family === 'demo');
-assert('All demo records have source_family=demo', allDemoFamily);
+// 10k. Demo records all have is_demo_record=true (source_family may vary for realistic source comparison)
+const allDemoFlagged = DEMO_OPPORTUNITIES.every(d => d.is_demo_record === true);
+assert('All demo records have is_demo_record=true', allDemoFlagged);
 
 // ─── Summary ─────────────────────────────────────────────────────────────────
 

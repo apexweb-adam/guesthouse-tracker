@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext.jsx';
+import { useNavigate } from 'react-router-dom';
 import OpportunityCard from '../components/OpportunityCard.jsx';
 import { approveOpportunity } from '../lib/api.js';
 import { classifyReadinessGroup, getReadinessReason, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
@@ -54,6 +55,7 @@ function FitPriorityChip({ opp }) {
 
 export default function ApprovalQueue() {
   const { state, loadOpportunities, notify } = useApp();
+  const nav = useNavigate();
   const [reason, setReason] = useState('');
   const [processing, setProcessing] = useState(null);
   const [sortBy, setSortBy] = useState('fit'); // 'fit' | 'readiness'
@@ -89,6 +91,7 @@ export default function ApprovalQueue() {
       await loadOpportunities();
       notify(`Opportunity ${action}d.`, action === 'approve' ? 'success' : 'info');
       setReason('');
+      if (action === 'approve') nav(`/apply-pack/${opp.id}`);
     } catch (e) {
       notify(e.message, 'error');
     } finally {
