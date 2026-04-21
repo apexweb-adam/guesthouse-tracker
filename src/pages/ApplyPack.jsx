@@ -410,7 +410,7 @@ export default function ApplyPack() {
         </div>
         {/* Real URL buttons */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
-          {(opportunity?.canonical_job_url || opportunity?.url) && !opportunity?.is_demo_record && (
+          {(opportunity?.canonical_job_url || opportunity?.url) && (
             <a
               href={opportunity.canonical_job_url || opportunity.url}
               target="_blank"
@@ -420,7 +420,7 @@ export default function ApplyPack() {
               📄 Open Original Posting ↗
             </a>
           )}
-          {opportunity?.application_url && opportunity.application_url !== (opportunity?.canonical_job_url || opportunity?.url) && !opportunity?.is_demo_record && (
+          {opportunity?.application_url && opportunity.application_url !== (opportunity?.canonical_job_url || opportunity?.url) && (
             <a
               href={opportunity.application_url}
               target="_blank"
@@ -429,11 +429,6 @@ export default function ApplyPack() {
             >
               ✅ Open Apply URL ↗
             </a>
-          )}
-          {opportunity?.is_demo_record && (
-            <span style={{ fontSize: 12, color: 'var(--amber)', fontStyle: 'italic' }}>
-              ⚠ Demo record — no live application URL
-            </span>
           )}
         </div>
         <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6 }}>

@@ -106,7 +106,7 @@ export default function OpportunityDetail() {
             </div>
             {/* URL buttons — real canonical link + separate apply URL if distinct */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-              {(opp.canonical_job_url || opp.url) && !opp.is_demo_record && (
+              {(opp.canonical_job_url || opp.url) && (
                 <a
                   href={opp.canonical_job_url || opp.url}
                   target="_blank"
@@ -116,7 +116,7 @@ export default function OpportunityDetail() {
                   📄 Open Original Posting ↗
                 </a>
               )}
-              {opp.application_url && opp.application_url !== (opp.canonical_job_url || opp.url) && !opp.is_demo_record && (
+              {opp.application_url && opp.application_url !== (opp.canonical_job_url || opp.url) && (
                 <a
                   href={opp.application_url}
                   target="_blank"
@@ -127,7 +127,7 @@ export default function OpportunityDetail() {
                   ✅ Open Apply URL ↗
                 </a>
               )}
-              {/* Missing apply URL inline update */}
+              {/* Missing apply URL inline update — only for live manual-intake records */}
               {(opp.is_manual_external_intake || opp.source_family === 'manual_external') &&
                !opp.application_url && !opp.is_demo_record && (
                 <form
@@ -162,11 +162,6 @@ export default function OpportunityDetail() {
                     {savingApplyUrl ? 'Saving…' : 'Add URL'}
                   </button>
                 </form>
-              )}
-              {opp.is_demo_record && (
-                <span className="btn btn-ghost btn-sm" style={{ opacity: 0.5, cursor: 'default', fontStyle: 'italic' }}>
-                  📄 Demo record — no live posting URL
-                </span>
               )}
             </div>
             {/* Source / Provenance Audit Block */}
