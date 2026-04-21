@@ -16,6 +16,8 @@
 [functions]
   node_bundler = "esbuild"
   included_files = ["netlify/functions/_shared/**"]
-  # Increase timeout to 26 s (Netlify max) so that discovery runs against external
-  # APIs (Greenhouse, Lever, USAJobs) don't time out under normal load.
-  timeout = 26
+  # NOTE: Netlify does not support a scalar `timeout` property under [functions].
+  # Runtime timeout resilience must be handled in function/workflow design:
+  #   - discoverJobsForSource uses AbortSignal.timeout(20000) per external fetch
+  #   - trigger-discover proxies runDiscovery() server-side (no extra HTTP hop)
+  #   - n8n/cron callers should set their own request timeout (recommended: 25s)

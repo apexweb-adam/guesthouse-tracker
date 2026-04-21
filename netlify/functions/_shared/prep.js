@@ -243,5 +243,9 @@ export async function fireEvent(eventName, payload = {}) {
     method: 'POST',
     headers,
     body: JSON.stringify({ event: eventName, payload, fired_at: new Date().toISOString() }),
+  }).then(res => {
+    if (!res.ok) {
+      console.warn(`[fireEvent] webhook delivery failed for "${eventName}": HTTP ${res.status} → ${url}`);
+    }
   });
 }

@@ -543,9 +543,12 @@ assert('trigger-discover.js does not construct synthetic auth header', !triggerD
 assert('discover.js exports runDiscovery as named export', discoverSrc.includes('export async function runDiscovery('));
 assert('discover.js handler delegates to runDiscovery after auth check', discoverSrc.includes('return runDiscovery(body)'));
 
-// 11s. netlify.toml sets function timeout to handle slow external API calls
+// 11s. Runtime timeout is handled by AbortSignal in function code, not invalid netlify.toml scalar
+// netlify.toml `timeout = 26` is invalid syntax (scalar under [functions]) — was a deploy blocker.
+// Timeout resilience is now in jobFinder.js via AbortSignal.timeout(20000) per external fetch.
 const netlifySrc = readFileSync(join(__dirname_v, '../netlify.toml'), 'utf-8');
-assert('netlify.toml sets function timeout >= 26', netlifySrc.includes('timeout = 26'));
+assert('netlify.toml does not contain invalid timeout scalar (removed deploy blocker)', !netlifySrc.includes('timeout = 26'));
+assert('jobFinder.js uses AbortSignal.timeout for per-fetch timeout resilience', discoverSrc.includes('AbortSignal') || readFileSync(join(__dirname_v, '../netlify/functions/_shared/jobFinder.js'), 'utf-8').includes('AbortSignal'));
 
 // ─── 12. Live Intake Activation Hardening ─────────────────────────────────────
 
@@ -2278,6 +2281,100 @@ assert('25ai. No sources.js entry claims LinkedIn is automated',
 // ── 25aj. digest.js has per-source high_fit_today tracking ───────────────────
 assert('25aj. digest.js tracks high_fit_today per source family',
   digestSrc25.includes('high_fit_today'));
+
+// ─── Section 26: Production Hardening — Silent-failure elimination + config safety ──
+
+import { readFileSync as readFileSync26 } from 'fs';
+import { join as join26, dirname as dirname26 } from 'path';
+import { fileURLToPath as fileURLToPath26 } from 'url';
+
+const __dirname_v26 = dirname26(fileURLToPath26(import.meta.url));
+
+console.log('\n== Section 26: Production Hardening ==');
+
+const netlifyToml26   = readFileSync26(join26(__dirname_v26, '../netlify.toml'), 'utf-8');
+const discoverSrc26   = readFileSync26(join26(__dirname_v26, '../netlify/functions/discover.js'), 'utf-8');
+const approveSrc26    = readFileSync26(join26(__dirname_v26, '../netlify/functions/approve.js'), 'utf-8');
+const prepSrc26       = readFileSync26(join26(__dirname_v26, '../netlify/functions/_shared/prep.js'), 'utf-8');
+const webhooksSrc26   = readFileSync26(join26(__dirname_v26, '../netlify/functions/webhooks.js'), 'utf-8');
+const applyPackFn26   = readFileSync26(join26(__dirname_v26, '../netlify/functions/apply-pack.js'), 'utf-8');
+
+// 26a. netlify.toml does NOT contain the invalid scalar `timeout = 26`
+assert('26a. netlify.toml does not contain invalid timeout = 26 scalar',
+  !netlifyToml26.includes('timeout = 26'));
+
+// 26b. netlify.toml is valid (contains node_bundler and included_files, no scalar timeout)
+assert('26b. netlify.toml contains valid [functions] settings (node_bundler, included_files)',
+  netlifyToml26.includes('node_bundler') && netlifyToml26.includes('included_files'));
+
+// 26c. netlify.toml has a comment explaining timeout is handled in function design
+assert('26c. netlify.toml comment explains runtime timeout must be handled in function/workflow design',
+  netlifyToml26.includes('runtime timeout') || netlifyToml26.includes('Runtime timeout') || netlifyToml26.includes('AbortSignal'));
+
+// 26d. discover.js listSources catch block logs the error (not silent)
+assert('26d. discover.js listSources catch block logs error (not silent catch {})',
+  discoverSrc26.includes('listSources') && discoverSrc26.includes('console.warn'));
+
+// 26e. discover.js listSources catch uses named error variable (not bare catch {})
+assert('26e. discover.js listSources error is captured and logged',
+  discoverSrc26.includes('dbErr') || (discoverSrc26.includes('catch (') && discoverSrc26.includes('console.warn')));
+
+// 26f. approve.js persists pack generation error on the record
+assert('26f. approve.js persists apply_pack_generation_error when pack fails',
+  approveSrc26.includes('apply_pack_generation_error'));
+
+// 26g. approve.js pack error is set in catch block (failure-transparent)
+assert('26g. approve.js pack error assignment is in catch block',
+  (() => {
+    const catchIdx = approveSrc26.indexOf('packErr');
+    if (catchIdx < 0) return false;
+    const snippet = approveSrc26.slice(catchIdx, catchIdx + 400);
+    return snippet.includes('apply_pack_generation_error');
+  })());
+
+// 26h. prep.js fireEvent logs non-2xx webhook responses
+assert('26h. prep.js fireEvent logs failed webhook delivery (non-2xx)',
+  prepSrc26.includes('fireEvent') && prepSrc26.includes('!res.ok') && prepSrc26.includes('console.warn'));
+
+// 26i. prep.js fireEvent still non-blocking (callers can .catch())
+assert('26i. prep.js fireEvent checks response status after await',
+  prepSrc26.includes('.then(res =>') || prepSrc26.includes('res.ok'));
+
+// 26j. webhooks.js dispatch logs non-2xx delivery failures
+assert('26j. webhooks.js dispatch logs non-2xx failures with console.warn',
+  webhooksSrc26.includes('!ok') && webhooksSrc26.includes('console.warn'));
+
+// 26k. apply-pack.js GET imports insertReadinessHistory
+assert('26k. apply-pack.js GET path imports insertReadinessHistory',
+  applyPackFn26.includes('insertReadinessHistory'));
+
+// 26l. apply-pack.js records readiness history on auto-generation
+assert('26l. apply-pack.js records readiness history event when auto-generating pack on GET',
+  applyPackFn26.includes('auto_generated_on_get') || applyPackFn26.includes('pack_regenerated'));
+
+// 26m. Scoring hierarchy still intact after all changes
+const tpmCheck26 = scoreOpportunity('Technical Project Manager', 'Lead SDLC delivery with Agile, Jira, stakeholders. PMP preferred.');
+assert('26m. Scoring hierarchy intact after hardening pass (TPM = TPM lane)',
+  tpmCheck26.lane === LANES.TPM);
+
+// 26n. Approval gate still mandatory after hardening pass
+assert('26n. Approval gate mandatory after hardening pass', (() => {
+  const role = {
+    approval_state: 'pending',
+    status: 'discovered',
+    pack_readiness_score: 95,
+    application_url: 'https://jobs.lever.co/aerostrat/abc',
+    fit_score: 94,
+    recommended: true,
+    source_family: 'lever',
+  };
+  return classifyReadinessGroup(role) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
+// 26o. No LinkedIn scraping introduced in hardening changes
+assert('26o. No LinkedIn scraping introduced by hardening changes',
+  !discoverSrc26.toLowerCase().includes('linkedin.com/jobs') &&
+  !approveSrc26.toLowerCase().includes('linkedin.com/jobs'));
 
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

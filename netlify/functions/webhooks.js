@@ -68,6 +68,10 @@ async function dispatch(event, payload) {
   const res = await fetch(targetUrl, { method: 'POST', headers, body });
   const ok = res.ok;
 
+  if (!ok) {
+    console.warn(`[webhooks] dispatch failed for "${event}": HTTP ${res.status} → ${targetUrl}`);
+  }
+
   return {
     dispatched: ok,
     statusCode: res.status,

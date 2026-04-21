@@ -14,7 +14,7 @@
  * Apply Pack is stored on the opportunity record as `apply_pack`.
  */
 
-import { getOpportunity, updateOpportunity } from './_shared/db.js';
+import { getOpportunity, updateOpportunity, insertReadinessHistory } from './_shared/db.js';
 import {
   generateApplyPack,
   applyResumeOverride,
@@ -68,6 +68,11 @@ export const handler = async (event) => {
           apply_pack: pack,
           status: 'apply_pack_generated',
         });
+        // Record the auto-generation so operators can trace when/why the pack was created
+        await insertReadinessHistory(id, 'pack_regenerated', {
+          reason: 'auto_generated_on_get',
+          pack_readiness_score: pack.pack_readiness_score || 0,
+        }).catch(() => {});
         return json(200, { apply_pack: pack, opportunity: updated, generated: true });
       }
 

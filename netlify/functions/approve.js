@@ -106,8 +106,10 @@ export const handler = async (event) => {
           }).catch(() => {});
         }
       } catch (packErr) {
-        // Pack generation failure should not block approval
+        // Pack generation failure should not block approval.
+        // Persist the error message so operators can see why the pack is missing.
         console.warn('[approve] Apply Pack generation failed (non-fatal):', packErr.message);
+        updates.apply_pack_generation_error = packErr.message;
       }
     }
 

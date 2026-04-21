@@ -76,7 +76,10 @@ export async function runDiscovery(body = {}) {
 
   // Load sources
   let dbSources = [];
-  try { dbSources = await listSources(); } catch {}
+  try { dbSources = await listSources(); } catch (dbErr) {
+    // Non-fatal: fall back to DEFAULT_SOURCES. Log so the operator can see DB connectivity issues.
+    console.warn('[discover] listSources() failed — running with DEFAULT_SOURCES only:', dbErr.message);
+  }
   const allSources = mergeWithDefaults(dbSources);
 
   // Filter to live-capable, enabled sources (optionally by single source or source family)
