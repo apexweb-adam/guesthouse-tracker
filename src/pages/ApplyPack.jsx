@@ -266,7 +266,7 @@ function ApplyAssistantTab({ pack, opportunity }) {
         background: '#eff6ff', border: '1px solid var(--blue)', borderRadius: 8,
         padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#1e40af', lineHeight: 1.6,
       }}>
-        🧰 <strong>Apply Assistant</strong> — Open the job posting in another tab, then copy/paste from here.
+        🧰 <strong>Apply Assistant</strong> — Open the job application form in another tab, then copy/paste from here.
         All fields and answers are editable and save locally. No auto-submission.
       </div>
 
