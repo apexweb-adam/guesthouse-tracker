@@ -2,7 +2,7 @@
  * Frontend API Client
  *
  * Detects demo mode and routes accordingly:
- * - Demo mode (VITE_DEMO_MODE=true or no Supabase keys): uses localStorage + demo data
+ * - Demo mode (VITE_DEMO_MODE=true): uses localStorage + demo data
  * - Production mode: calls Netlify Functions at /.netlify/functions/*
  */
 
@@ -24,9 +24,7 @@ import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 // ─── Mode Detection ───────────────────────────────────────────────────────────
 
 export function isDemoMode() {
-  if (import.meta.env.VITE_DEMO_MODE === 'true') return true;
-  if (!import.meta.env.VITE_SUPABASE_URL) return true;
-  return false;
+  return import.meta.env.VITE_DEMO_MODE === 'true';
 }
 
 const BASE = '/.netlify/functions';
