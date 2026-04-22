@@ -5,8 +5,8 @@
  * Used by the Apply Assistant tab to populate copy-paste fields.
  *
  * Storage: localStorage (key = CANDIDATE_PROFILE_KEY).
- * Seeded with sensible defaults on first load.
- * User can edit and save edits — edits persist in localStorage.
+ * Seeded with verified defaults on first load.
+ * Fields marked needs_confirmation must be reviewed before use.
  *
  * No secrets, no server calls. All browser-local.
  */
@@ -14,47 +14,70 @@
 export const CANDIDATE_PROFILE_KEY = 'job-search-os-candidate-profile-v1';
 
 // ─── Default profile seed ─────────────────────────────────────────────────────
-// Candidate can update these via the Apply Assistant panel.
+// VERIFIED fields are safe to copy/paste immediately.
+// NEEDS CONFIRMATION fields must be reviewed and confirmed before use.
 
 export const DEFAULT_CANDIDATE_PROFILE = {
-  // Personal details
+  // ── A. Personal ────────────────────────────────────────────────────────────
   full_name: 'Sample Candidate',
   preferred_name: 'Candidate',
-  email: '[your-email@example.com]',
-  phone: '[your-phone]',
-  location: 'Sydney, NSW, Australia',
-  full_address: '[Your full address if required]',
+  email: 'candidate@example.com',
+  phone: '(+1 555 0100',
+  location_city: 'Fairfax',
+  location_state: 'VA',
+  location: 'United States',
+  full_address: '',                 // needs_confirmation — do not prefill
+  linkedin_url: '',                 // populate from real resume/profile if available
+  portfolio_url: '',
 
-  // Links
-  linkedin: '[https://www.linkedin.com/in/candidate]',
-  portfolio: '',
-  website: '',
-  github: '',
-
-  // Work eligibility
-  work_authorization: 'Australian Citizen / Permanent Resident',
+  // ── B. Eligibility ─────────────────────────────────────────────────────────
+  work_authorized_us: true,
+  work_authorization: 'U.S. Citizen',
+  citizenship_status: 'U.S. Citizen',
+  needs_sponsorship: false,
   visa_sponsorship_needed: 'No',
-  security_clearance: 'NV1 (active / eligible)',
-  notice_period: '2 weeks (negotiable)',
-  remote_preference: 'Hybrid preferred (3 days in office)',
-  relocation_preference: 'Open to relocation within Australia',
+  clearance_level: 'Public Trust',
+  security_clearance: 'U.S. Citizen with Public Trust clearance.',
 
-  // Compensation
-  salary_expectation: '[Your target range, e.g. $130,000–$160,000 + super]',
-  salary_basis: 'AUD annual, excluding superannuation',
+  // ── C. Preferences — needs confirmation ───────────────────────────────────
+  salary_expectation: '',           // needs_confirmation
+  notice_period: '',                // needs_confirmation
+  earliest_start_date: '',          // needs_confirmation
+  remote_preference: '',            // needs_confirmation
+  hybrid_preference: '',            // needs_confirmation
+  onsite_preference: '',            // needs_confirmation
+  relocation_preference: '',        // needs_confirmation
 
-  // Standard screening
-  standard_screening: {
-    right_to_work: 'Yes — Australian citizen / permanent resident. No sponsorship required.',
-    criminal_check: 'Happy to consent to any required background or criminal checks.',
-    security_clearance_detail: 'Currently hold NV1 clearance. Available to discuss further.',
-    years_pm_experience: '8+ years of project and program management experience.',
-    pmp_certification: 'PMP certified (Project Management Professional).',
-    agile_experience: 'Extensive experience with Agile, Scrum, and SAFe across enterprise and government projects.',
+  // ── D. Professional defaults ───────────────────────────────────────────────
+  primary_lane: 'Technical Project Manager',
+  secondary_lane: 'IT Project Manager',
+  fallback_lane: 'Program Manager',
+  default_resume_tpm: 'rv-tpm-01',
+  default_resume_it_pm: 'rv-it-pm-01',
+  default_resume_program: 'rv-program-01',
+  core_certifications: ['PMP', 'CAPM', 'CSM', 'ITIL 4', 'Security+'],
+  top_domain_tags: [
+    'federal', 'cloud migration', 'IAM', 'cybersecurity',
+    'Splunk', 'SOAR', 'Jenkins', 'FedRAMP', 'VA', 'IRS',
+  ],
+
+  // ── Short professional summary ─────────────────────────────────────────────
+  short_bio: 'Technical Project Manager with deep experience delivering federal and enterprise technology initiatives across cloud migration, IAM modernization, cybersecurity, Splunk, and SOAR programs.',
+
+  // ── Confirmation flags for changeable fields ───────────────────────────────
+  // Fields with needs_confirmation: true require explicit review before use.
+  _confirmation_state: {
+    salary_expectation: 'needs_confirmation',
+    notice_period: 'needs_confirmation',
+    earliest_start_date: 'needs_confirmation',
+    remote_preference: 'needs_confirmation',
+    hybrid_preference: 'needs_confirmation',
+    onsite_preference: 'needs_confirmation',
+    relocation_preference: 'needs_confirmation',
+    full_address: 'needs_confirmation',
+    visa_sponsorship_needed: 'confirm_before_use',
+    security_clearance: 'confirm_before_use',
   },
-
-  // Short bio (for "Tell us about yourself")
-  short_bio: `Senior Technical and IT Project Manager with 8+ years delivering complex digital transformation, infrastructure, and security programmes. Strong background in SDLC, Agile, stakeholder management, and federal/government sector delivery. PMP certified.`,
 
   // Updated at
   updated_at: null,
@@ -68,7 +91,14 @@ export function loadCandidateProfile() {
     if (raw) {
       const stored = JSON.parse(raw);
       // Merge with defaults so new fields appear automatically
-      return { ...DEFAULT_CANDIDATE_PROFILE, ...stored };
+      return {
+        ...DEFAULT_CANDIDATE_PROFILE,
+        ...stored,
+        _confirmation_state: {
+          ...DEFAULT_CANDIDATE_PROFILE._confirmation_state,
+          ...(stored._confirmation_state || {}),
+        },
+      };
     }
   } catch { /* ignore */ }
   return { ...DEFAULT_CANDIDATE_PROFILE };
@@ -79,6 +109,10 @@ export function saveCandidateProfile(updates) {
   const merged = {
     ...current,
     ...updates,
+    _confirmation_state: {
+      ...current._confirmation_state,
+      ...(updates._confirmation_state || {}),
+    },
     updated_at: new Date().toISOString(),
   };
   try {
@@ -97,140 +131,148 @@ export function resetCandidateProfile() {
 
 // ─── Common Question Bank ─────────────────────────────────────────────────────
 // Reusable answer templates for standard ATS / application questions.
-// These are starting points — Candidate should review and personalise before submitting.
+// Review and personalise each answer before submitting.
 
 export const COMMON_QUESTION_BANK = [
   {
     id: 'q-work-auth',
     category: 'Eligibility',
-    question: 'Are you authorised to work in Australia?',
-    answer: 'Yes — Australian citizen / permanent resident. No visa sponsorship required.',
+    question: 'Are you authorized to work in the United States?',
+    answer: 'I am authorized to work in the United States.',
     editable: true,
+    confirmed: true,
   },
   {
     id: 'q-sponsorship',
     category: 'Eligibility',
-    question: 'Do you require visa sponsorship?',
-    answer: 'No. I am an Australian citizen / permanent resident and do not require sponsorship.',
+    question: 'Do you require employment sponsorship?',
+    answer: 'I do not currently require employment sponsorship.',
     editable: true,
-  },
-  {
-    id: 'q-notice',
-    category: 'Availability',
-    question: 'What is your notice period?',
-    answer: '2 weeks, though I am open to discussing start date flexibility depending on the role and urgency.',
-    editable: true,
-  },
-  {
-    id: 'q-salary',
-    category: 'Compensation',
-    question: 'What are your salary expectations?',
-    answer: '[State your target range, e.g. $130,000–$160,000 + super] — open to discussion based on the full package, scope, and growth opportunity.',
-    editable: true,
+    confirmed: false,
+    note: 'Confirm before use — edit if circumstances have changed.',
   },
   {
     id: 'q-clearance',
     category: 'Eligibility',
     question: 'Do you hold a security clearance?',
-    answer: 'Yes — I currently hold an NV1 security clearance and am happy to provide further details if required.',
+    answer: 'U.S. Citizen with Public Trust clearance.',
     editable: true,
+    confirmed: true,
+    note: 'Verify exact wording required by the form before submitting.',
+  },
+  {
+    id: 'q-notice',
+    category: 'Availability',
+    question: 'What is your notice period?',
+    answer: '[Confirm before use — fill in your actual notice period]',
+    editable: true,
+    confirmed: false,
+    note: 'Needs confirmation — do not use placeholder.',
+  },
+  {
+    id: 'q-salary',
+    category: 'Compensation',
+    question: 'What are your salary expectations?',
+    answer: '[Confirm before use — fill in your target range]',
+    editable: true,
+    confirmed: false,
+    note: 'Needs confirmation — research market rate and confirm.',
   },
   {
     id: 'q-remote',
     category: 'Preferences',
     question: 'What are your remote / flexible work preferences?',
-    answer: 'I am open to hybrid arrangements (typically 3 days in office) and am flexible to match the team\'s ways of working. I have successfully delivered projects fully remote and in hybrid environments.',
+    answer: '[Confirm before use — fill in your preference for this specific role]',
     editable: true,
+    confirmed: false,
+    note: 'Needs confirmation — varies by role and personal preference.',
   },
   {
     id: 'q-tell-about-yourself',
     category: 'About You',
     question: 'Tell us about yourself / professional summary.',
-    answer: `I am a Senior Technical and IT Project Manager with over 8 years of experience delivering complex digital transformation, infrastructure, and security programmes across government and enterprise environments.
-
-My focus areas include: SDLC governance, Agile and SAFe delivery, IAM, cloud migrations, cybersecurity uplift, and large-scale stakeholder management. I am PMP certified and have a strong record of delivering projects on time, in scope, and within budget.
-
-I am particularly drawn to roles where I can bridge technical and business stakeholders, drive rigorous governance, and deliver measurable outcomes.`,
+    answer: `I'm a Technical Project Manager with strong experience leading cross-functional delivery in federal and enterprise environments, especially across cloud migration, identity and access management, and cybersecurity-related programs. My background includes leading complex technical initiatives involving large-scale migrations, stakeholder coordination, delivery governance, and measurable operational improvements.`,
     editable: true,
+    confirmed: true,
   },
   {
     id: 'q-pm-experience',
     category: 'Experience',
     question: 'Describe your project management experience.',
-    answer: `8+ years of project and programme management experience across federal government, financial services, and technology sectors.
+    answer: `Technical Project Manager with deep experience delivering federal and enterprise technology initiatives across cloud migration, IAM modernization, cybersecurity, Splunk, and SOAR programs.
 
 Key highlights:
-• Delivered $10M+ digital transformation and platform modernisation programmes
-• Led cross-functional teams of 15–40+ across government and enterprise
-• Applied Agile (Scrum/SAFe) and waterfall delivery frameworks depending on context
-• Managed complex stakeholder landscapes including C-suite, ministers, and procurement boards
-• PMP certified; strong in risk, issue, and change management
+• Led cross-functional delivery teams in federal and enterprise environments
+• Delivered cloud migration, IAM modernization, and cybersecurity-focused programs
+• Applied Agile (Scrum/CSM) and structured waterfall frameworks as required
+• Managed complex stakeholder landscapes including federal agency leads and vendors
+• PMP and CAPM certified; strong in risk, delivery governance, and change management
 
-[Personalise with your specific metrics and programmes before submitting.]`,
+[Personalise with specific metrics and program names before submitting.]`,
     editable: true,
+    confirmed: true,
   },
   {
     id: 'q-agile',
     category: 'Experience',
     question: 'Describe your experience with Agile / Scrum.',
-    answer: `I have led Agile delivery across multiple enterprise and government programmes using Scrum, SAFe, and Kanban frameworks.
+    answer: `I have led Agile delivery across federal and enterprise programs using Scrum and Kanban frameworks, holding a CSM (Certified Scrum Master) certification.
 
-Responsibilities included: sprint planning and retrospectives, backlog prioritisation, velocity tracking, dependency management, and release cadence governance.
+Responsibilities included: sprint planning and retrospectives, backlog prioritisation, velocity tracking, dependency management, and release governance.
 
-I have coached delivery teams transitioning from waterfall to Agile and have worked with scaled Agile frameworks (SAFe 5) across programmes with 5+ interdependent squads.
+I have applied Agile delivery in compliance-sensitive environments with strong stakeholder coordination and audit requirements.
 
 [Add a specific example or metric before submitting.]`,
     editable: true,
+    confirmed: true,
   },
   {
-    id: 'q-gov-experience',
+    id: 'q-federal',
     category: 'Experience',
-    question: 'Describe your experience working in government / federal sector.',
-    answer: `I have delivered multiple programmes within the Australian federal government, navigating APS governance, procurement frameworks, and security requirements.
+    question: 'Describe your experience in federal / regulated environments.',
+    answer: `My experience includes delivering work in highly regulated environments with strong security, compliance, and stakeholder-governance requirements, including federal programs and enterprise security initiatives.
 
-Key experience includes: managing vendor relationships and SOW governance, navigating government contracting cycles, working within security-conscious environments (clearance held), and presenting programme updates to SES and executive committees.
+I have worked within environments requiring FedRAMP compliance, federal agency governance, and security clearance protocols.
 
-[Add agency/department name and specific programmes if permitted.]`,
+[Add specific agency or program details if permitted.]`,
     editable: true,
+    confirmed: true,
   },
   {
     id: 'q-iam-cloud',
     category: 'Technical',
     question: 'Describe your experience with IAM / cloud / cybersecurity.',
-    answer: `I have managed delivery of IAM uplift and access governance programmes, coordinating across identity teams, security architects, and enterprise platform owners.
+    answer: `I have experience supporting and delivering IAM and security-related initiatives, including Ping Identity implementations, Splunk optimization, and SOAR-related delivery work across federal and enterprise environments.
 
-On the cloud side, I have project-managed migrations and platform modernisation programmes in AWS and Azure environments, working closely with cloud architects and engineers.
+On the cloud side, my experience includes leading large-scale cloud migration work involving cross-functional coordination, delivery planning, stakeholder engagement, data migration, and operational readiness.
 
-Security experience includes managing delivery of vulnerability remediation programmes, SIEM platform deployments (including Splunk), and aligning delivery to security frameworks (PSPF, ISM, ISO 27001).
+Security experience includes delivery of IAM modernization, Splunk optimization, and SOAR-related programs in federal environments requiring FedRAMP compliance.
 
-[Personalise with specific technologies and programmes before submitting.]`,
+[Personalise with specific technologies and programs before submitting.]`,
     editable: true,
+    confirmed: true,
   },
   {
     id: 'q-why-role',
     category: 'Motivation',
     question: 'Why are you interested in this role?',
-    answer: `[Role-specific — personalise this section]
+    answer: `This role is a strong fit for my background because it combines cross-functional technical delivery with stakeholder coordination, execution discipline, and risk management. My recent experience across cloud, IAM, and security-focused programs aligns well with the kind of delivery ownership this position requires.
 
-This role aligns closely with my background in [technical / IT / programme delivery] and my interest in [company's sector / technology focus].
-
-I am particularly drawn to [specific aspect of the role or company — e.g. the scale of the programme, the technical complexity, the governance mandate, or the team].
-
-[Add 1–2 specific reasons based on the job description before submitting.]`,
+[Personalise with specific details from the job description before submitting.]`,
     editable: true,
+    confirmed: false,
+    note: 'Role-specific — always personalise before submitting.',
   },
   {
     id: 'q-why-company',
     category: 'Motivation',
     question: 'Why do you want to work for this company?',
-    answer: `[Company-specific — personalise this section]
-
-[Company Name]'s work in [their focus area] resonates with my experience and career goals. I admire [something specific about the company — mission, technology, culture, or scale].
-
-I believe I can contribute meaningfully to [company's current challenges or initiatives] given my background in [relevant domain].
+    answer: `I'm interested in this company because the role sits at the intersection of technical delivery, operational impact, and cross-functional collaboration. I'm particularly drawn to environments where project leadership directly supports meaningful infrastructure, security, or transformation outcomes.
 
 [Research the company and add specific, genuine reasons before submitting.]`,
     editable: true,
+    confirmed: false,
+    note: 'Company-specific — always personalise before submitting.',
   },
 ];
 
@@ -282,3 +324,24 @@ export const QUESTION_BANK_CATEGORIES = [
   'Technical',
   'Motivation',
 ];
+
+// ─── Confirmation state helpers ───────────────────────────────────────────────
+
+export const NEEDS_CONFIRMATION_FIELDS = [
+  'salary_expectation',
+  'notice_period',
+  'earliest_start_date',
+  'remote_preference',
+  'hybrid_preference',
+  'onsite_preference',
+  'relocation_preference',
+  'full_address',
+  'visa_sponsorship_needed',
+  'security_clearance',
+];
+
+export function fieldNeedsConfirmation(fieldKey, profile) {
+  const state = profile?._confirmation_state?.[fieldKey];
+  return state === 'needs_confirmation' || state === 'confirm_before_use';
+}
+

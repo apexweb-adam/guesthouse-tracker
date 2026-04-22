@@ -16,6 +16,7 @@ import {
   loadQuestionBank,
   saveQuestionBankItem,
 } from '../lib/api.js';
+import { fieldNeedsConfirmation, NEEDS_CONFIRMATION_FIELDS } from '../lib/candidateProfile.js';
 import { RESUME_VERSIONS, RESUME_VERSION_LABELS } from '../../netlify/functions/_shared/scoring.js';
 import { computePackReadinessScore } from '../../netlify/functions/_shared/applyPack.js';
 import { INITIAL_VAULT, VAULT_STATUS_LABELS } from '../../netlify/functions/_shared/resumeVault.js';
@@ -110,18 +111,9 @@ function OverrideResumeModal({ current, original, onSave, onClose }) {
   );
 }
 
-          <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 8 }}>
-            Select a different version to override.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Apply Assistant Tab ──────────────────────────────────────────────────────
 
-function FieldRow({ label, value, children }) {
+function FieldRow({ label, value, needsConfirmation, children }) {
   return (
     <div style={{
       display: 'grid',
@@ -132,7 +124,16 @@ function FieldRow({ label, value, children }) {
       borderBottom: '1px solid var(--gray-100)',
     }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)' }}>{label}</span>
-      <span style={{ fontSize: 13, color: 'var(--gray-800)', wordBreak: 'break-word' }}>{value || '—'}</span>
+      <span style={{ fontSize: 13, color: 'var(--gray-800)', wordBreak: 'break-word', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {value || '—'}
+        {needsConfirmation && (
+          <span style={{
+            fontSize: 10, fontWeight: 700, background: '#fffbeb', color: '#92400e',
+            border: '1px solid var(--amber)', borderRadius: 4, padding: '1px 6px',
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>Confirm before use</span>
+        )}
+      </span>
       {children}
     </div>
   );
@@ -237,20 +238,26 @@ function ApplyAssistantTab({ pack, opportunity }) {
   // ── Copy helpers ───────────────────────────────────────────────────────
   const personalDetailsText = [
     `Name: ${profile.full_name}`,
+    profile.preferred_name ? `Preferred Name: ${profile.preferred_name}` : null,
     `Email: ${profile.email}`,
     `Phone: ${profile.phone}`,
-    `Location: ${profile.location}`,
-    profile.linkedin ? `LinkedIn: ${profile.linkedin}` : null,
-    profile.portfolio ? `Portfolio: ${profile.portfolio}` : null,
+    `Location: ${profile.location || [profile.location_city, profile.location_state].filter(Boolean).join(', ')}`,
+    profile.linkedin_url ? `LinkedIn: ${profile.linkedin_url}` : null,
+    profile.portfolio_url ? `Portfolio: ${profile.portfolio_url}` : null,
+  ].filter(Boolean).join('\n');
+
+  const contactBlockText = [
+    profile.full_name,
+    [profile.location_city, profile.location_state].filter(Boolean).join(', '),
+    profile.phone,
+    profile.email,
+    profile.linkedin_url || null,
   ].filter(Boolean).join('\n');
 
   const eligibilityText = [
-    `Work authorisation: ${profile.work_authorization}`,
-    `Visa sponsorship: ${profile.visa_sponsorship_needed}`,
-    `Security clearance: ${profile.security_clearance}`,
-    `Notice period: ${profile.notice_period}`,
-    `Remote preference: ${profile.remote_preference}`,
-    `Salary expectation: ${profile.salary_expectation}`,
+    `Work authorization: ${profile.work_authorization || profile.citizenship_status}`,
+    `Sponsorship needed: ${profile.visa_sponsorship_needed}`,
+    `Clearance: ${profile.security_clearance}`,
   ].join('\n');
 
   const categories = ['all', ...new Set(questionBank.map(q => q.category))];
@@ -276,6 +283,17 @@ function ApplyAssistantTab({ pack, opportunity }) {
         icon="👤"
         copyAllText={personalDetailsText}
       >
+        {/* Contact block — ready to paste into application forms */}
+        <div style={{
+          background: '#f0f9ff', border: '1px solid #7dd3fc', borderRadius: 6,
+          padding: '8px 12px', marginBottom: 12, fontSize: 12, lineHeight: 1.7,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8,
+        }}>
+          <pre style={{ margin: 0, fontFamily: 'inherit', whiteSpace: 'pre-wrap', fontSize: 12 }}>
+            {contactBlockText}
+          </pre>
+          <CopyButton text={contactBlockText} label="📋 Copy Block" />
+        </div>
         {editingProfile ? (
           <div>
             {[
@@ -283,8 +301,9 @@ function ApplyAssistantTab({ pack, opportunity }) {
               { key: 'preferred_name', label: 'Preferred Name' },
               { key: 'email', label: 'Email' },
               { key: 'phone', label: 'Phone' },
-              { key: 'location', label: 'Location (City, State)' },
-              { key: 'full_address', label: 'Full Address' },
+              { key: 'location_city', label: 'City' },
+              { key: 'location_state', label: 'State' },
+              { key: 'full_address', label: 'Full Address (optional)' },
             ].map(({ key, label }) => (
               <div key={key} style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 3 }}>{label}</label>
@@ -304,14 +323,15 @@ function ApplyAssistantTab({ pack, opportunity }) {
         ) : (
           <div>
             {[
-              { label: 'Full Name', value: profile.full_name },
-              { label: 'Preferred Name', value: profile.preferred_name },
-              { label: 'Email', value: profile.email },
-              { label: 'Phone', value: profile.phone },
-              { label: 'Location', value: profile.location },
-              { label: 'Full Address', value: profile.full_address },
-            ].map(({ label, value }) => (
-              <FieldRow key={label} label={label} value={value}>
+              { label: 'Full Name', value: profile.full_name, key: 'full_name' },
+              { label: 'Preferred Name', value: profile.preferred_name, key: 'preferred_name' },
+              { label: 'Email', value: profile.email, key: 'email' },
+              { label: 'Phone', value: profile.phone, key: 'phone' },
+              { label: 'City', value: profile.location_city, key: 'location_city' },
+              { label: 'State', value: profile.location_state, key: 'location_state' },
+              { label: 'Full Address', value: profile.full_address, key: 'full_address' },
+            ].map(({ label, value, key }) => (
+              <FieldRow key={label} label={label} value={value} needsConfirmation={fieldNeedsConfirmation(key, profile)}>
                 <CopyButton text={value || ''} label="Copy" />
               </FieldRow>
             ))}
@@ -328,19 +348,15 @@ function ApplyAssistantTab({ pack, opportunity }) {
         title="B. Links & Profiles"
         icon="🔗"
         copyAllText={[
-          profile.linkedin ? `LinkedIn: ${profile.linkedin}` : null,
-          profile.portfolio ? `Portfolio: ${profile.portfolio}` : null,
-          profile.website ? `Website: ${profile.website}` : null,
-          profile.github ? `GitHub: ${profile.github}` : null,
+          profile.linkedin_url ? `LinkedIn: ${profile.linkedin_url}` : null,
+          profile.portfolio_url ? `Portfolio: ${profile.portfolio_url}` : null,
         ].filter(Boolean).join('\n')}
       >
         {editingProfile ? (
           <div>
             {[
-              { key: 'linkedin', label: 'LinkedIn URL' },
-              { key: 'portfolio', label: 'Portfolio / Website' },
-              { key: 'website', label: 'Personal Website' },
-              { key: 'github', label: 'GitHub' },
+              { key: 'linkedin_url', label: 'LinkedIn URL' },
+              { key: 'portfolio_url', label: 'Portfolio / Website' },
             ].map(({ key, label }) => (
               <div key={key} style={{ marginBottom: 8 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 3 }}>{label}</label>
@@ -356,18 +372,16 @@ function ApplyAssistantTab({ pack, opportunity }) {
         ) : (
           <div>
             {[
-              { label: 'LinkedIn', value: profile.linkedin },
-              { label: 'Portfolio', value: profile.portfolio },
-              { label: 'Website', value: profile.website },
-              { label: 'GitHub', value: profile.github },
-            ].map(({ label, value }) => value ? (
-              <FieldRow key={label} label={label} value={value}>
+              { label: 'LinkedIn', value: profile.linkedin_url, key: 'linkedin_url' },
+              { label: 'Portfolio', value: profile.portfolio_url, key: 'portfolio_url' },
+            ].map(({ label, value, key }) => value ? (
+              <FieldRow key={label} label={label} value={value} needsConfirmation={fieldNeedsConfirmation(key, profile)}>
                 <CopyButton text={value} label="Copy" />
               </FieldRow>
             ) : null)}
-            {!profile.linkedin && !profile.portfolio && !profile.website && (
+            {!profile.linkedin_url && !profile.portfolio_url && (
               <div style={{ fontSize: 12, color: 'var(--gray-400)', fontStyle: 'italic' }}>
-                No links saved yet. Click "Edit Profile" in Personal Details to add.
+                No links saved yet. Click "Edit Profile" in Personal Details to add your LinkedIn URL.
               </div>
             )}
           </div>
@@ -380,19 +394,34 @@ function ApplyAssistantTab({ pack, opportunity }) {
         icon="🛂"
         copyAllText={eligibilityText}
       >
+        {/* Confirmation note for sensitive fields */}
+        <div style={{
+          background: '#fffbeb', border: '1px solid var(--amber)', borderRadius: 6,
+          padding: '7px 12px', marginBottom: 10, fontSize: 11, color: '#92400e', lineHeight: 1.6,
+        }}>
+          ⚠ Fields marked <strong>Confirm before use</strong> require your explicit review before pasting. Do not copy without confirming.
+        </div>
         {editingProfile ? (
           <div>
             {[
-              { key: 'work_authorization', label: 'Work Authorisation' },
-              { key: 'visa_sponsorship_needed', label: 'Visa Sponsorship' },
+              { key: 'work_authorization', label: 'Work Authorization' },
+              { key: 'citizenship_status', label: 'Citizenship Status' },
+              { key: 'visa_sponsorship_needed', label: 'Sponsorship Needed' },
               { key: 'security_clearance', label: 'Security Clearance' },
+              { key: 'clearance_level', label: 'Clearance Level' },
               { key: 'notice_period', label: 'Notice Period' },
               { key: 'remote_preference', label: 'Remote Preference' },
               { key: 'relocation_preference', label: 'Relocation' },
               { key: 'salary_expectation', label: 'Salary Expectation' },
+              { key: 'earliest_start_date', label: 'Earliest Start Date' },
             ].map(({ key, label }) => (
               <div key={key} style={{ marginBottom: 8 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 3 }}>{label}</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 3 }}>
+                  {label}
+                  {fieldNeedsConfirmation(key, profileDraft || profile) && (
+                    <span style={{ marginLeft: 6, fontSize: 10, color: '#92400e', fontWeight: 700 }}>⚠ Confirm</span>
+                  )}
+                </label>
                 <input
                   className="form-input w-full"
                   value={profileDraft[key] || ''}
@@ -405,15 +434,18 @@ function ApplyAssistantTab({ pack, opportunity }) {
         ) : (
           <div>
             {[
-              { label: 'Work Authorisation', value: profile.work_authorization },
-              { label: 'Visa Sponsorship', value: profile.visa_sponsorship_needed },
-              { label: 'Security Clearance', value: profile.security_clearance },
-              { label: 'Notice Period', value: profile.notice_period },
-              { label: 'Remote Preference', value: profile.remote_preference },
-              { label: 'Relocation', value: profile.relocation_preference },
-              { label: 'Salary Expectation', value: profile.salary_expectation },
-            ].map(({ label, value }) => (
-              <FieldRow key={label} label={label} value={value}>
+              { label: 'Work Authorization', value: profile.work_authorization, key: 'work_authorization' },
+              { label: 'Citizenship', value: profile.citizenship_status, key: 'citizenship_status' },
+              { label: 'Sponsorship Needed', value: profile.visa_sponsorship_needed, key: 'visa_sponsorship_needed' },
+              { label: 'Security Clearance', value: profile.security_clearance, key: 'security_clearance' },
+              { label: 'Clearance Level', value: profile.clearance_level, key: 'clearance_level' },
+              { label: 'Notice Period', value: profile.notice_period, key: 'notice_period' },
+              { label: 'Remote Preference', value: profile.remote_preference, key: 'remote_preference' },
+              { label: 'Relocation', value: profile.relocation_preference, key: 'relocation_preference' },
+              { label: 'Salary Expectation', value: profile.salary_expectation, key: 'salary_expectation' },
+              { label: 'Earliest Start Date', value: profile.earliest_start_date, key: 'earliest_start_date' },
+            ].map(({ label, value, key }) => (
+              <FieldRow key={label} label={label} value={value} needsConfirmation={fieldNeedsConfirmation(key, profile)}>
                 <CopyButton text={value || ''} label="Copy" />
               </FieldRow>
             ))}
@@ -603,11 +635,23 @@ function ApplyAssistantTab({ pack, opportunity }) {
                   <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {q.category}
                   </span>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 2 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {q.question}
+                    {q.confirmed === false && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, background: '#fffbeb', color: '#92400e',
+                        border: '1px solid var(--amber)', borderRadius: 4, padding: '1px 6px',
+                        textTransform: 'uppercase',
+                      }}>Confirm before use</span>
+                    )}
                   </div>
                 </div>
               </div>
+              {q.note && (
+                <div style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', borderRadius: 4, padding: '4px 8px', marginBottom: 6 }}>
+                  ⚠ {q.note}
+                </div>
+              )}
               <EditableAnswer
                 id={q.id}
                 initialAnswer={q.answer}

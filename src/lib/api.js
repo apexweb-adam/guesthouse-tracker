@@ -1090,7 +1090,7 @@ export async function fetchReadinessHistory(opportunityId = null, limit = 50) {
 
 // ─── Candidate Profile Vault ─────────────────────────────────────────────────
 
-export { loadCandidateProfile, saveCandidateProfile, resetCandidateProfile, loadQuestionBank, saveQuestionBankItem, resetQuestionBank } from './candidateProfile.js';
+export { loadCandidateProfile, saveCandidateProfile, resetCandidateProfile, loadQuestionBank, saveQuestionBankItem, resetQuestionBank, fieldNeedsConfirmation, NEEDS_CONFIRMATION_FIELDS } from './candidateProfile.js';
 
 // ─── Resume Vault ─────────────────────────────────────────────────────────────
 

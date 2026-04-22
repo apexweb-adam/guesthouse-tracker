@@ -2795,5 +2795,80 @@ assert('28bu. Apply Assistant does not break approval gate', (() => {
   return classifyReadinessGroup(notApproved) !== READINESS_GROUPS.READY_TO_APPLY;
 })());
 
+// ── 28k. Verified US profile defaults ─────────────────────────────────────────
+assert('28bv. DEFAULT_CANDIDATE_PROFILE.full_name is Sample Candidate',
+  DEFAULT_CANDIDATE_PROFILE.full_name === 'Sample Candidate');
+assert('28bw. DEFAULT_CANDIDATE_PROFILE.email is the real email',
+  DEFAULT_CANDIDATE_PROFILE.email === 'candidate@example.com');
+assert('28bx. DEFAULT_CANDIDATE_PROFILE.phone is the real phone',
+  DEFAULT_CANDIDATE_PROFILE.phone === '(+1 555 0100');
+assert('28by. DEFAULT_CANDIDATE_PROFILE.location_city is Fairfax',
+  DEFAULT_CANDIDATE_PROFILE.location_city === 'Fairfax');
+assert('28bz. DEFAULT_CANDIDATE_PROFILE.location_state is VA',
+  DEFAULT_CANDIDATE_PROFILE.location_state === 'VA');
+assert('28ca. DEFAULT_CANDIDATE_PROFILE.work_authorized_us is true',
+  DEFAULT_CANDIDATE_PROFILE.work_authorized_us === true);
+assert('28cb. DEFAULT_CANDIDATE_PROFILE.citizenship_status is U.S. Citizen',
+  DEFAULT_CANDIDATE_PROFILE.citizenship_status === 'U.S. Citizen');
+assert('28cc. DEFAULT_CANDIDATE_PROFILE.clearance_level is Public Trust',
+  DEFAULT_CANDIDATE_PROFILE.clearance_level === 'Public Trust');
+assert('28cd. DEFAULT_CANDIDATE_PROFILE.primary_lane is Technical Project Manager',
+  DEFAULT_CANDIDATE_PROFILE.primary_lane === 'Technical Project Manager');
+assert('28ce. DEFAULT_CANDIDATE_PROFILE.needs_sponsorship is false',
+  DEFAULT_CANDIDATE_PROFILE.needs_sponsorship === false);
+assert('28cf. DEFAULT_CANDIDATE_PROFILE has core_certifications array including PMP',
+  Array.isArray(DEFAULT_CANDIDATE_PROFILE.core_certifications) &&
+  DEFAULT_CANDIDATE_PROFILE.core_certifications.includes('PMP'));
+assert('28cg. DEFAULT_CANDIDATE_PROFILE has top_domain_tags array including federal',
+  Array.isArray(DEFAULT_CANDIDATE_PROFILE.top_domain_tags) &&
+  DEFAULT_CANDIDATE_PROFILE.top_domain_tags.includes('federal'));
+
+// ── 28l. Confirmation state structure ─────────────────────────────────────────
+assert('28ch. DEFAULT_CANDIDATE_PROFILE has _confirmation_state',
+  typeof DEFAULT_CANDIDATE_PROFILE._confirmation_state === 'object');
+assert('28ci. salary_expectation needs confirmation',
+  DEFAULT_CANDIDATE_PROFILE._confirmation_state.salary_expectation === 'needs_confirmation');
+assert('28cj. notice_period needs confirmation',
+  DEFAULT_CANDIDATE_PROFILE._confirmation_state.notice_period === 'needs_confirmation');
+assert('28ck. remote_preference needs confirmation',
+  DEFAULT_CANDIDATE_PROFILE._confirmation_state.remote_preference === 'needs_confirmation');
+assert('28cl. salary_expectation default is empty (not prefilled)',
+  DEFAULT_CANDIDATE_PROFILE.salary_expectation === '' || DEFAULT_CANDIDATE_PROFILE.salary_expectation == null);
+assert('28cm. notice_period default is empty (not prefilled)',
+  DEFAULT_CANDIDATE_PROFILE.notice_period === '' || DEFAULT_CANDIDATE_PROFILE.notice_period == null);
+
+// ── 28m. candidateProfile.js exports fieldNeedsConfirmation + NEEDS_CONFIRMATION_FIELDS
+import { fieldNeedsConfirmation, NEEDS_CONFIRMATION_FIELDS } from '../src/lib/candidateProfile.js';
+assert('28cn. fieldNeedsConfirmation is exported',
+  typeof fieldNeedsConfirmation === 'function');
+assert('28co. NEEDS_CONFIRMATION_FIELDS is exported as array',
+  Array.isArray(NEEDS_CONFIRMATION_FIELDS) && NEEDS_CONFIRMATION_FIELDS.length > 0);
+assert('28cp. fieldNeedsConfirmation returns true for salary_expectation',
+  fieldNeedsConfirmation('salary_expectation', DEFAULT_CANDIDATE_PROFILE) === true);
+assert('28cq. fieldNeedsConfirmation returns false for full_name',
+  fieldNeedsConfirmation('full_name', DEFAULT_CANDIDATE_PROFILE) === false);
+
+// ── 28n. api.js re-exports new helpers ────────────────────────────────────────
+assert('28cr. api.js re-exports fieldNeedsConfirmation', apiSrc28.includes('fieldNeedsConfirmation'));
+assert('28cs. api.js re-exports NEEDS_CONFIRMATION_FIELDS', apiSrc28.includes('NEEDS_CONFIRMATION_FIELDS'));
+
+// ── 28o. New question bank entries ────────────────────────────────────────────
+assert('28ct. COMMON_QUESTION_BANK has federal/regulated environment question',
+  COMMON_QUESTION_BANK.some(q => q.id === 'q-federal'));
+assert('28cu. COMMON_QUESTION_BANK has IAM/cloud question',
+  COMMON_QUESTION_BANK.some(q => q.id === 'q-iam-cloud'));
+assert('28cv. confirmed questions have confirmed:true field',
+  COMMON_QUESTION_BANK.some(q => q.confirmed === true));
+assert('28cw. needs-confirmation questions have confirmed:false field',
+  COMMON_QUESTION_BANK.some(q => q.confirmed === false));
+
+// ── 28p. ApplyPack.jsx uses fieldNeedsConfirmation ────────────────────────────
+assert('28cx. ApplyPack.jsx imports fieldNeedsConfirmation',
+  applyPackSrc28.includes('fieldNeedsConfirmation'));
+assert('28cy. ApplyPack.jsx shows Confirm before use badge',
+  applyPackSrc28.includes('Confirm before use'));
+assert('28cz. ApplyPack.jsx renders contact block for copy',
+  applyPackSrc28.includes('contactBlockText'));
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);
