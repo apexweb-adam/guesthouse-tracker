@@ -11,9 +11,14 @@ import {
   updateChecklistItem,
   updateApplyStatus,
   updateApplyUrl,
+  loadCandidateProfile,
+  saveCandidateProfile,
+  loadQuestionBank,
+  saveQuestionBankItem,
 } from '../lib/api.js';
 import { RESUME_VERSIONS, RESUME_VERSION_LABELS } from '../../netlify/functions/_shared/scoring.js';
 import { computePackReadinessScore } from '../../netlify/functions/_shared/applyPack.js';
+import { INITIAL_VAULT, VAULT_STATUS_LABELS } from '../../netlify/functions/_shared/resumeVault.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +110,569 @@ function OverrideResumeModal({ current, original, onSave, onClose }) {
   );
 }
 
+          <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 8 }}>
+            Select a different version to override.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Apply Assistant Tab ──────────────────────────────────────────────────────
+
+function FieldRow({ label, value, children }) {
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '160px 1fr auto',
+      alignItems: 'center',
+      gap: 8,
+      padding: '7px 0',
+      borderBottom: '1px solid var(--gray-100)',
+    }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)' }}>{label}</span>
+      <span style={{ fontSize: 13, color: 'var(--gray-800)', wordBreak: 'break-word' }}>{value || '—'}</span>
+      {children}
+    </div>
+  );
+}
+
+function AssistantSection({ title, icon, onCopyAll, copyAllText, children, accent = 'var(--blue)' }) {
+  return (
+    <div className="card card-pad" style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>{icon}</span> {title}
+        </h3>
+        {copyAllText && (
+          <CopyButton text={copyAllText} label="📋 Copy Section" />
+        )}
+        {onCopyAll && !copyAllText && (
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={onCopyAll}>📋 Copy All</button>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function EditableAnswer({ id, initialAnswer, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(initialAnswer);
+
+  const handleSave = () => {
+    onSave(id, draft);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div style={{ marginTop: 8 }}>
+        <textarea
+          className="form-textarea w-full"
+          rows={6}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          style={{ fontSize: 12, fontFamily: 'inherit', lineHeight: 1.6 }}
+        />
+        <div className="flex gap-2" style={{ marginTop: 6 }}>
+          <button className="btn btn-primary btn-sm" onClick={handleSave}>Save</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setDraft(initialAnswer); setEditing(false); }}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <pre style={{
+      fontSize: 12, color: 'var(--gray-800)', background: 'var(--gray-50)',
+      borderRadius: 6, padding: 10, whiteSpace: 'pre-wrap', lineHeight: 1.7,
+      margin: 0, fontFamily: 'inherit',
+    }}>
+      {initialAnswer}
+      <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+        <CopyButton text={initialAnswer} label="📋 Copy" />
+        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setEditing(true)}>✎ Edit</button>
+      </div>
+    </pre>
+  );
+}
+
+function ApplyAssistantTab({ pack, opportunity }) {
+  const [profile, setProfile] = useState(() => loadCandidateProfile());
+  const [questionBank, setQuestionBank] = useState(() => loadQuestionBank());
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileDraft, setProfileDraft] = useState(null);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [saved, setSaved] = useState(false);
+
+  // ── Vault-based resume info ─────────────────────────────────────────────
+  const vaultResumeId = pack?.vault_recommended_resume_id;
+  const effectiveResume = pack?.resume_version_override || pack?.recommended_resume_version;
+  const vaultRecord = vaultResumeId
+    ? INITIAL_VAULT.find(r => r.id === vaultResumeId)
+    : null;
+
+  // ── Profile editing ────────────────────────────────────────────────────
+  const handleEditProfile = () => {
+    setProfileDraft({ ...profile });
+    setEditingProfile(true);
+  };
+
+  const handleSaveProfile = () => {
+    const updated = saveCandidateProfile(profileDraft);
+    setProfile(updated);
+    setEditingProfile(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  // ── Question bank answer save ──────────────────────────────────────────
+  const handleSaveAnswer = (id, answer) => {
+    const updated = saveQuestionBankItem(id, answer);
+    setQuestionBank(updated);
+  };
+
+  // ── Copy helpers ───────────────────────────────────────────────────────
+  const personalDetailsText = [
+    `Name: ${profile.full_name}`,
+    `Email: ${profile.email}`,
+    `Phone: ${profile.phone}`,
+    `Location: ${profile.location}`,
+    profile.linkedin ? `LinkedIn: ${profile.linkedin}` : null,
+    profile.portfolio ? `Portfolio: ${profile.portfolio}` : null,
+  ].filter(Boolean).join('\n');
+
+  const eligibilityText = [
+    `Work authorisation: ${profile.work_authorization}`,
+    `Visa sponsorship: ${profile.visa_sponsorship_needed}`,
+    `Security clearance: ${profile.security_clearance}`,
+    `Notice period: ${profile.notice_period}`,
+    `Remote preference: ${profile.remote_preference}`,
+    `Salary expectation: ${profile.salary_expectation}`,
+  ].join('\n');
+
+  const categories = ['all', ...new Set(questionBank.map(q => q.category))];
+
+  const filteredQuestions = activeCategory === 'all'
+    ? questionBank
+    : questionBank.filter(q => q.category === activeCategory);
+
+  return (
+    <div>
+      {/* Intro banner */}
+      <div style={{
+        background: '#eff6ff', border: '1px solid var(--blue)', borderRadius: 8,
+        padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#1e40af', lineHeight: 1.6,
+      }}>
+        🧰 <strong>Apply Assistant</strong> — Open the job posting in another tab, then copy/paste from here.
+        All fields and answers are editable and save locally. No auto-submission.
+      </div>
+
+      {/* ── A. Personal Details ─────────────────────────────────────────────── */}
+      <AssistantSection
+        title="A. Personal Details"
+        icon="👤"
+        copyAllText={personalDetailsText}
+      >
+        {editingProfile ? (
+          <div>
+            {[
+              { key: 'full_name', label: 'Full Name' },
+              { key: 'preferred_name', label: 'Preferred Name' },
+              { key: 'email', label: 'Email' },
+              { key: 'phone', label: 'Phone' },
+              { key: 'location', label: 'Location (City, State)' },
+              { key: 'full_address', label: 'Full Address' },
+            ].map(({ key, label }) => (
+              <div key={key} style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 3 }}>{label}</label>
+                <input
+                  className="form-input w-full"
+                  value={profileDraft[key] || ''}
+                  onChange={e => setProfileDraft(d => ({ ...d, [key]: e.target.value }))}
+                  style={{ fontSize: 13 }}
+                />
+              </div>
+            ))}
+            <div className="flex gap-2" style={{ marginTop: 10 }}>
+              <button className="btn btn-primary btn-sm" onClick={handleSaveProfile}>Save Profile</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditingProfile(false)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            {[
+              { label: 'Full Name', value: profile.full_name },
+              { label: 'Preferred Name', value: profile.preferred_name },
+              { label: 'Email', value: profile.email },
+              { label: 'Phone', value: profile.phone },
+              { label: 'Location', value: profile.location },
+              { label: 'Full Address', value: profile.full_address },
+            ].map(({ label, value }) => (
+              <FieldRow key={label} label={label} value={value}>
+                <CopyButton text={value || ''} label="Copy" />
+              </FieldRow>
+            ))}
+            <div style={{ marginTop: 10 }}>
+              <button className="btn btn-ghost btn-sm" onClick={handleEditProfile}>✎ Edit Profile</button>
+              {saved && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--green)' }}>✓ Saved</span>}
+            </div>
+          </div>
+        )}
+      </AssistantSection>
+
+      {/* ── B. Links / Profiles ─────────────────────────────────────────────── */}
+      <AssistantSection
+        title="B. Links & Profiles"
+        icon="🔗"
+        copyAllText={[
+          profile.linkedin ? `LinkedIn: ${profile.linkedin}` : null,
+          profile.portfolio ? `Portfolio: ${profile.portfolio}` : null,
+          profile.website ? `Website: ${profile.website}` : null,
+          profile.github ? `GitHub: ${profile.github}` : null,
+        ].filter(Boolean).join('\n')}
+      >
+        {editingProfile ? (
+          <div>
+            {[
+              { key: 'linkedin', label: 'LinkedIn URL' },
+              { key: 'portfolio', label: 'Portfolio / Website' },
+              { key: 'website', label: 'Personal Website' },
+              { key: 'github', label: 'GitHub' },
+            ].map(({ key, label }) => (
+              <div key={key} style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 3 }}>{label}</label>
+                <input
+                  className="form-input w-full"
+                  value={profileDraft[key] || ''}
+                  onChange={e => setProfileDraft(d => ({ ...d, [key]: e.target.value }))}
+                  style={{ fontSize: 13 }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>
+            {[
+              { label: 'LinkedIn', value: profile.linkedin },
+              { label: 'Portfolio', value: profile.portfolio },
+              { label: 'Website', value: profile.website },
+              { label: 'GitHub', value: profile.github },
+            ].map(({ label, value }) => value ? (
+              <FieldRow key={label} label={label} value={value}>
+                <CopyButton text={value} label="Copy" />
+              </FieldRow>
+            ) : null)}
+            {!profile.linkedin && !profile.portfolio && !profile.website && (
+              <div style={{ fontSize: 12, color: 'var(--gray-400)', fontStyle: 'italic' }}>
+                No links saved yet. Click "Edit Profile" in Personal Details to add.
+              </div>
+            )}
+          </div>
+        )}
+      </AssistantSection>
+
+      {/* ── C. Work Eligibility / Screening ─────────────────────────────────── */}
+      <AssistantSection
+        title="C. Work Eligibility & Screening"
+        icon="🛂"
+        copyAllText={eligibilityText}
+      >
+        {editingProfile ? (
+          <div>
+            {[
+              { key: 'work_authorization', label: 'Work Authorisation' },
+              { key: 'visa_sponsorship_needed', label: 'Visa Sponsorship' },
+              { key: 'security_clearance', label: 'Security Clearance' },
+              { key: 'notice_period', label: 'Notice Period' },
+              { key: 'remote_preference', label: 'Remote Preference' },
+              { key: 'relocation_preference', label: 'Relocation' },
+              { key: 'salary_expectation', label: 'Salary Expectation' },
+            ].map(({ key, label }) => (
+              <div key={key} style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', display: 'block', marginBottom: 3 }}>{label}</label>
+                <input
+                  className="form-input w-full"
+                  value={profileDraft[key] || ''}
+                  onChange={e => setProfileDraft(d => ({ ...d, [key]: e.target.value }))}
+                  style={{ fontSize: 13 }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>
+            {[
+              { label: 'Work Authorisation', value: profile.work_authorization },
+              { label: 'Visa Sponsorship', value: profile.visa_sponsorship_needed },
+              { label: 'Security Clearance', value: profile.security_clearance },
+              { label: 'Notice Period', value: profile.notice_period },
+              { label: 'Remote Preference', value: profile.remote_preference },
+              { label: 'Relocation', value: profile.relocation_preference },
+              { label: 'Salary Expectation', value: profile.salary_expectation },
+            ].map(({ label, value }) => (
+              <FieldRow key={label} label={label} value={value}>
+                <CopyButton text={value || ''} label="Copy" />
+              </FieldRow>
+            ))}
+          </div>
+        )}
+      </AssistantSection>
+
+      {/* ── D. Resume for This Role ──────────────────────────────────────────── */}
+      {(vaultRecord || effectiveResume) && (
+        <AssistantSection
+          title="D. Resume for This Role"
+          icon="📄"
+        >
+          <div style={{
+            background: '#f0fdf4', border: '1px solid var(--green)', borderRadius: 6, padding: 10, marginBottom: 10,
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>
+              {vaultRecord ? vaultRecord.display_name : effectiveResume}
+            </div>
+            {vaultRecord && (
+              <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 4 }}>
+                File: <strong>{vaultRecord.original_file_name}</strong>
+                {' · '}Status: <strong>{VAULT_STATUS_LABELS[vaultRecord.status] || vaultRecord.status}</strong>
+                {' · '}Quality: <strong>{vaultRecord.quality_score}/100</strong>
+              </div>
+            )}
+            {pack?.vault_recommendation_reason && (
+              <div style={{ fontSize: 12, color: 'var(--gray-600)', lineHeight: 1.5 }}>
+                Why: {pack.vault_recommendation_reason}
+              </div>
+            )}
+            {pack?.recommendation_confidence && (
+              <div style={{ marginTop: 6, fontSize: 11, fontWeight: 600, color:
+                pack.recommendation_confidence === 'high' ? 'var(--green)' :
+                pack.recommendation_confidence === 'medium' ? 'var(--amber)' : 'var(--red)',
+              }}>
+                {pack.recommendation_confidence.toUpperCase()} CONFIDENCE
+              </div>
+            )}
+          </div>
+          {pack?.quality_gate_warnings?.length > 0 && (
+            <div style={{ background: '#fffbeb', border: '1px solid var(--amber)', borderRadius: 6, padding: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}>RESUME WARNINGS</div>
+              {pack.quality_gate_warnings.map((w, i) => (
+                <div key={i} style={{ fontSize: 12, color: '#92400e', marginBottom: 2 }}>⚠ {w}</div>
+              ))}
+            </div>
+          )}
+          {pack?.quality_gate_blockers?.length > 0 && (
+            <div style={{ background: '#fef2f2', border: '1px solid var(--red)', borderRadius: 6, padding: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>BLOCKERS</div>
+              {pack.quality_gate_blockers.map((b, i) => (
+                <div key={i} style={{ fontSize: 12, color: '#991b1b', marginBottom: 2 }}>🚫 {b}</div>
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: 'var(--gray-500)', fontStyle: 'italic' }}>
+            Open the Resume tab for full resume version management and override options.
+          </div>
+        </AssistantSection>
+      )}
+
+      {/* ── E. Copy-Ready Summary ────────────────────────────────────────────── */}
+      {pack?.copy_ready_summary_block && (
+        <AssistantSection
+          title="E. Copy-Ready Summary"
+          icon="✍"
+          copyAllText={pack.copy_ready_summary_block}
+        >
+          <pre style={{
+            fontSize: 12, color: 'var(--gray-800)', background: '#f0fdf4',
+            borderRadius: 6, padding: 10, whiteSpace: 'pre-wrap', lineHeight: 1.7,
+            margin: 0, fontFamily: 'inherit', border: '1px solid var(--green)',
+          }}>
+            {pack.copy_ready_summary_block}
+          </pre>
+          <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
+            Replace [bracketed] placeholders with your real experience before using.
+          </div>
+        </AssistantSection>
+      )}
+
+      {/* ── F. Cover Note ────────────────────────────────────────────────────── */}
+      {pack?.copy_ready_cover_note_block && (
+        <AssistantSection
+          title="F. Cover Note"
+          icon="📝"
+          copyAllText={pack.copy_ready_cover_note_block}
+        >
+          <pre style={{
+            fontSize: 12, color: 'var(--gray-800)', background: '#f0f9ff',
+            borderRadius: 6, padding: 10, whiteSpace: 'pre-wrap', lineHeight: 1.7,
+            margin: 0, fontFamily: 'inherit', border: '1px solid #7dd3fc',
+          }}>
+            {pack.copy_ready_cover_note_block}
+          </pre>
+          <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
+            3-paragraph draft — personalise and review before submitting.
+          </div>
+        </AssistantSection>
+      )}
+
+      {/* ── G. Why This Role / Company ──────────────────────────────────────── */}
+      <AssistantSection
+        title="G. Why This Role / Company"
+        icon="💡"
+      >
+        <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 10, lineHeight: 1.6 }}>
+          Use the role title and company name below as a starting point. Personalise before submitting.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          {opportunity?.title && <CopyButton text={opportunity.title} label="📋 Copy Role Title" />}
+          {opportunity?.company && <CopyButton text={opportunity.company} label="📋 Copy Company Name" />}
+          {(opportunity?.canonical_job_url || opportunity?.url) && (
+            <CopyButton text={opportunity.canonical_job_url || opportunity.url} label="📋 Copy Job URL" />
+          )}
+        </div>
+        {pack?.keyword_mirror_list?.length > 0 && (
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', marginBottom: 6 }}>
+              Role keywords to mirror:
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+              {pack.keyword_mirror_list.map((kw, i) => (
+                <span
+                  key={i}
+                  style={{ fontSize: 11, background: '#dbeafe', color: '#1e40af', borderRadius: 4, padding: '2px 8px', cursor: 'pointer' }}
+                  onClick={() => navigator.clipboard.writeText(kw)}
+                  title="Click to copy"
+                >
+                  {kw}
+                </span>
+              ))}
+            </div>
+            <CopyButton text={pack.keyword_mirror_list.join(', ')} label="📋 Copy All Keywords" />
+          </div>
+        )}
+        {pack?.summary_direction && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', marginBottom: 6 }}>Summary direction:</div>
+            <pre style={{
+              fontSize: 12, color: 'var(--gray-700)', background: 'var(--gray-50)',
+              borderRadius: 6, padding: 8, whiteSpace: 'pre-wrap', lineHeight: 1.6,
+              margin: 0, fontFamily: 'inherit',
+            }}>
+              {pack.summary_direction}
+            </pre>
+            <div style={{ marginTop: 6 }}><CopyButton text={pack.summary_direction} label="📋 Copy Direction" /></div>
+          </div>
+        )}
+      </AssistantSection>
+
+      {/* ── H. Common Q&A Bank ──────────────────────────────────────────────── */}
+      <AssistantSection
+        title="H. Common Application Q&amp;A"
+        icon="❓"
+      >
+        <div style={{
+          background: '#f8fafc', border: '1px solid var(--gray-100)', borderRadius: 6,
+          padding: '8px 12px', marginBottom: 12, fontSize: 12, color: 'var(--gray-600)', lineHeight: 1.6,
+        }}>
+          Copy and paste these into ATS forms or application fields. All answers are editable — click ✎ Edit to customise.
+        </div>
+
+        {/* Category filter */}
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 12 }}>
+          {['all', ...new Set(questionBank.map(q => q.category))].map(cat => (
+            <button
+              key={cat}
+              className={`btn btn-sm ${activeCategory === cat ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: 11 }}
+              onClick={() => setActiveCategory(cat)}
+            >
+              {cat === 'all' ? 'All' : cat}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {filteredQuestions.map(q => (
+            <div key={q.id} style={{
+              background: 'var(--gray-50)', borderRadius: 6, padding: '10px 12px',
+              border: '1px solid var(--gray-100)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                <div>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {q.category}
+                  </span>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)', marginTop: 2 }}>
+                    {q.question}
+                  </div>
+                </div>
+              </div>
+              <EditableAnswer
+                id={q.id}
+                initialAnswer={q.answer}
+                onSave={handleSaveAnswer}
+              />
+            </div>
+          ))}
+        </div>
+      </AssistantSection>
+
+      {/* ── I. Application Status & Follow-up ───────────────────────────────── */}
+      <AssistantSection
+        title="I. Application Status &amp; Follow-up"
+        icon="📬"
+      >
+        <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 12, lineHeight: 1.5 }}>
+          Track your application progress below. Use the action bar above to update the system status.
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          {opportunity?.status && (
+            <div style={{
+              background: '#eff6ff', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: 'var(--blue)',
+            }}>
+              Current status: {opportunity.status.replace(/_/g, ' ')}
+            </div>
+          )}
+          {opportunity?.applied_date && (
+            <div style={{
+              background: '#f0fdf4', borderRadius: 6, padding: '8px 14px', fontSize: 13, color: 'var(--green)', fontWeight: 600,
+            }}>
+              Applied: {new Date(opportunity.applied_date).toLocaleDateString()}
+            </div>
+          )}
+        </div>
+        {pack?.suggested_follow_up_date && (
+          <div style={{
+            background: '#eff6ff', border: '1px solid var(--blue)', borderRadius: 6, padding: '10px 14px', marginBottom: 10,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', marginBottom: 4 }}>SUGGESTED FOLLOW-UP DATE</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{pack.suggested_follow_up_date}</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+              Add to calendar. Follow up if no response by this date.
+            </div>
+            <CopyButton text={pack.suggested_follow_up_date} label="📋 Copy Date" />
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 4 }}>
+          Use the action bar (Mark Ready to Apply / Mark Applied / Mark Follow-Up) to progress the status.
+          The system does <strong>not</strong> auto-submit — all applications are manual.
+        </div>
+      </AssistantSection>
+
+      {/* Bottom disclaimer */}
+      <div style={{
+        fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic',
+        background: 'var(--gray-50)', borderRadius: 6, padding: '10px 14px', marginTop: 8,
+        border: '1px solid var(--gray-100)', lineHeight: 1.6,
+      }}>
+        ⚠ All profile data, Q&amp;A answers, and copy-ready content are drafts that require human review.
+        Do NOT auto-submit applications or outreach. All submissions are manual.
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ApplyPack() {
@@ -119,7 +687,7 @@ export default function ApplyPack() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('assistant');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -374,6 +942,7 @@ export default function ApplyPack() {
   const packReadiness = pack.pack_readiness_score ?? computePackReadinessScore(opportunity || {}, pack);
 
   const TABS = [
+    { id: 'assistant', label: '🧰 Apply Assistant' },
     { id: 'overview', label: '📋 Overview' },
     { id: 'copyready', label: '✍ Copy-Ready' },
     { id: 'resume', label: '📄 Resume' },
@@ -934,6 +1503,11 @@ export default function ApplyPack() {
           onSave={handleOverrideSave}
           onClose={() => setShowOverrideModal(false)}
         />
+      )}
+
+      {/* ── APPLY ASSISTANT TAB ── */}
+      {activeTab === 'assistant' && (
+        <ApplyAssistantTab pack={pack} opportunity={opportunity} />
       )}
     </div>
   );

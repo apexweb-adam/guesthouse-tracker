@@ -2669,5 +2669,131 @@ assert('27da. Section 27: Approval gate still mandatory after vault changes', ((
   return classifyReadinessGroup(pending) !== READINESS_GROUPS.READY_TO_APPLY;
 })());
 
+// ─── Section 28: Apply Assistant + Candidate Profile Vault ────────────────────
+
+console.log('\n== Section 28: Apply Assistant + Candidate Profile Vault ==');
+
+import { existsSync as existsSync28, readFileSync as readFileSync28 } from 'fs';
+import { join as join28, dirname as dirname28 } from 'path';
+import { fileURLToPath as fileURLToPath28 } from 'url';
+const __dirname_v28 = dirname28(fileURLToPath28(import.meta.url));
+
+// ── 28a. candidateProfile.js file existence and exports ───────────────────────
+assert('28a. src/lib/candidateProfile.js exists',
+  existsSync28(join28(__dirname_v28, '../src/lib/candidateProfile.js')));
+
+const candidateProfileSrc = readFileSync28(join28(__dirname_v28, '../src/lib/candidateProfile.js'), 'utf-8');
+
+assert('28b. candidateProfile.js exports DEFAULT_CANDIDATE_PROFILE', candidateProfileSrc.includes('export const DEFAULT_CANDIDATE_PROFILE'));
+assert('28c. candidateProfile.js exports CANDIDATE_PROFILE_KEY', candidateProfileSrc.includes('export const CANDIDATE_PROFILE_KEY'));
+assert('28d. candidateProfile.js exports loadCandidateProfile', candidateProfileSrc.includes('export function loadCandidateProfile'));
+assert('28e. candidateProfile.js exports saveCandidateProfile', candidateProfileSrc.includes('export function saveCandidateProfile'));
+assert('28f. candidateProfile.js exports resetCandidateProfile', candidateProfileSrc.includes('export function resetCandidateProfile'));
+assert('28g. candidateProfile.js exports COMMON_QUESTION_BANK', candidateProfileSrc.includes('export const COMMON_QUESTION_BANK'));
+assert('28h. candidateProfile.js exports loadQuestionBank', candidateProfileSrc.includes('export function loadQuestionBank'));
+assert('28i. candidateProfile.js exports saveQuestionBankItem', candidateProfileSrc.includes('export function saveQuestionBankItem'));
+assert('28j. candidateProfile.js exports resetQuestionBank', candidateProfileSrc.includes('export function resetQuestionBank'));
+
+// ── 28b. DEFAULT_CANDIDATE_PROFILE fields ─────────────────────────────────────
+assert('28k. DEFAULT_CANDIDATE_PROFILE has full_name', candidateProfileSrc.includes('full_name'));
+assert('28l. DEFAULT_CANDIDATE_PROFILE has email', candidateProfileSrc.includes('email'));
+assert('28m. DEFAULT_CANDIDATE_PROFILE has phone', candidateProfileSrc.includes('phone'));
+assert('28n. DEFAULT_CANDIDATE_PROFILE has location', candidateProfileSrc.includes('location'));
+assert('28o. DEFAULT_CANDIDATE_PROFILE has linkedin', candidateProfileSrc.includes('linkedin'));
+assert('28p. DEFAULT_CANDIDATE_PROFILE has work_authorization', candidateProfileSrc.includes('work_authorization'));
+assert('28q. DEFAULT_CANDIDATE_PROFILE has visa_sponsorship_needed', candidateProfileSrc.includes('visa_sponsorship_needed'));
+assert('28r. DEFAULT_CANDIDATE_PROFILE has security_clearance', candidateProfileSrc.includes('security_clearance'));
+assert('28s. DEFAULT_CANDIDATE_PROFILE has notice_period', candidateProfileSrc.includes('notice_period'));
+assert('28t. DEFAULT_CANDIDATE_PROFILE has salary_expectation', candidateProfileSrc.includes('salary_expectation'));
+assert('28u. DEFAULT_CANDIDATE_PROFILE has remote_preference', candidateProfileSrc.includes('remote_preference'));
+assert('28v. DEFAULT_CANDIDATE_PROFILE has short_bio', candidateProfileSrc.includes('short_bio'));
+
+// ── 28c. COMMON_QUESTION_BANK content ─────────────────────────────────────────
+assert('28w. COMMON_QUESTION_BANK has work authorisation question', candidateProfileSrc.includes('q-work-auth'));
+assert('28x. COMMON_QUESTION_BANK has visa sponsorship question', candidateProfileSrc.includes('q-sponsorship'));
+assert('28y. COMMON_QUESTION_BANK has notice period question', candidateProfileSrc.includes('q-notice'));
+assert('28z. COMMON_QUESTION_BANK has salary question', candidateProfileSrc.includes('q-salary'));
+assert('28aa. COMMON_QUESTION_BANK has clearance question', candidateProfileSrc.includes('q-clearance'));
+assert('28ab. COMMON_QUESTION_BANK has tell-about-yourself question', candidateProfileSrc.includes('q-tell-about-yourself'));
+assert('28ac. COMMON_QUESTION_BANK has PM experience question', candidateProfileSrc.includes('q-pm-experience'));
+assert('28ad. COMMON_QUESTION_BANK has Agile experience question', candidateProfileSrc.includes('q-agile'));
+assert('28ae. COMMON_QUESTION_BANK has why-role question', candidateProfileSrc.includes('q-why-role'));
+assert('28af. COMMON_QUESTION_BANK has why-company question', candidateProfileSrc.includes('q-why-company'));
+assert('28ag. COMMON_QUESTION_BANK has 10+ questions', (() => {
+  const matches = candidateProfileSrc.match(/id: 'q-/g);
+  return matches && matches.length >= 10;
+})());
+
+// ── 28d. api.js exports for candidate profile ──────────────────────────────────
+const apiSrc28 = readFileSync28(join28(__dirname_v28, '../src/lib/api.js'), 'utf-8');
+assert('28ah. api.js re-exports loadCandidateProfile', apiSrc28.includes('loadCandidateProfile'));
+assert('28ai. api.js re-exports saveCandidateProfile', apiSrc28.includes('saveCandidateProfile'));
+assert('28aj. api.js re-exports loadQuestionBank', apiSrc28.includes('loadQuestionBank'));
+assert('28ak. api.js re-exports saveQuestionBankItem', apiSrc28.includes('saveQuestionBankItem'));
+
+// ── 28e. ApplyPack.jsx Apply Assistant tab ─────────────────────────────────────
+const applyPackSrc28 = readFileSync28(join28(__dirname_v28, '../src/pages/ApplyPack.jsx'), 'utf-8');
+
+assert('28al. ApplyPack.jsx imports loadCandidateProfile', applyPackSrc28.includes('loadCandidateProfile'));
+assert('28am. ApplyPack.jsx imports saveCandidateProfile', applyPackSrc28.includes('saveCandidateProfile'));
+assert('28an. ApplyPack.jsx imports loadQuestionBank', applyPackSrc28.includes('loadQuestionBank'));
+assert('28ao. ApplyPack.jsx imports saveQuestionBankItem', applyPackSrc28.includes('saveQuestionBankItem'));
+assert('28ap. ApplyPack.jsx has Apply Assistant tab', applyPackSrc28.includes('Apply Assistant') || applyPackSrc28.includes('apply_assistant') || applyPackSrc28.includes("'assistant'"));
+assert('28aq. ApplyPack.jsx has ApplyAssistantTab component', applyPackSrc28.includes('ApplyAssistantTab'));
+assert('28ar. ApplyPack.jsx has personal details section', applyPackSrc28.toLowerCase().includes('personal details'));
+assert('28as. ApplyPack.jsx has links section', applyPackSrc28.toLowerCase().includes('links'));
+assert('28at. ApplyPack.jsx has work eligibility section', applyPackSrc28.toLowerCase().includes('eligibility'));
+assert('28au. ApplyPack.jsx has common Q&A section', applyPackSrc28.includes('Common') && (applyPackSrc28.includes('Q&A') || applyPackSrc28.includes('Q&amp;A') || applyPackSrc28.includes('question')));
+assert('28av. ApplyPack.jsx has follow-up / application status section', applyPackSrc28.toLowerCase().includes('follow-up') || applyPackSrc28.toLowerCase().includes('application status'));
+assert('28aw. ApplyPack.jsx has copy buttons', applyPackSrc28.includes('CopyButton'));
+assert('28ax. ApplyPack.jsx still has Open Apply URL button (not removed)', applyPackSrc28.includes('Open Apply URL'));
+assert('28ay. ApplyPack.jsx still has Mark Applied button', applyPackSrc28.includes('Mark Applied'));
+assert('28az. ApplyPack.jsx default tab is apply assistant', applyPackSrc28.includes("useState('assistant')"));
+
+// ── 28f. No auto-submit in ApplyPack ──────────────────────────────────────────
+assert('28ba. ApplyPack.jsx does not introduce auto-submit',
+  !applyPackSrc28.includes('autoSubmit') && !applyPackSrc28.includes('auto_submit') &&
+  !applyPackSrc28.includes('submitApplication(') && !applyPackSrc28.includes('submit_application('));
+
+// ── 28g. No LinkedIn scraping ──────────────────────────────────────────────────
+assert('28bb. candidateProfile.js does not introduce LinkedIn scraping',
+  !candidateProfileSrc.includes('scrape') && !candidateProfileSrc.includes('linkedin.com/api'));
+
+// ── 28c. Apply Pack still functional — existing tabs intact ──────────────────
+assert('28bc. ApplyPack.jsx still has overview tab', applyPackSrc28.includes("'overview'"));
+assert('28bd. ApplyPack.jsx still has checklist tab', applyPackSrc28.includes("'checklist'"));
+assert('28be. ApplyPack.jsx still has copyready tab', applyPackSrc28.includes("'copyready'"));
+assert('28bf. ApplyPack.jsx still has outreach tab', applyPackSrc28.includes("'outreach'"));
+assert('28bg. ApplyPack.jsx still has resume tab', applyPackSrc28.includes("'resume'"));
+
+// ── 28h. Question bank runtime import test ────────────────────────────────────
+// Simulate loading and saving question bank in Node (without DOM)
+// We just test the pure module logic (no localStorage in Node)
+import { COMMON_QUESTION_BANK, DEFAULT_CANDIDATE_PROFILE, QUESTION_BANK_CATEGORIES } from '../src/lib/candidateProfile.js';
+
+assert('28bh. COMMON_QUESTION_BANK is a non-empty array', Array.isArray(COMMON_QUESTION_BANK) && COMMON_QUESTION_BANK.length > 0);
+assert('28bi. Each question has id, question, answer, category', COMMON_QUESTION_BANK.every(q => q.id && q.question && q.answer && q.category));
+assert('28bj. DEFAULT_CANDIDATE_PROFILE.full_name is set', typeof DEFAULT_CANDIDATE_PROFILE.full_name === 'string' && DEFAULT_CANDIDATE_PROFILE.full_name.length > 0);
+assert('28bk. DEFAULT_CANDIDATE_PROFILE.work_authorization is set', typeof DEFAULT_CANDIDATE_PROFILE.work_authorization === 'string');
+assert('28bl. DEFAULT_CANDIDATE_PROFILE.security_clearance is set', typeof DEFAULT_CANDIDATE_PROFILE.security_clearance === 'string');
+assert('28bm. DEFAULT_CANDIDATE_PROFILE has short_bio', typeof DEFAULT_CANDIDATE_PROFILE.short_bio === 'string' && DEFAULT_CANDIDATE_PROFILE.short_bio.length > 20);
+assert('28bn. QUESTION_BANK_CATEGORIES is array', Array.isArray(QUESTION_BANK_CATEGORIES) && QUESTION_BANK_CATEGORIES.length > 0);
+
+// ── 28i. Questions cover required categories ───────────────────────────────────
+const qCategories = new Set(COMMON_QUESTION_BANK.map(q => q.category));
+assert('28bo. Question bank has Eligibility category', qCategories.has('Eligibility'));
+assert('28bp. Question bank has About You category', qCategories.has('About You'));
+assert('28bq. Question bank has Experience category', qCategories.has('Experience'));
+assert('28br. Question bank has Motivation category', qCategories.has('Motivation'));
+assert('28bs. Question bank has Compensation category', qCategories.has('Compensation'));
+
+// ── 28j. Hierarchy + approval gate still intact ────────────────────────────────
+assert('28bt. Resume Vault hierarchy intact after Apply Assistant changes',
+  getSelectableResumes().filter(r => r.status === 'active').length === 2);
+assert('28bu. Apply Assistant does not break approval gate', (() => {
+  const notApproved = { approval_state: 'pending', status: 'discovered', fit_score: 92 };
+  return classifyReadinessGroup(notApproved) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

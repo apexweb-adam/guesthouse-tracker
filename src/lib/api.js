@@ -1088,6 +1088,10 @@ export async function fetchReadinessHistory(opportunityId = null, limit = 50) {
   }
 }
 
+// ─── Candidate Profile Vault ─────────────────────────────────────────────────
+
+export { loadCandidateProfile, saveCandidateProfile, resetCandidateProfile, loadQuestionBank, saveQuestionBankItem, resetQuestionBank } from './candidateProfile.js';
+
 // ─── Resume Vault ─────────────────────────────────────────────────────────────
 
 const RESUME_VAULT_STORAGE_KEY = 'job-search-os-resume-vault-v1';
