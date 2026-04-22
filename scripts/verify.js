@@ -2441,15 +2441,20 @@ assert('27k. No vault record has undefined lane',
 const activeResumes = getActiveResumes();
 const fallbackResumes = getFallbackResumes();
 const archivedResumes = getArchivedResumes();
-assert('27l. Exactly 3 active resumes (TPM, IT PM, Agile/Delivery)', activeResumes.length === 3);
-assert('27m. Exactly 4 fallback resumes (Senior PM, Delivery DM, Program, Ops)', fallbackResumes.length === 4);
-assert('27n. Exactly 2 archived resumes (Generic PM v1+v2)', archivedResumes.length === 2);
+assert('27l. Exactly 2 active resumes (IT PM + TPM only)', activeResumes.length === 2);
+assert('27m. Exactly 1 fallback resume (Program Manager only)', fallbackResumes.length === 1);
+assert('27n. Exactly 6 archived resumes', archivedResumes.length === 6);
 assert('27o. Active resumes are all canonical', activeResumes.every(r => r.is_canonical));
-assert('27p. All archived resumes are pm_generic lane', archivedResumes.every(r => r.lane === VAULT_LANES.PM_GENERIC));
+assert('27p. IT PM resume (rv-it-pm-01) is active', activeResumes.some(r => r.id === 'rv-it-pm-01'));
+assert('27pa. TPM resume (rv-tpm-01) is active', activeResumes.some(r => r.id === 'rv-tpm-01'));
+assert('27pb. Program Manager (rv-program-01) is the only fallback', fallbackResumes.length === 1 && fallbackResumes[0].id === 'rv-program-01');
+assert('27pc. Ops resume (rv-ops-01) is archived', archivedResumes.some(r => r.id === 'rv-ops-01'));
+assert('27pd. Agile PM (rv-delivery-agile-01) is archived', archivedResumes.some(r => r.id === 'rv-delivery-agile-01'));
+assert('27pe. Senior PM (rv-tpm-senior-01) is archived', archivedResumes.some(r => r.id === 'rv-tpm-senior-01'));
 
 // ── 27d. Filter helpers ────────────────────────────────────────────────────────
 const selectable = getSelectableResumes();
-assert('27q. getSelectableResumes excludes archived', selectable.length === 7);
+assert('27q. getSelectableResumes excludes archived', selectable.length === 3);
 assert('27r. getSelectableResumes includes active + fallback only',
   selectable.every(r => r.status !== VAULT_STATUS.ARCHIVED));
 assert('27s. getCanonicalResumes returns only active + canonical', getCanonicalResumes().every(r => r.is_canonical && r.status === VAULT_STATUS.ACTIVE));
@@ -2468,8 +2473,8 @@ assert('27y. TPM recommendation includes reason string',
   typeof tpmRec27.reason === 'string' && tpmRec27.reason.length > 10);
 
 const deliveryRec27 = recommendVaultResume(LANES.DELIVERY_MANAGER, 78, ['agile', 'scrum', 'sprint']);
-assert('27z. Delivery lane → recommends Delivery vault resume',
-  deliveryRec27.resume?.lane === VAULT_LANES.DELIVERY || deliveryRec27.resume?.lane === VAULT_LANES.IT_PM);
+assert('27z. Delivery lane → recommends IT PM or TPM (delivery resumes archived)',
+  deliveryRec27.resume?.lane === VAULT_LANES.IT_PM || deliveryRec27.resume?.lane === VAULT_LANES.TPM);
 assert('27aa. Delivery recommendation is not archived',
   deliveryRec27.resume?.status !== VAULT_STATUS.ARCHIVED);
 
@@ -2515,7 +2520,7 @@ const gateLowFit = getVaultQualityGates({ ...tpmOpp27, fit_score: 25 }, 'rv-tpm-
 assert('27al. Gate: low fit score → advisory warning', gateLowFit.passed && gateLowFit.warnings.some(w => w.includes('fit score') || w.includes('Low fit')));
 
 // Fallback resume → warning
-const gateFallback = getVaultQualityGates(tpmOpp27, 'rv-tpm-senior-01');
+const gateFallback = getVaultQualityGates(tpmOpp27, 'rv-program-01');
 assert('27am. Gate: fallback resume → warning (not blocker)', gateFallback.passed && gateFallback.warnings.length > 0);
 
 // ── 27g. Application log ───────────────────────────────────────────────────────
@@ -2526,7 +2531,7 @@ assert('27ao. createApplicationLog has resume_lane and version_label',
 assert('27ap. createApplicationLog was_system_recommendation=true when not overridden',
   appLog?.was_system_recommendation === true && appLog?.override_reason === null);
 
-const appLogOverride = createApplicationLog('rv-tpm-senior-01', INITIAL_VAULT, true, 'Role emphasised seniority not tech');
+const appLogOverride = createApplicationLog('rv-program-01', INITIAL_VAULT, true, 'Role required governance PMO emphasis');
 assert('27aq. createApplicationLog tracks override reason when overridden',
   appLogOverride?.was_system_recommendation === false && appLogOverride?.override_reason?.length > 0);
 

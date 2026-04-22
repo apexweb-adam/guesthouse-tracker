@@ -76,11 +76,17 @@ const VAULT_SEED_DATE = '2026-04-22T00:00:00.000Z';
 /**
  * The 9 registered resumes for Sample Candidate.
  *
- * Status decisions:
- *   - 3 active canonical: TPM, IT PM, Agile/Delivery — the daily working set
- *   - 4 fallback: Senior PM, Delivery Manager, Program Manager, Ops Manager
- *       (require role-specific justification before use)
- *   - 2 archived: Generic PM v1 + v2 — superseded, do not use
+ * Status strategy (revised):
+ *   - 2 active canonical: TPM + IT PM — the daily working set
+ *   - 1 fallback selective: Program Manager — governance-heavy roles only
+ *   - 6 archived: Senior PM, Agile PM, Delivery DM, Ops Manager, Generic PM v1+v2
+ *       (archived resumes are NEVER auto-recommended or default-selectable)
+ *
+ * Candidate hierarchy:
+ *   Primary  : Technical Project Manager
+ *   Secondary: IT / Delivery Project Manager
+ *   Selective: Program Manager (governance signals required)
+ *   Not active: Operations Manager, Agile PM, Senior PM, Delivery DM, generic PM
  *
  * Domain tags drive overlap scoring in the recommendation engine.
  */
@@ -119,16 +125,16 @@ export const INITIAL_VAULT = [
     is_canonical: true,
   },
 
-  // ── 3. Senior Project Manager — FALLBACK (TPM lane variant) ───────────────
+  // ── 3. Senior Project Manager — ARCHIVED (superseded by TPM primary) ────────
   {
     id: 'rv-tpm-senior-01',
-    display_name: 'Senior Project Manager — Fallback',
+    display_name: 'Senior Project Manager — Archived',
     original_file_name: 'sample_candidate_Senior_Project_Manager.pdf',
     lane: VAULT_LANES.TPM,
-    status: VAULT_STATUS.FALLBACK,
+    status: VAULT_STATUS.ARCHIVED,
     domain_tags: ['senior', 'sdlc', 'stakeholder', 'governance', 'cross-functional'],
     quality_score: 82,
-    notes: 'Fallback for senior general PM roles where "Technical" is not in the title but seniority is emphasised. Prefer rv-tpm-01 for explicit TPM roles.',
+    notes: 'Archived. Superseded by the primary TPM resume. Do not use for new applications.',
     uploaded_at: VAULT_SEED_DATE,
     updated_at: VAULT_SEED_DATE,
     version_label: 'v1.8',
@@ -136,33 +142,33 @@ export const INITIAL_VAULT = [
     is_canonical: false,
   },
 
-  // ── 4. Agile Project Manager — ACTIVE CANONICAL (Delivery lane) ───────────
+  // ── 4. Agile Project Manager — ARCHIVED (not in active daily set) ─────────
   {
     id: 'rv-delivery-agile-01',
-    display_name: 'Agile / Delivery Manager — Primary',
+    display_name: 'Agile / Delivery Manager — Archived',
     original_file_name: 'sample_candidate_Agile_Project_Manager.pdf',
     lane: VAULT_LANES.DELIVERY,
-    status: VAULT_STATUS.ACTIVE,
+    status: VAULT_STATUS.ARCHIVED,
     domain_tags: ['agile', 'scrum', 'safe', 'sprint', 'velocity', 'delivery-cadence', 'release-management'],
     quality_score: 89,
-    notes: 'Primary for Agile PM and Delivery Manager roles. Emphasises sprint ownership, agile delivery ceremonies, and team velocity.',
+    notes: 'Archived. IT PM and TPM resumes handle Agile/Delivery positioning. Retained for reference.',
     uploaded_at: VAULT_SEED_DATE,
     updated_at: VAULT_SEED_DATE,
     version_label: 'v2.0',
     duplicate_group: 'delivery',
-    is_canonical: true,
+    is_canonical: false,
   },
 
-  // ── 5. Delivery Manager — FALLBACK (Delivery lane) ────────────────────────
+  // ── 5. Delivery Manager — ARCHIVED (superseded by IT PM primary) ──────────
   {
     id: 'rv-delivery-dm-01',
-    display_name: 'Delivery Manager — Fallback',
+    display_name: 'Delivery Manager — Archived',
     original_file_name: 'sample_candidate_Delivery_Manager.pdf',
     lane: VAULT_LANES.DELIVERY,
-    status: VAULT_STATUS.FALLBACK,
+    status: VAULT_STATUS.ARCHIVED,
     domain_tags: ['delivery', 'release-management', 'agile', 'team-outcomes', 'stakeholder'],
     quality_score: 80,
-    notes: 'Fallback for Delivery Manager roles when agile ceremony emphasis is less critical. Prefer rv-delivery-agile-01 for Agile/SAFe-heavy roles.',
+    notes: 'Archived. Superseded by IT PM primary. Do not use for new applications.',
     uploaded_at: VAULT_SEED_DATE,
     updated_at: VAULT_SEED_DATE,
     version_label: 'v1.5',
@@ -187,21 +193,21 @@ export const INITIAL_VAULT = [
     is_canonical: true,
   },
 
-  // ── 7. Operations Manager — FALLBACK CONDITIONAL ──────────────────────────
+  // ── 7. Operations Manager — ARCHIVED (not in active hierarchy) ───────────
   {
     id: 'rv-ops-01',
-    display_name: 'Operations Manager — Conditional',
+    display_name: 'Operations Manager — Archived',
     original_file_name: 'sample_candidate_Operations_Manager.pdf',
     lane: VAULT_LANES.OPS,
-    status: VAULT_STATUS.FALLBACK,
+    status: VAULT_STATUS.ARCHIVED,
     domain_tags: ['itsm', 'itil', 'readiness', 'compliance', 'technical-operations', 'service-management', 'incident-management'],
     quality_score: 74,
-    notes: 'Use ONLY for technical operations roles with ITSM/readiness/compliance scope. Not for generic ops management. Requires technical qualifier.',
+    notes: 'Archived. Operations is outside the primary candidate hierarchy (TPM → IT PM → Program Manager). Must not be auto-recommended.',
     uploaded_at: VAULT_SEED_DATE,
     updated_at: VAULT_SEED_DATE,
     version_label: 'v1.4',
     duplicate_group: 'ops',
-    is_canonical: true,
+    is_canonical: false,
   },
 
   // ── 8. Generic PM v1 — ARCHIVED ───────────────────────────────────────────
