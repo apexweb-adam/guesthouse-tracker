@@ -15,6 +15,7 @@ import Sources from './pages/Sources.jsx';
 import Import from './pages/Import.jsx';
 import Reports from './pages/Reports.jsx';
 import QuickAdd from './pages/QuickAdd.jsx';
+import ResumeVault from './pages/ResumeVault.jsx';
 import './App.css';
 
 // ── Error Boundary ─────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ const router = createBrowserRouter([
       { path: 'import', element: <Import /> },
       { path: 'quick-add', element: <QuickAdd /> },
       { path: 'reports', element: <Reports /> },
+      { path: 'resume-vault', element: <ResumeVault /> },
     ],
   },
 ]);

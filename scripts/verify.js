@@ -2376,5 +2376,293 @@ assert('26o. No LinkedIn scraping introduced by hardening changes',
   !discoverSrc26.toLowerCase().includes('linkedin.com/jobs') &&
   !approveSrc26.toLowerCase().includes('linkedin.com/jobs'));
 
+// ─── Section 27: Resume Vault ─────────────────────────────────────────────────
+
+import { readFileSync as readFileSync27, existsSync as existsSync27 } from 'fs';
+import { join as join27, dirname as dirname27 } from 'path';
+import { fileURLToPath as fileURLToPath27 } from 'url';
+
+import {
+  INITIAL_VAULT,
+  VAULT_STATUS,
+  VAULT_LANES,
+  VAULT_LANE_LABELS,
+  VAULT_STATUS_LABELS,
+  VAULT_LANE_TO_SCORING_LANE,
+  getActiveResumes,
+  getFallbackResumes,
+  getArchivedResumes,
+  getSelectableResumes,
+  getCanonicalResumes,
+  getResumeById,
+  recommendVaultResume,
+  getVaultQualityGates,
+  createApplicationLog,
+  computeVaultAnalytics,
+  updateVaultRecord,
+  resetVaultToDefaults,
+} from '../netlify/functions/_shared/resumeVault.js';
+
+const __dirname_v27 = dirname27(fileURLToPath27(import.meta.url));
+
+console.log('\n== Section 27: Resume Vault ==');
+
+// ── 27a. Module structure ───────────────────────────────────────────────────────
+assert('27a. VAULT_STATUS constants exist (active/fallback/archived)',
+  VAULT_STATUS.ACTIVE === 'active' && VAULT_STATUS.FALLBACK === 'fallback' && VAULT_STATUS.ARCHIVED === 'archived');
+assert('27b. VAULT_LANES constants exist (tpm/it_pm/delivery/program/ops/pm_generic)',
+  VAULT_LANES.TPM === 'tpm' && VAULT_LANES.IT_PM === 'it_pm' && VAULT_LANES.DELIVERY === 'delivery' &&
+  VAULT_LANES.PROGRAM === 'program' && VAULT_LANES.OPS === 'ops' && VAULT_LANES.PM_GENERIC === 'pm_generic');
+assert('27c. VAULT_LANE_LABELS has entries for all vault lanes',
+  Object.keys(VAULT_LANE_LABELS).length >= 6);
+assert('27d. VAULT_STATUS_LABELS has entries for all vault statuses',
+  Object.keys(VAULT_STATUS_LABELS).length === 3);
+assert('27e. VAULT_LANE_TO_SCORING_LANE maps tpm → LANES.TPM',
+  VAULT_LANE_TO_SCORING_LANE[VAULT_LANES.TPM] === LANES.TPM);
+assert('27f. VAULT_LANE_TO_SCORING_LANE maps it_pm → LANES.TPM (IT PM treated as TPM for scoring)',
+  VAULT_LANE_TO_SCORING_LANE[VAULT_LANES.IT_PM] === LANES.TPM);
+assert('27g. VAULT_LANE_TO_SCORING_LANE maps delivery → LANES.DELIVERY_MANAGER',
+  VAULT_LANE_TO_SCORING_LANE[VAULT_LANES.DELIVERY] === LANES.DELIVERY_MANAGER);
+
+// ── 27b. INITIAL_VAULT shape ───────────────────────────────────────────────────
+assert('27h. INITIAL_VAULT has exactly 9 resumes', INITIAL_VAULT.length === 9);
+assert('27i. Every vault record has required fields',
+  INITIAL_VAULT.every(r =>
+    r.id && r.display_name && r.original_file_name && r.lane && r.status &&
+    Array.isArray(r.domain_tags) && typeof r.quality_score === 'number' &&
+    r.version_label !== undefined && typeof r.is_canonical === 'boolean'
+  ));
+assert('27j. No vault record has undefined status',
+  INITIAL_VAULT.every(r => [VAULT_STATUS.ACTIVE, VAULT_STATUS.FALLBACK, VAULT_STATUS.ARCHIVED].includes(r.status)));
+assert('27k. No vault record has undefined lane',
+  INITIAL_VAULT.every(r => Object.values(VAULT_LANES).includes(r.lane)));
+
+// ── 27c. Active / fallback / archived counts ───────────────────────────────────
+const activeResumes = getActiveResumes();
+const fallbackResumes = getFallbackResumes();
+const archivedResumes = getArchivedResumes();
+assert('27l. Exactly 3 active resumes (TPM, IT PM, Agile/Delivery)', activeResumes.length === 3);
+assert('27m. Exactly 4 fallback resumes (Senior PM, Delivery DM, Program, Ops)', fallbackResumes.length === 4);
+assert('27n. Exactly 2 archived resumes (Generic PM v1+v2)', archivedResumes.length === 2);
+assert('27o. Active resumes are all canonical', activeResumes.every(r => r.is_canonical));
+assert('27p. All archived resumes are pm_generic lane', archivedResumes.every(r => r.lane === VAULT_LANES.PM_GENERIC));
+
+// ── 27d. Filter helpers ────────────────────────────────────────────────────────
+const selectable = getSelectableResumes();
+assert('27q. getSelectableResumes excludes archived', selectable.length === 7);
+assert('27r. getSelectableResumes includes active + fallback only',
+  selectable.every(r => r.status !== VAULT_STATUS.ARCHIVED));
+assert('27s. getCanonicalResumes returns only active + canonical', getCanonicalResumes().every(r => r.is_canonical && r.status === VAULT_STATUS.ACTIVE));
+assert('27t. getResumeById returns correct record', getResumeById('rv-tpm-01')?.id === 'rv-tpm-01');
+assert('27u. getResumeById returns null for unknown id', getResumeById('rv-nonexistent') === null);
+
+// ── 27e. Recommendation engine ─────────────────────────────────────────────────
+const tpmRec27 = recommendVaultResume(LANES.TPM, 85, ['technical project manager', 'sdlc', 'agile']);
+assert('27v. TPM lane → recommends TPM or IT PM vault resume',
+  tpmRec27.resume?.lane === VAULT_LANES.TPM || tpmRec27.resume?.lane === VAULT_LANES.IT_PM);
+assert('27w. TPM recommendation has high confidence for strong fit',
+  tpmRec27.confidence === 'high' || tpmRec27.confidence === 'medium');
+assert('27x. TPM recommendation is not archived',
+  tpmRec27.resume?.status !== VAULT_STATUS.ARCHIVED);
+assert('27y. TPM recommendation includes reason string',
+  typeof tpmRec27.reason === 'string' && tpmRec27.reason.length > 10);
+
+const deliveryRec27 = recommendVaultResume(LANES.DELIVERY_MANAGER, 78, ['agile', 'scrum', 'sprint']);
+assert('27z. Delivery lane → recommends Delivery vault resume',
+  deliveryRec27.resume?.lane === VAULT_LANES.DELIVERY || deliveryRec27.resume?.lane === VAULT_LANES.IT_PM);
+assert('27aa. Delivery recommendation is not archived',
+  deliveryRec27.resume?.status !== VAULT_STATUS.ARCHIVED);
+
+const opsRec27 = recommendVaultResume(LANES.OPS_MANAGER, 65, ['itsm', 'itil', 'service management']);
+assert('27ab. Ops lane → recommends Ops or IT PM vault resume (not generic archived)',
+  opsRec27.resume?.status !== VAULT_STATUS.ARCHIVED);
+assert('27ac. Ops recommendation is not TPM (not leaking into default TPM recommendation)',
+  opsRec27.resume?.lane !== VAULT_LANES.TPM || opsRec27.confidence !== 'high');
+
+const progRec27 = recommendVaultResume(LANES.PROGRAM_MANAGER, 70, ['pmo', 'portfolio', 'governance']);
+assert('27ad. Program Manager lane → recommends Program or TPM vault resume',
+  progRec27.resume?.lane === VAULT_LANES.PROGRAM || progRec27.resume?.lane === VAULT_LANES.TPM);
+assert('27ae. Recommendation never returns null when selectable resumes exist',
+  tpmRec27.resume !== null && deliveryRec27.resume !== null);
+
+// Empty vault falls back gracefully
+const emptyRec27 = recommendVaultResume(LANES.TPM, 80, [], []);
+assert('27af. Empty vault recommendation has confidence=low and null resume',
+  emptyRec27.resume === null && emptyRec27.confidence === 'low');
+
+// ── 27f. Quality gates ─────────────────────────────────────────────────────────
+const tpmOpp27 = { id: 'opp-27-tpm', lane: LANES.TPM, fit_score: 85, approval_state: 'approved' };
+
+// No resume selected → warning
+const gateNoResume = getVaultQualityGates(tpmOpp27, null);
+assert('27ag. Gate: no resume selected → warning (not blocker)', gateNoResume.passed && gateNoResume.warnings.length > 0);
+
+// Archived resume selected → blocker
+const gateArchived = getVaultQualityGates(tpmOpp27, 'rv-generic-pm-v1');
+assert('27ah. Gate: archived resume → blocker', !gateArchived.passed && gateArchived.blockers.length > 0);
+assert('27ai. Gate: archived blocker message mentions archived', gateArchived.blockers[0].toLowerCase().includes('archived'));
+
+// Ops resume for TPM role → blocker
+const gateOpsMismatch = getVaultQualityGates(tpmOpp27, 'rv-ops-01');
+assert('27aj. Gate: ops resume for TPM role → blocker', !gateOpsMismatch.passed && gateOpsMismatch.blockers.length > 0);
+
+// Good TPM resume for TPM role → passes
+const gateTpmOk = getVaultQualityGates(tpmOpp27, 'rv-tpm-01');
+assert('27ak. Gate: active TPM resume for TPM role → passed', gateTpmOk.passed);
+
+// Low fit score → warning
+const gateLowFit = getVaultQualityGates({ ...tpmOpp27, fit_score: 25 }, 'rv-tpm-01');
+assert('27al. Gate: low fit score → advisory warning', gateLowFit.passed && gateLowFit.warnings.some(w => w.includes('fit score') || w.includes('Low fit')));
+
+// Fallback resume → warning
+const gateFallback = getVaultQualityGates(tpmOpp27, 'rv-tpm-senior-01');
+assert('27am. Gate: fallback resume → warning (not blocker)', gateFallback.passed && gateFallback.warnings.length > 0);
+
+// ── 27g. Application log ───────────────────────────────────────────────────────
+const appLog = createApplicationLog('rv-tpm-01');
+assert('27an. createApplicationLog returns record with resume_id', appLog?.resume_id === 'rv-tpm-01');
+assert('27ao. createApplicationLog has resume_lane and version_label',
+  appLog?.resume_lane === VAULT_LANES.TPM && typeof appLog.resume_version_label === 'string');
+assert('27ap. createApplicationLog was_system_recommendation=true when not overridden',
+  appLog?.was_system_recommendation === true && appLog?.override_reason === null);
+
+const appLogOverride = createApplicationLog('rv-tpm-senior-01', INITIAL_VAULT, true, 'Role emphasised seniority not tech');
+assert('27aq. createApplicationLog tracks override reason when overridden',
+  appLogOverride?.was_system_recommendation === false && appLogOverride?.override_reason?.length > 0);
+
+const nullLog = createApplicationLog('rv-does-not-exist');
+assert('27ar. createApplicationLog returns null for unknown resume id', nullLog === null);
+
+// ── 27h. updateVaultRecord ─────────────────────────────────────────────────────
+const updatedVault = updateVaultRecord(INITIAL_VAULT, 'rv-tpm-01', { display_name: 'TPM Updated', notes: 'Test note' });
+const updatedRecord = updatedVault.find(r => r.id === 'rv-tpm-01');
+assert('27as. updateVaultRecord updates display_name', updatedRecord?.display_name === 'TPM Updated');
+assert('27at. updateVaultRecord updates notes', updatedRecord?.notes === 'Test note');
+assert('27au. updateVaultRecord does not affect other records', updatedVault.filter(r => r.id !== 'rv-tpm-01').every(r => r.display_name !== 'TPM Updated'));
+assert('27av. updateVaultRecord throws on invalid status', (() => {
+  try { updateVaultRecord(INITIAL_VAULT, 'rv-tpm-01', { status: 'invalid_status' }); return false; } catch { return true; }
+})());
+
+// ── 27i. resetVaultToDefaults ──────────────────────────────────────────────────
+const resetVault = resetVaultToDefaults();
+assert('27aw. resetVaultToDefaults returns 9 records', resetVault.length === 9);
+assert('27ax. resetVaultToDefaults returns fresh copy (not reference equality)',
+  resetVault !== INITIAL_VAULT);
+assert('27ay. resetVaultToDefaults restores original TPM display_name',
+  resetVault.find(r => r.id === 'rv-tpm-01')?.display_name === INITIAL_VAULT.find(r => r.id === 'rv-tpm-01')?.display_name);
+
+// ── 27j. computeVaultAnalytics ─────────────────────────────────────────────────
+const mockOpps27 = [
+  { id: 'opp-a', status: 'applied', applied_resume_id: 'rv-tpm-01' },
+  { id: 'opp-b', status: 'interviewing', applied_resume_id: 'rv-tpm-01' },
+  { id: 'opp-c', status: 'applied', applied_resume_id: 'rv-it-pm-01' },
+  { id: 'opp-d', status: 'rejected', applied_resume_id: 'rv-tpm-01' },
+];
+const analytics27 = computeVaultAnalytics(mockOpps27);
+const tpmStats = analytics27.find(s => s.resume_id === 'rv-tpm-01');
+assert('27az. computeVaultAnalytics returns stats for all 9 resumes', analytics27.length === 9);
+assert('27ba. computeVaultAnalytics counts applications correctly for rv-tpm-01', tpmStats?.applications_count === 3);
+assert('27bb. computeVaultAnalytics counts interviews correctly for rv-tpm-01', tpmStats?.interviews_count === 1);
+assert('27bc. computeVaultAnalytics computes interview_rate for rv-tpm-01', typeof tpmStats?.interview_rate === 'number');
+const itPmStats = analytics27.find(s => s.resume_id === 'rv-it-pm-01');
+assert('27bd. computeVaultAnalytics tracks separate stats for rv-it-pm-01', itPmStats?.applications_count === 1);
+const archivedStats = analytics27.find(s => s.resume_id === 'rv-generic-pm-v1');
+assert('27be. computeVaultAnalytics zero-initialises unused resumes', archivedStats?.applications_count === 0 && archivedStats?.response_rate === null);
+
+// ── 27k. File existence checks ─────────────────────────────────────────────────
+assert('27bf. netlify/functions/_shared/resumeVault.js exists',
+  existsSync27(join27(__dirname_v27, '../netlify/functions/_shared/resumeVault.js')));
+assert('27bg. netlify/functions/resume-vault.js endpoint exists',
+  existsSync27(join27(__dirname_v27, '../netlify/functions/resume-vault.js')));
+assert('27bh. src/pages/ResumeVault.jsx exists',
+  existsSync27(join27(__dirname_v27, '../src/pages/ResumeVault.jsx')));
+assert('27bi. supabase/migrations/005_resume_vault.sql exists',
+  existsSync27(join27(__dirname_v27, '../supabase/migrations/005_resume_vault.sql')));
+
+// ── 27l. UI / API integration checks ──────────────────────────────────────────
+const apiSrc27 = readFileSync27(join27(__dirname_v27, '../src/lib/api.js'), 'utf-8');
+assert('27bj. api.js exports fetchResumeVault', apiSrc27.includes('export async function fetchResumeVault'));
+assert('27bk. api.js exports updateResumeVaultRecord', apiSrc27.includes('export async function updateResumeVaultRecord'));
+assert('27bl. api.js exports resetResumeVault', apiSrc27.includes('export async function resetResumeVault'));
+assert('27bm. api.js exports getVaultRecommendation', apiSrc27.includes('export function getVaultRecommendation'));
+assert('27bn. api.js exports checkVaultQualityGates', apiSrc27.includes('export function checkVaultQualityGates'));
+assert('27bo. api.js fetchResumeVault uses isDemoMode', apiSrc27.includes('isDemoMode') && apiSrc27.includes('fetchResumeVault'));
+assert('27bp. api.js uses RESUME_VAULT_STORAGE_KEY for localStorage', apiSrc27.includes('RESUME_VAULT_STORAGE_KEY'));
+
+const appSrc27 = readFileSync27(join27(__dirname_v27, '../src/App.jsx'), 'utf-8');
+assert('27bq. App.jsx has /resume-vault route', appSrc27.includes("path: 'resume-vault'") || appSrc27.includes("path=\"resume-vault\""));
+assert('27br. App.jsx imports ResumeVault', appSrc27.includes('import ResumeVault'));
+
+const sidebarSrc27 = readFileSync27(join27(__dirname_v27, '../src/components/Sidebar.jsx'), 'utf-8');
+assert('27bs. Sidebar.jsx has Resume Vault nav entry', sidebarSrc27.includes('/resume-vault'));
+assert('27bt. Sidebar.jsx Resume Vault has correct label', sidebarSrc27.includes('Resume Vault'));
+
+const resumeVaultJsx27 = readFileSync27(join27(__dirname_v27, '../src/pages/ResumeVault.jsx'), 'utf-8');
+assert('27bu. ResumeVault.jsx imports fetchResumeVault', resumeVaultJsx27.includes('fetchResumeVault'));
+assert('27bv. ResumeVault.jsx imports updateResumeVaultRecord', resumeVaultJsx27.includes('updateResumeVaultRecord'));
+assert('27bw. ResumeVault.jsx imports resetResumeVault', resumeVaultJsx27.includes('resetResumeVault'));
+assert('27bx. ResumeVault.jsx shows active resumes section', resumeVaultJsx27.toLowerCase().includes('active resume'));
+assert('27by. ResumeVault.jsx shows archived resumes section', resumeVaultJsx27.toLowerCase().includes('archived'));
+assert('27bz. ResumeVault.jsx has archive action', resumeVaultJsx27.toLowerCase().includes('archive'));
+assert('27ca. ResumeVault.jsx has edit modal', resumeVaultJsx27.includes('EditModal') || resumeVaultJsx27.includes('editTarget'));
+assert('27cb. ResumeVault.jsx shows quality score', resumeVaultJsx27.includes('quality_score'));
+
+// ── 27m. resume-vault.js endpoint structure ────────────────────────────────────
+const resumeVaultFn27 = readFileSync27(join27(__dirname_v27, '../netlify/functions/resume-vault.js'), 'utf-8');
+assert('27cc. resume-vault.js handles GET', resumeVaultFn27.includes("'GET'") || resumeVaultFn27.includes('"GET"'));
+assert('27cd. resume-vault.js handles POST', resumeVaultFn27.includes("'POST'") || resumeVaultFn27.includes('"POST"'));
+assert('27ce. resume-vault.js handles OPTIONS (CORS)', resumeVaultFn27.includes('OPTIONS'));
+assert('27cf. resume-vault.js action=update', resumeVaultFn27.includes("action === 'update'") || resumeVaultFn27.includes('action=update'));
+assert('27cg. resume-vault.js action=reset', resumeVaultFn27.includes("action === 'reset'") || resumeVaultFn27.includes('action=reset'));
+assert('27ch. resume-vault.js imports from resumeVault.js', resumeVaultFn27.includes('resumeVault'));
+
+// ── 27n. db.js vault helpers ───────────────────────────────────────────────────
+const dbSrc27 = readFileSync27(join27(__dirname_v27, '../netlify/functions/_shared/db.js'), 'utf-8');
+assert('27ci. db.js exports getResumeVault', dbSrc27.includes('export async function getResumeVault'));
+assert('27cj. db.js exports upsertResumeVault', dbSrc27.includes('export async function upsertResumeVault'));
+
+// ── 27o. Apply Pack vault integration ──────────────────────────────────────────
+const applyPackSrc27 = readFileSync27(join27(__dirname_v27, '../netlify/functions/_shared/applyPack.js'), 'utf-8');
+assert('27ck. applyPack.js imports recommendVaultResume', applyPackSrc27.includes('recommendVaultResume'));
+assert('27cl. applyPack.js imports getVaultQualityGates', applyPackSrc27.includes('getVaultQualityGates'));
+assert('27cm. generateApplyPack includes vault_recommended_resume_id', applyPackSrc27.includes('vault_recommended_resume_id'));
+assert('27cn. generateApplyPack includes quality_gate_warnings', applyPackSrc27.includes('quality_gate_warnings'));
+assert('27co. generateApplyPack includes resume_id_used tracking field', applyPackSrc27.includes('resume_id_used'));
+assert('27cp. APPLY_PACK_SYSTEM_VERSION updated to 5.0.0', applyPackSrc27.includes("APPLY_PACK_SYSTEM_VERSION = '5.0.0'"));
+
+// ── 27p. vault-augmented generateApplyPack runtime test ───────────────────────
+const tpmOppWithVault = {
+  id: 'opp-27-vault-test', title: 'Technical Project Manager', company: 'VaultCo',
+  lane: LANES.TPM, fit_score: 88, fit_signals: ['sdlc', 'agile', 'stakeholder'],
+  recommended: true, approval_state: 'approved', status: 'approved',
+  application_url: 'https://vaultco.com/apply/tpm',
+};
+const { generateApplyPack: generateApplyPack27 } = await import('../netlify/functions/_shared/applyPack.js');
+const pack27 = generateApplyPack27(tpmOppWithVault, INITIAL_VAULT);
+assert('27cq. Pack has vault_recommended_resume_id', typeof pack27.vault_recommended_resume_id === 'string');
+assert('27cr. Pack vault recommendation points to a non-archived resume', (() => {
+  const r = INITIAL_VAULT.find(x => x.id === pack27.vault_recommended_resume_id);
+  return r && r.status !== VAULT_STATUS.ARCHIVED;
+})());
+assert('27cs. Pack vault recommendation has reason string', typeof pack27.vault_recommendation_reason === 'string' && pack27.vault_recommendation_reason.length > 5);
+assert('27ct. Pack quality_gate_warnings is an array', Array.isArray(pack27.quality_gate_warnings));
+assert('27cu. Pack quality_gate_blockers is an array', Array.isArray(pack27.quality_gate_blockers));
+assert('27cv. Pack legacy recommended_resume_version still present (backward compat)', typeof pack27.recommended_resume_version === 'string');
+assert('27cw. generateApplyPack still throws if not approved (vault does not bypass gate)', (() => {
+  try { generateApplyPack27({ ...tpmOppWithVault, approval_state: 'pending' }, INITIAL_VAULT); return false; } catch { return true; }
+})());
+
+// ── 27q. Hierarchy guards ──────────────────────────────────────────────────────
+assert('27cx. Section 27: TPM hierarchy intact — TPM scores as TPM lane',
+  scoreOpportunity('Technical Project Manager', 'Lead SDLC delivery. Agile, Jira, stakeholder management. PMP.').lane === LANES.TPM);
+assert('27cy. Section 27: Ops resume does not default-recommend for TPM roles',
+  recommendVaultResume(LANES.TPM, 85, ['sdlc', 'agile']).resume?.lane !== VAULT_LANES.OPS);
+assert('27cz. Section 27: Archived resumes excluded from selectable list',
+  getSelectableResumes().every(r => r.status !== VAULT_STATUS.ARCHIVED));
+assert('27da. Section 27: Approval gate still mandatory after vault changes', (() => {
+  const pending = { approval_state: 'pending', status: 'discovered', fit_score: 95, pack_readiness_score: 98, application_url: 'https://x.com/apply' };
+  return classifyReadinessGroup(pending) !== READINESS_GROUPS.READY_TO_APPLY;
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

@@ -8,6 +8,7 @@ const NAV = [
   { to: '/queue', label: 'Approval Queue', icon: '✅', badge: 'queue' },
   { to: '/quick-add', label: 'Quick Add Job', icon: '⚡' },
   { to: '/tracker', label: 'Tracker', icon: '📋' },
+  { to: '/resume-vault', label: 'Resume Vault', icon: '📁' },
   { to: '/sources', label: 'Sources', icon: '📡' },
   { to: '/import', label: 'Import', icon: '📥' },
   { to: '/reports', label: 'Reports', icon: '📈' },

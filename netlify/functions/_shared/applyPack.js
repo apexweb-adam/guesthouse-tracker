@@ -8,7 +8,7 @@
  * Single source of truth rules:
  * - Scoring/classification: scoring.js
  * - Prep/outreach/proof-points: prep.js (imported here)
- * - Resume recommendation: scoring.js (recommendResumeVersion)
+ * - Resume recommendation: scoring.js (recommendResumeVersion) + resumeVault.js
  * - Apply Pack assembly: this file
  *
  * Do NOT re-implement this logic in n8n, Zapier, the frontend, or elsewhere.
@@ -22,10 +22,15 @@ import {
   recommendResumeVersion,
 } from './scoring.js';
 import { generatePrepPackage } from './prep.js';
+import {
+  INITIAL_VAULT,
+  recommendVaultResume,
+  getVaultQualityGates,
+} from './resumeVault.js';
 
 // ─── System version stamp ─────────────────────────────────────────────────────
 
-export const APPLY_PACK_SYSTEM_VERSION = '4.0.0';
+export const APPLY_PACK_SYSTEM_VERSION = '5.0.0';
 
 // ─── Checklist Generator ─────────────────────────────────────────────────────
 
@@ -287,17 +292,25 @@ export function computePackReadinessScore(opp, pack) {
 /**
  * Generate a full Apply Pack for an approved opportunity.
  * @param {object} opp - the opportunity record (must be approval_state='approved')
+ * @param {Array|null} vault - resume vault (optional; uses INITIAL_VAULT if not provided)
  * @returns {object} apply_pack
  */
-export function generateApplyPack(opp) {
+export function generateApplyPack(opp, vault = null) {
   if (opp.approval_state !== 'approved') {
     throw new Error(`Cannot generate Apply Pack: opportunity ${opp.id} is not approved (state: ${opp.approval_state})`);
   }
 
   const now = new Date().toISOString();
+  const vaultToUse = vault || INITIAL_VAULT;
 
-  // Resume recommendation
+  // Resume recommendation — legacy scoring.js version (kept for backward compat)
   const resumeRec = recommendResumeVersion(opp.lane, opp.fit_score, opp.fit_signals || []);
+
+  // Vault-based recommendation (richer, uses actual file metadata)
+  const vaultRec = recommendVaultResume(opp.lane, opp.fit_score, opp.fit_signals || [], vaultToUse);
+
+  // Quality gates check (no selected resume yet at generation time — advisory only)
+  const qualityGates = getVaultQualityGates(opp, null, vaultToUse);
 
   // Checklist
   const applyChecklist = generateApplyChecklist(opp, resumeRec.version);
@@ -332,16 +345,32 @@ export function generateApplyPack(opp) {
       resume_emphasis: opp.resume_emphasis,
     },
 
-    // Resume recommendation (system-generated — never overwrite original)
+    // Resume recommendation (scoring.js — kept for backward compat)
     recommended_resume_version: resumeRec.version,
     recommendation_confidence: resumeRec.confidence,
     recommendation_reason: resumeRec.reason,
+
+    // Vault-based recommendation (richer — actual file metadata)
+    vault_recommended_resume_id: vaultRec.resume?.id || null,
+    vault_recommended_resume_name: vaultRec.resume?.display_name || null,
+    vault_recommendation_confidence: vaultRec.confidence,
+    vault_recommendation_reason: vaultRec.reason,
+    vault_recommendation_lane_match: vaultRec.lane_match,
+    vault_recommendation_domain_overlap: vaultRec.domain_overlap,
+
+    // Quality gates (advisory at generation time — no resume selected yet)
+    quality_gate_warnings: qualityGates.warnings,
+    quality_gate_blockers: qualityGates.blockers,
 
     // Override tracking (null until human overrides)
     resume_version_override: null,
     resume_version_override_reason: null,
     resume_version_override_at: null,
     original_system_recommendation: resumeRec.version,
+
+    // Applied resume tracking (set when actually applied)
+    resume_id_used: null,
+    resume_override_reason: null,
 
     // Content
     keyword_mirror_list: prep.keywordMirrorList,
@@ -398,8 +427,8 @@ export function getEffectiveResumeVersion(pack) {
  * Regenerate an Apply Pack, preserving override history.
  * Also records the regeneration reason and re-computes pack_readiness_score.
  */
-export function regenerateApplyPack(opp, existingPack, regenerationReason = 'manual') {
-  const fresh = generateApplyPack(opp);
+export function regenerateApplyPack(opp, existingPack, regenerationReason = 'manual', vault = null) {
+  const fresh = generateApplyPack(opp, vault);
   const regenerated = {
     ...fresh,
     pack_version: (existingPack?.pack_version || 1) + 1,
@@ -409,6 +438,9 @@ export function regenerateApplyPack(opp, existingPack, regenerationReason = 'man
     resume_version_override: existingPack?.resume_version_override || null,
     resume_version_override_reason: existingPack?.resume_version_override_reason || null,
     resume_version_override_at: existingPack?.resume_version_override_at || null,
+    // Preserve applied resume tracking
+    resume_id_used: existingPack?.resume_id_used || null,
+    resume_override_reason: existingPack?.resume_override_reason || null,
     // original_system_recommendation is the NEW generation's recommendation
     original_system_recommendation: fresh.recommended_resume_version,
     // Preserve checklist done-state from previous pack

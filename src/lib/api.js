@@ -12,6 +12,13 @@ import { evaluateStaleness, scanForStale, computeNextAction } from '../../netlif
 import { generateApplyPack, applyResumeOverride, regenerateApplyPack, computePackReadinessScore } from '../../netlify/functions/_shared/applyPack.js';
 import { DEFAULT_SOURCES } from '../../netlify/functions/_shared/sources.js';
 import { computeReadinessSummary } from '../../netlify/functions/_shared/readiness.js';
+import {
+  INITIAL_VAULT,
+  updateVaultRecord,
+  resetVaultToDefaults,
+  recommendVaultResume,
+  getVaultQualityGates,
+} from '../../netlify/functions/_shared/resumeVault.js';
 import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
 // ─── Mode Detection ───────────────────────────────────────────────────────────
@@ -1080,3 +1087,110 @@ export async function fetchReadinessHistory(opportunityId = null, limit = 50) {
     return getReadinessHistory(opportunityId, limit);
   }
 }
+
+// ─── Resume Vault ─────────────────────────────────────────────────────────────
+
+const RESUME_VAULT_STORAGE_KEY = 'job-search-os-resume-vault-v1';
+
+function loadVaultFromStorage() {
+  try {
+    const raw = localStorage.getItem(RESUME_VAULT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveVaultToStorage(vault) {
+  try {
+    localStorage.setItem(RESUME_VAULT_STORAGE_KEY, JSON.stringify(vault));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Fetch the resume vault.
+ * In demo mode: uses localStorage, falls back to INITIAL_VAULT defaults.
+ * In live mode: calls /resume-vault endpoint.
+ *
+ * @returns {Promise<Array>} vault array
+ */
+export async function fetchResumeVault() {
+  if (isDemoMode()) {
+    const stored = loadVaultFromStorage();
+    return stored || INITIAL_VAULT;
+  }
+  try {
+    const data = await apiFetch('/resume-vault');
+    return data.vault || INITIAL_VAULT;
+  } catch (err) {
+    console.warn('[api] fetchResumeVault fell back to defaults:', err.message);
+    return INITIAL_VAULT;
+  }
+}
+
+/**
+ * Update a single resume vault record.
+ * Allowed updates: status, display_name, notes, version_label, quality_score, domain_tags
+ *
+ * @param {string} id - resume vault record ID
+ * @param {object} updates - fields to update
+ * @returns {Promise<{vault, record}>}
+ */
+export async function updateResumeVaultRecord(id, updates) {
+  if (isDemoMode()) {
+    const current = loadVaultFromStorage() || INITIAL_VAULT;
+    const updated = updateVaultRecord(current, id, updates);
+    saveVaultToStorage(updated);
+    const record = updated.find(r => r.id === id);
+    return { vault: updated, record, updated: true };
+  }
+  return apiFetch('/resume-vault', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'update', id, updates }),
+  });
+}
+
+/**
+ * Reset the resume vault to factory defaults (INITIAL_VAULT).
+ *
+ * @returns {Promise<{vault}>}
+ */
+export async function resetResumeVault() {
+  const fresh = resetVaultToDefaults();
+  if (isDemoMode()) {
+    saveVaultToStorage(fresh);
+    return { vault: fresh, reset: true };
+  }
+  return apiFetch('/resume-vault', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'reset' }),
+  });
+}
+
+/**
+ * Get the vault-based resume recommendation for an opportunity.
+ * Pure client-side computation — no server call needed.
+ *
+ * @param {string} lane - scoring.js LANES value
+ * @param {number} fitScore - opportunity fit score
+ * @param {string[]} signals - fit signals
+ * @param {Array} vault - the current vault
+ * @returns {{ resume, confidence, reason, lane_match, domain_overlap }}
+ */
+export function getVaultRecommendation(lane, fitScore, signals, vault) {
+  return recommendVaultResume(lane, fitScore, signals || [], vault || INITIAL_VAULT);
+}
+
+/**
+ * Check quality gates for an opportunity + selected resume combination.
+ * Pure client-side computation.
+ *
+ * @param {object} opp - opportunity record
+ * @param {string|null} selectedResumeId - vault resume ID
+ * @param {Array} vault - the current vault
+ * @returns {{ passed, warnings, blockers }}
+ */
+export function checkVaultQualityGates(opp, selectedResumeId, vault) {
+  return getVaultQualityGates(opp, selectedResumeId, vault || INITIAL_VAULT);
+}
+

@@ -318,6 +318,26 @@ export async function upsertPreference(profileKey, data) {
   return { saved: true };
 }
 
+// ─── Resume Vault ─────────────────────────────────────────────────────────────
+
+const RESUME_VAULT_KEY = 'resume_vault';
+
+/**
+ * Retrieve the resume vault from storage.
+ * Returns null if no vault is stored yet (caller should fall back to INITIAL_VAULT).
+ */
+export async function getResumeVault() {
+  return getPreference(RESUME_VAULT_KEY);
+}
+
+/**
+ * Persist the resume vault.
+ * @param {Array} vault - the full vault array
+ */
+export async function upsertResumeVault(vault) {
+  return upsertPreference(RESUME_VAULT_KEY, vault);
+}
+
 // ─── Readiness History ────────────────────────────────────────────────────────
 
 /**
