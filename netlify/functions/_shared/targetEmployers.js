@@ -419,10 +419,26 @@ export const SOURCE_WARNING_LABELS = {
 /**
  * Build a signal summary for a job opportunity for use in the approval queue.
  * Returns an array of signal objects: { type, label, color, bg }
+ *
+ * Signals emitted (in order):
+ *   direct_employer       — known direct employer in registry
+ *   target_employer       — HIGH-priority direct employer (a subset of direct_employer)
+ *   staffing_intermediary — known staffing / recruiting intermediary
+ *   federal_regulated     — employer is a federal/regulated-environment contractor
+ *   security_iam          — employer has strong security/IAM domain relevance
+ *   off_strategy          — lane is ops_manager/generic_pm/other or program_manager without sufficient fit
+ *   governance_heavy      — role is in the program_manager lane (governance/PMO scope required)
+ *   low_keyword_overlap   — fit score is below 50 (proxy for few matching signals)
+ *   recommended_resume    — which resume version to use for this lane
+ *   low_signal_noise      — unknown employer with low fit (aggregator noise indicator)
  */
 export function buildApprovalQueueSignals(opp) {
   const signals = [];
   const meta = getEmployerMeta(opp.company);
+  const lane = opp.lane || '';
+  const fitScore = opp.fit_score || 0;
+
+  // ── Employer type badges ────────────────────────────────────────────────────
 
   if (meta) {
     if (meta.type === EMPLOYER_TYPE.DIRECT) {
@@ -432,6 +448,15 @@ export function buildApprovalQueueSignals(opp) {
         color: '#15803d',
         bg: '#dcfce7',
       });
+      // Target employer = HIGH-priority direct employer
+      if (meta.priority === EMPLOYER_PRIORITY.HIGH) {
+        signals.push({
+          type: 'target_employer',
+          label: '🎯 Target employer',
+          color: '#065f46',
+          bg: '#d1fae5',
+        });
+      }
     } else if (meta.type === EMPLOYER_TYPE.INTERMEDIARY) {
       signals.push({
         type: 'staffing_intermediary',
@@ -458,7 +483,7 @@ export function buildApprovalQueueSignals(opp) {
     }
   } else {
     // Unknown employer — flag as possible aggregator noise if fit is low
-    if ((opp.fit_score || 0) < 50 && !opp.recommended) {
+    if (fitScore < 50 && !opp.recommended) {
       signals.push({
         type: 'low_signal_noise',
         label: '📉 Low-signal / likely noise',
@@ -468,5 +493,146 @@ export function buildApprovalQueueSignals(opp) {
     }
   }
 
+  // ── Lane / strategy badges ──────────────────────────────────────────────────
+
+  // Off-strategy: ops_manager/generic_pm/other, or program_manager below threshold
+  const offStrategyLanes = ['ops_manager', 'generic_pm', 'other'];
+  if (
+    offStrategyLanes.includes(lane) ||
+    (lane === 'program_manager' && fitScore < 60)
+  ) {
+    signals.push({
+      type: 'off_strategy',
+      label: '⚠ Off-strategy',
+      color: '#b45309',
+      bg: '#fef3c7',
+    });
+  }
+
+  // Governance-heavy: program_manager lane signals high governance overhead
+  if (lane === 'program_manager') {
+    signals.push({
+      type: 'governance_heavy',
+      label: '📋 Governance-heavy',
+      color: '#7e3af2',
+      bg: '#ede9fe',
+    });
+  }
+
+  // Low keyword overlap: fit_score below 50 is a reliable proxy
+  if (fitScore < 50) {
+    signals.push({
+      type: 'low_keyword_overlap',
+      label: '📉 Low keyword overlap',
+      color: '#6b7280',
+      bg: '#f3f4f6',
+    });
+  }
+
+  // Recommended resume: derive from resume_emphasis field (set during scoring)
+  const emphasis = opp.resume_emphasis || '';
+  if (emphasis) {
+    const resumeLabels = {
+      tpm:      'TPM resume',
+      delivery: 'Delivery resume',
+      ops:      'Ops resume',
+      program:  'Program resume',
+    };
+    const label = resumeLabels[emphasis] || emphasis;
+    signals.push({
+      type: 'recommended_resume',
+      label: `📄 ${label}`,
+      color: '#1d4ed8',
+      bg: '#eff6ff',
+    });
+  }
+
   return signals;
+}
+
+// ─── Decision Support: Why Is This Role Weak ───────────────────────────────────
+//
+// Returns an array of reason objects { code, label, detail } explaining
+// why an opportunity may be unsuitable. Empty array = no weaknesses flagged.
+//
+// Reason codes:
+//   low_fit               — fit_score < 50
+//   wrong_lane            — lane is generic_pm or other
+//   off_strategy_employer — employer is a known intermediary
+//   unknown_employer      — employer not in registry and fit is low
+//   poor_keyword_overlap  — fit_score < 40 (very few matched signals)
+//   weak_source           — no structured source family assigned
+//   aggregator_noise      — role sourced from an aggregator/RSS feed
+
+export function buildWeaknessReasons(opp) {
+  const reasons = [];
+  const lane = opp.lane || '';
+  const fitScore = opp.fit_score || 0;
+  const meta = getEmployerMeta(opp.company);
+  const sourceFamily = opp.source_family || '';
+
+  // Low fit score
+  if (fitScore < 50) {
+    reasons.push({
+      code: 'low_fit',
+      label: 'Low fit',
+      detail: `Fit score ${fitScore} — below the 50-point recommended threshold.`,
+    });
+  }
+
+  // Wrong lane (generic or unclassified)
+  if (lane === 'generic_pm' || lane === 'other') {
+    reasons.push({
+      code: 'wrong_lane',
+      label: 'Wrong lane',
+      detail: 'Role does not map to TPM, IT Delivery, qualified Ops, or selective Program Manager.',
+    });
+  }
+
+  // Off-strategy employer: known intermediary
+  if (meta && meta.type === EMPLOYER_TYPE.INTERMEDIARY) {
+    reasons.push({
+      code: 'off_strategy_employer',
+      label: 'Off-strategy employer',
+      detail: `${meta.name} is a staffing intermediary. End employer and role scope are unclear.`,
+    });
+  }
+
+  // Unknown employer with low fit
+  if (!meta && fitScore < 50 && !opp.recommended) {
+    reasons.push({
+      code: 'unknown_employer',
+      label: 'Unknown employer',
+      detail: 'Employer is not in the target registry. Verify this is a direct employer before approving.',
+    });
+  }
+
+  // Poor keyword overlap: very few matched signals (score < 40)
+  if (fitScore < 40) {
+    reasons.push({
+      code: 'poor_keyword_overlap',
+      label: 'Poor keyword overlap',
+      detail: 'Very few title/description signals matched the target keyword library.',
+    });
+  }
+
+  // Weak source: no structured source family
+  if (!sourceFamily || sourceFamily === '') {
+    reasons.push({
+      code: 'weak_source',
+      label: 'Weak source',
+      detail: 'No source family assigned. Role provenance is unknown.',
+    });
+  }
+
+  // Aggregator noise: sourced from RSS or known aggregator source
+  if (sourceFamily === 'rss' || sourceFamily === 'seek' || sourceFamily === 'aggregator') {
+    reasons.push({
+      code: 'aggregator_noise',
+      label: 'Aggregator noise',
+      detail: `Role sourced from ${sourceFamily} feed — end employer may differ from posting employer.`,
+    });
+  }
+
+  return reasons;
 }
