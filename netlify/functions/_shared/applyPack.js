@@ -22,10 +22,13 @@ import {
   recommendResumeVersion,
 } from './scoring.js';
 import { generatePrepPackage } from './prep.js';
+import { selectProofItemsForRole, INITIAL_PROOF_BANK } from './proofBank.js';
+import { selectStoriesForRole, INITIAL_STORY_BANK } from './storyBank.js';
+import { getEmployerMeta, isTargetEmployer, isIntermediaryEmployer, getSourceQualityWarnings } from './targetEmployers.js';
 
 // ─── System version stamp ─────────────────────────────────────────────────────
 
-export const APPLY_PACK_SYSTEM_VERSION = '4.0.0';
+export const APPLY_PACK_SYSTEM_VERSION = '4.1.0';
 
 // ─── Checklist Generator ─────────────────────────────────────────────────────
 
@@ -287,9 +290,12 @@ export function computePackReadinessScore(opp, pack) {
 /**
  * Generate a full Apply Pack for an approved opportunity.
  * @param {object} opp - the opportunity record (must be approval_state='approved')
+ * @param {object} [options] - optional overrides
+ * @param {Array} [options.proofBankItems] - proof bank items to use (defaults to INITIAL_PROOF_BANK)
+ * @param {Array} [options.storyBankItems] - story bank items to use (defaults to INITIAL_STORY_BANK)
  * @returns {object} apply_pack
  */
-export function generateApplyPack(opp) {
+export function generateApplyPack(opp, options = {}) {
   if (opp.approval_state !== 'approved') {
     throw new Error(`Cannot generate Apply Pack: opportunity ${opp.id} is not approved (state: ${opp.approval_state})`);
   }
@@ -310,6 +316,35 @@ export function generateApplyPack(opp) {
 
   // Generate core prep (keywords, proof points, summary direction, outreach)
   const prep = generatePrepPackage(opp);
+
+  // ─── Proof Bank — surface relevant items ──────────────────────────────────
+  const proofItems = options.proofBankItems || INITIAL_PROOF_BANK;
+  const relevantProofItems = selectProofItemsForRole(opp, proofItems, 5);
+
+  // ─── Story Bank — surface relevant stories ────────────────────────────────
+  const storyItems = options.storyBankItems || INITIAL_STORY_BANK;
+  const relevantStories = selectStoriesForRole(opp, storyItems, 3);
+
+  // ─── Target Employer Registry — surface employer context ─────────────────
+  const employerMeta = getEmployerMeta(opp.company || '');
+  const employer_context = employerMeta ? {
+    is_target_employer: true,
+    employer_name: employerMeta.employer_name,
+    employer_type: employerMeta.intermediary ? 'intermediary' : 'direct',
+    priority: employerMeta.priority,
+    careers_url: employerMeta.careers_url,
+    ats_type: employerMeta.ats_type,
+    federal_relevance: employerMeta.federal_relevance,
+    cloud_relevance: employerMeta.cloud_relevance,
+    security_relevance: employerMeta.security_relevance,
+    notes: employerMeta.notes,
+    source_quality_warnings: getSourceQualityWarnings(opp),
+  } : {
+    is_target_employer: false,
+    employer_name: opp.company || null,
+    employer_type: 'unknown',
+    source_quality_warnings: getSourceQualityWarnings(opp),
+  };
 
   const result = {
     // Metadata
@@ -359,6 +394,15 @@ export function generateApplyPack(opp) {
     copy_ready_cover_note_block: generateCopyReadyCoverNoteBlock(opp, prep.keywordMirrorList),
     apply_url_missing_at_generation: !(opp.application_url || '').trim(),
 
+    // Proof Bank — relevant items for this role
+    proof_bank_items: relevantProofItems,
+
+    // Story Bank — relevant stories for interview prep
+    story_prompts: relevantStories,
+
+    // Employer context from Target Employer Registry
+    employer_context,
+
     // Workflow
     apply_checklist: applyChecklist,
     suggested_follow_up_date: suggestedFollowUpDate,
@@ -398,8 +442,8 @@ export function getEffectiveResumeVersion(pack) {
  * Regenerate an Apply Pack, preserving override history.
  * Also records the regeneration reason and re-computes pack_readiness_score.
  */
-export function regenerateApplyPack(opp, existingPack, regenerationReason = 'manual') {
-  const fresh = generateApplyPack(opp);
+export function regenerateApplyPack(opp, existingPack, regenerationReason = 'manual', options = {}) {
+  const fresh = generateApplyPack(opp, options);
   const regenerated = {
     ...fresh,
     pack_version: (existingPack?.pack_version || 1) + 1,

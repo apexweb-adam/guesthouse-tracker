@@ -26,7 +26,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const digest = $input.first().json.digest;\nif (!digest || digest.totalPending === 0) {\n  console.log('Approval queue is empty — skipping notification.');\n  return [];\n}\nreturn [{ json: digest }];"
+        "jsCode": "// Check approval queue and skip notification if empty.\n// Hardened: wraps in try/catch to prevent 'Unknown error' crashes on bad API responses.\ntry {\n  const input = $input.first();\n  if (!input || !input.json) {\n    console.warn('[approval-digest] No response from /digest endpoint — skipping.');\n    return [];\n  }\n  const digest = input.json.digest;\n  if (!digest || digest.totalPending === 0) {\n    console.log('[approval-digest] Approval queue is empty — skipping notification.');\n    return [];\n  }\n  return [{ json: digest }];\n} catch (err) {\n  console.error('[approval-digest] Check queue error:', err.message || String(err));\n  return [];\n}"
       },
       "id": "check-has-pending",
       "name": "Check: Queue Has Items",
@@ -63,7 +63,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const digest = $input.first().json.digest;\nif (!digest || digest.totalStale === 0) {\n  console.log('No stale opportunities — skipping stale notification.');\n  return [];\n}\nreturn [{ json: digest }];"
+        "jsCode": "// Check stale items and skip notification if none.\n// Hardened: wraps in try/catch to prevent 'Unknown error' crashes on bad API responses.\ntry {\n  const input = $input.first();\n  if (!input || !input.json) {\n    console.warn('[stale-digest] No response from /digest endpoint — skipping.');\n    return [];\n  }\n  const digest = input.json.digest;\n  if (!digest || digest.totalStale === 0) {\n    console.log('[stale-digest] No stale opportunities — skipping stale notification.');\n    return [];\n  }\n  return [{ json: digest }];\n} catch (err) {\n  console.error('[stale-digest] Check stale error:', err.message || String(err));\n  return [];\n}"
       },
       "id": "check-has-stale",
       "name": "Check: Has Stale Items",

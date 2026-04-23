@@ -671,6 +671,77 @@ export default function ApplyPack() {
               </div>
             </Section>
           )}
+
+          {/* Proof Bank — relevant items from the registry */}
+          {(pack.proof_bank_items || []).length > 0 && (
+            <Section title="💡 PROOF BANK — RELEVANT EVIDENCE">
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 10, lineHeight: 1.5 }}>
+                High-signal career evidence relevant to this role. Use these to tailor your resume, cover note, and interview preparation.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {pack.proof_bank_items.map(item => (
+                  <div key={item.id} style={{ background: 'var(--gray-50)', borderRadius: 6, padding: '10px 12px', borderLeft: '3px solid var(--blue)' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--gray-800)', marginBottom: 3 }}>{item.title}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 4 }}>{item.measurable_outcome}</div>
+                    {item.tools_platforms?.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {item.tools_platforms.slice(0, 5).map((t, i) => (
+                          <span key={i} style={{ fontSize: 10, background: '#dbeafe', color: '#1e40af', borderRadius: 3, padding: '1px 6px' }}>{t}</span>
+                        ))}
+                      </div>
+                    )}
+                    {item.federal_or_regulated_flag && (
+                      <span style={{ fontSize: 10, background: '#f0fdf4', color: '#166534', borderRadius: 3, padding: '1px 6px', marginTop: 4, display: 'inline-block' }}>🏛 Federal / Regulated</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* Story Bank — interview prep prompts */}
+          {(pack.story_prompts || []).length > 0 && (
+            <Section title="🎤 INTERVIEW STORY PROMPTS">
+              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 10, lineHeight: 1.5 }}>
+                STAR-format stories from your story bank relevant to this role. Review and personalise before interviews.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {pack.story_prompts.map(story => (
+                  <div key={story.id} style={{ background: 'var(--gray-50)', borderRadius: 6, padding: '10px 12px', borderLeft: '3px solid #7c3aed' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--gray-800)', marginBottom: 3 }}>{story.title}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 4 }}>{story.short_version || story.measurable_outcome}</div>
+                    {story.best_for_questions?.length > 0 && (
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)', fontStyle: 'italic' }}>
+                        Best for: {story.best_for_questions[0]}
+                        {story.best_for_questions.length > 1 && ` + ${story.best_for_questions.length - 1} more`}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* Employer context */}
+          {pack.employer_context?.is_target_employer && (
+            <Section title="🎯 TARGET EMPLOYER CONTEXT">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                <div><strong>Type:</strong> {pack.employer_context.employer_type === 'intermediary' ? '🏢 Intermediary (staffing)' : '🏛 Direct Employer'}</div>
+                <div><strong>Priority:</strong> <span style={{ textTransform: 'capitalize' }}>{pack.employer_context.priority}</span></div>
+                {pack.employer_context.ats_type && <div><strong>ATS:</strong> {pack.employer_context.ats_type}</div>}
+                {pack.employer_context.notes && (
+                  <div style={{ background: 'var(--gray-50)', borderRadius: 6, padding: '8px 10px', color: 'var(--gray-600)', lineHeight: 1.5 }}>
+                    {pack.employer_context.notes}
+                  </div>
+                )}
+                {(pack.employer_context.source_quality_warnings || []).length > 0 && (
+                  <div style={{ background: '#fff7ed', borderRadius: 6, padding: '8px 10px', color: '#c2410c', lineHeight: 1.5, fontSize: 12 }}>
+                    ⚠ {pack.employer_context.source_quality_warnings.join(' · ')}
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
         </div>
       )}
 

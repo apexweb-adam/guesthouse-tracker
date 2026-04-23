@@ -58,7 +58,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Format approval digest summary for notification\nconst digest = $input.item.json.digest || {};\nconst lines = [\n  `📋 Daily Approval Queue — ${new Date().toLocaleDateString()}`,\n  `Total pending: ${digest.totalPending || 0}`,\n  `Recommended: ${digest.recommendedCount || 0}`,\n  `High fit (70+): ${digest.highFitCount || 0}`,\n];\nif ((digest.topOpportunities || []).length > 0) {\n  lines.push('\\nTop roles:');\n  digest.topOpportunities.slice(0, 5).forEach(o => {\n    lines.push(`  • ${o.fitScore} — ${o.title} @ ${o.company}${o.recommended ? ' ✓' : ''}`);\n  });\n}\nreturn [{ json: { message: lines.join('\\n'), digest } }];"
+        "jsCode": "// Format approval digest summary for notification.\n// Hardened: wraps in try/catch to prevent 'Unknown error' crashes on bad API responses.\ntry {\n  const input = $input.item || $input.first();\n  if (!input || !input.json) {\n    return [{ json: { message: 'Approval digest unavailable — no response.', error: 'no_input' } }];\n  }\n  const digest = input.json.digest || input.json;\n  const lines = [\n    `📋 Daily Approval Queue — ${new Date().toLocaleDateString()}`,\n    `Total pending: ${digest.totalPending || 0}`,\n    `Recommended: ${digest.recommendedCount || 0}`,\n    `High fit (70+): ${digest.highFitCount || 0}`,\n  ];\n  if ((digest.topOpportunities || []).length > 0) {\n    lines.push('\\nTop roles:');\n    digest.topOpportunities.slice(0, 5).forEach(o => {\n      lines.push(`  • ${o.fitScore} — ${o.title} @ ${o.company}${o.recommended ? ' ✓' : ''}`);\n    });\n  }\n  return [{ json: { message: lines.join('\\n'), digest } }];\n} catch (err) {\n  console.error('[approval-digest] Format error:', err.message || String(err));\n  return [{ json: { message: 'Approval digest format error — see n8n logs.', error: err.message || String(err) } }];\n}"
       },
       "id": "format-message",
       "name": "Format Digest Message",
@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Log: no pending approvals today\nreturn [{ json: { message: 'No pending approvals today.', skipped: true } }];"
+        "jsCode": "// Log: no pending approvals today\nreturn [{ json: { message: 'No pending approvals today.', skipped: true } }];"
       },
       "id": "no-pending",
       "name": "No pending (skip)",

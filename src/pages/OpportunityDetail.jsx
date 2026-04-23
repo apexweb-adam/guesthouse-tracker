@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext.jsx';
 import FitScoreBadge from '../components/FitScoreBadge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import LaneBadge from '../components/LaneBadge.jsx';
-import { approveOpportunity, updateOpportunity, fetchPrep, updateApplyUrl, getReadinessHistory, fetchReadinessHistory } from '../lib/api.js';
+import { approveOpportunity, updateOpportunity, fetchPrep, updateApplyUrl, getReadinessHistory, fetchReadinessHistory, loadProofBank, loadStoryBank } from '../lib/api.js';
 import { getResumeEmphasisLabel } from '../../netlify/functions/_shared/scoring.js';
+import { selectProofItemsForRole } from '../../netlify/functions/_shared/proofBank.js';
+import { selectStoriesForRole } from '../../netlify/functions/_shared/storyBank.js';
+import { getEmployerMeta, isIntermediaryEmployer } from '../../netlify/functions/_shared/targetEmployers.js';
 
 export default function OpportunityDetail() {
   const { id } = useParams();
@@ -97,6 +100,16 @@ export default function OpportunityDetail() {
               {opp.is_demo_record && (
                 <span className="badge" style={{ background: '#fef3c7', color: '#92400e', fontWeight: 600, fontSize: 11 }}>
                   DEMO
+                </span>
+              )}
+              {opp.is_target_employer && (
+                <span className="badge" style={{ background: '#eff6ff', color: '#1a56db', fontWeight: 600, fontSize: 11 }}>
+                  🎯 Target Employer
+                </span>
+              )}
+              {opp.is_intermediary && (
+                <span className="badge" style={{ background: '#fff7ed', color: '#c2410c', fontWeight: 600, fontSize: 11 }}>
+                  🏢 Via Intermediary
                 </span>
               )}
             </div>
@@ -402,6 +415,78 @@ export default function OpportunityDetail() {
 
           {/* Readiness History Timeline */}
           <ReadinessTimeline opportunityId={opp.id} />
+
+          {/* Target Employer Context */}
+          {(() => {
+            const meta = getEmployerMeta(opp.company || '');
+            if (!meta) return null;
+            return (
+              <div className="card card-pad" style={{ borderLeft: '3px solid #1a56db', background: '#eff6ff' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#1a56db' }}>🎯 Target Employer</h3>
+                <div style={{ fontSize: 12, color: 'var(--gray-700)', lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div><strong>Type:</strong> {meta.intermediary ? '🏢 Intermediary' : '🏛 Direct Employer'}</div>
+                  <div><strong>Priority:</strong> <span style={{ textTransform: 'capitalize' }}>{meta.priority}</span></div>
+                  {meta.ats_type && <div><strong>ATS:</strong> {meta.ats_type}</div>}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                    {meta.federal_relevance && <span className="badge" style={{ background: '#f0fdf4', color: '#166534', fontSize: 10 }}>🏛 Federal</span>}
+                    {meta.cloud_relevance && <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: 10 }}>☁ Cloud</span>}
+                    {meta.security_relevance && <span className="badge" style={{ background: '#fdf2f8', color: '#9333ea', fontSize: 10 }}>🔒 Security</span>}
+                    {meta.remote_relevance && <span className="badge" style={{ background: '#f0fdf4', color: '#166534', fontSize: 10 }}>🌐 Remote-friendly</span>}
+                  </div>
+                  {meta.notes && (
+                    <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 4, fontStyle: 'italic' }}>{meta.notes}</div>
+                  )}
+                  {meta.intermediary && (
+                    <div style={{ fontSize: 11, color: '#c2410c', marginTop: 4, fontWeight: 600 }}>
+                      ⚠ Staffing intermediary — identify the direct employer before applying.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Proof & Story Suggestions */}
+          {(() => {
+            if (opp.approval_state !== 'approved' && opp.approval_state !== 'pending') return null;
+            const proofItems = selectProofItemsForRole(opp, loadProofBank(), 3);
+            const stories = selectStoriesForRole(opp, loadStoryBank(), 2);
+            if (proofItems.length === 0 && stories.length === 0) return null;
+            return (
+              <div className="card card-pad">
+                <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>💡 Proof & Story Suggestions</h3>
+                {proofItems.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>Relevant Proof Items</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {proofItems.map(item => (
+                        <div key={item.id} style={{ fontSize: 12, background: 'var(--gray-50)', borderRadius: 6, padding: '8px 10px', lineHeight: 1.5 }}>
+                          <div style={{ fontWeight: 600, color: 'var(--gray-700)', marginBottom: 2 }}>{item.title}</div>
+                          <div style={{ color: 'var(--gray-500)' }}>{item.measurable_outcome}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {stories.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>Interview Stories</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {stories.map(story => (
+                        <div key={story.id} style={{ fontSize: 12, background: 'var(--gray-50)', borderRadius: 6, padding: '8px 10px', lineHeight: 1.5 }}>
+                          <div style={{ fontWeight: 600, color: 'var(--gray-700)', marginBottom: 2 }}>{story.title}</div>
+                          <div style={{ color: 'var(--gray-500)' }}>{story.short_version || story.measurable_outcome}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 8, fontStyle: 'italic' }}>
+                  Full proof bank and story bank available in Apply Pack → Interview Prep.
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

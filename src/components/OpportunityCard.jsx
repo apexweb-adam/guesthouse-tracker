@@ -26,6 +26,8 @@ export default function OpportunityCard({ opp, onApprove, onReject, showActions 
         {opp.isGhosted && <span className="badge" style={{ background:'#fde8e8',color:'#c81e1e' }}>👻 Ghosted</span>}
         {opp.high_fit && <span className="badge" style={{ background:'#d1fae5',color:'#065f46' }}>⭐ High Fit</span>}
         {opp.recommended && <span className="badge" style={{ background:'#dbeafe',color:'#1e40af' }}>👍 Rec</span>}
+        {opp.is_target_employer && <span className="badge" style={{ background:'#eff6ff',color:'#1a56db' }}>🎯 Target</span>}
+        {opp.is_intermediary && <span className="badge" style={{ background:'#fff7ed',color:'#c2410c' }}>🏢 Intermediary</span>}
       </div>
       {opp.recommendation_text && (
         <div style={{ fontSize: 12, color: 'var(--gray-600)', marginTop: 8, lineHeight: 1.4 }}>

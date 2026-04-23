@@ -26,7 +26,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Find sources with recent failures or noisy warning.\n// No business logic — just filtering on API-provided health data.\nconst sources = $input.first().json.sources || [];\nconst failing = sources.filter(s => s.total_failures > 0 || s.noisy_warning || s.last_status === 'failure');\nif (!failing.length) {\n  console.log('All sources healthy — no alerts needed.');\n  return [];\n}\nreturn failing.map(s => ({ json: s }));"
+        "jsCode": "// Find sources with recent failures or noisy warning.\n// No business logic — just filtering on API-provided health data.\n// Hardened: wraps in try/catch to prevent 'Unknown error' crashes on bad API responses.\ntry {\n  const input = $input.first();\n  if (!input || !input.json) {\n    console.warn('[source-health] No response from /sources endpoint — skipping.');\n    return [];\n  }\n  const sources = input.json.sources;\n  if (!Array.isArray(sources)) {\n    console.warn('[source-health] sources is not an array — skipping. Got:', typeof sources);\n    return [];\n  }\n  const failing = sources.filter(s => s.total_failures > 0 || s.noisy_warning || s.last_status === 'failure');\n  if (!failing.length) {\n    console.log('[source-health] All sources healthy — no alerts needed.');\n    return [];\n  }\n  return failing.map(s => ({ json: s }));\n} catch (err) {\n  console.error('[source-health] Filter error:', err.message || String(err));\n  return [];\n}"
       },
       "id": "filter-failing",
       "name": "Filter: Unhealthy Sources",

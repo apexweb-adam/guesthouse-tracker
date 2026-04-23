@@ -21,6 +21,7 @@
  */
 
 import { passesDiscoveryProfile, DEFAULT_DISCOVERY_PROFILE, SOURCE_FAMILIES } from './sources.js';
+import { computeEmployerQualitySignals } from './targetEmployers.js';
 
 // ─── Shared request helper ────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ export function normaliseJob({
   source_id,
   extra = {},
 }) {
-  return {
+  const base = {
     title: String(title || '').trim(),
     company: String(company || '').trim(),
     description: String(description || '').trim(),
@@ -78,6 +79,15 @@ export function normaliseJob({
     is_demo_record: false,
     ...extra,
   };
+
+  // Tag with employer quality signals from the Target Employer Registry
+  const signals = computeEmployerQualitySignals(base);
+  base.is_target_employer = signals.is_target_employer;
+  base.employer_type = signals.employer_type;
+  base.employer_priority = signals.employer_priority;
+  base.is_intermediary = signals.is_intermediary;
+
+  return base;
 }
 
 // ─── Greenhouse Adapter ───────────────────────────────────────────────────────

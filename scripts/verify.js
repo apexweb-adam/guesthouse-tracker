@@ -234,6 +234,7 @@ import {
   generateCopyReadyResumeEmphasisBlock,
   generateCopyReadyCoverNoteBlock,
   computePackReadinessScore,
+  APPLY_PACK_SYSTEM_VERSION,
 } from '../netlify/functions/_shared/applyPack.js';
 
 console.log('\n== 6. Apply Pack — Resume Recommendation ==');
@@ -1748,3 +1749,397 @@ assert('Section 21: Approval gate intact — live source activation does not byp
 
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);
+
+// ─── 32. Proof Bank ───────────────────────────────────────────────────────────
+
+import {
+  INITIAL_PROOF_BANK,
+  PROOF_CATEGORY,
+  PROOF_STRENGTH,
+  PROOF_CATEGORY_LABELS,
+  loadProofBankFromPrefs,
+  getProofItemsByLane,
+  getProofItemsByCategory,
+  getProofItemsByDomainTag,
+  selectProofItemsForRole,
+  buildProofBankSummary,
+} from '../netlify/functions/_shared/proofBank.js';
+
+console.log('\n== 32. Proof Bank ==');
+
+// Exports
+assert('Section 32: INITIAL_PROOF_BANK is an array', Array.isArray(INITIAL_PROOF_BANK));
+assert('Section 32: INITIAL_PROOF_BANK has 12+ items', INITIAL_PROOF_BANK.length >= 12);
+assert('Section 32: PROOF_CATEGORY constants present', typeof PROOF_CATEGORY === 'object' && PROOF_CATEGORY.DELIVERY && PROOF_CATEGORY.IAM_SECURITY);
+assert('Section 32: PROOF_STRENGTH constants present', PROOF_STRENGTH.HIGH === 'high' && PROOF_STRENGTH.MEDIUM === 'medium' && PROOF_STRENGTH.LOW === 'low');
+assert('Section 32: PROOF_CATEGORY_LABELS present', typeof PROOF_CATEGORY_LABELS === 'object');
+
+// Item structure
+const pbItem = INITIAL_PROOF_BANK[0];
+assert('Section 32: proof item has id', typeof pbItem.id === 'string');
+assert('Section 32: proof item has title', typeof pbItem.title === 'string');
+assert('Section 32: proof item has category', typeof pbItem.category === 'string');
+assert('Section 32: proof item has tags array', Array.isArray(pbItem.tags));
+assert('Section 32: proof item has domain_tags array', Array.isArray(pbItem.domain_tags));
+assert('Section 32: proof item has lane_tags array', Array.isArray(pbItem.lane_tags));
+assert('Section 32: proof item has measurable_outcome', typeof pbItem.measurable_outcome === 'string');
+assert('Section 32: proof item has tools_platforms', Array.isArray(pbItem.tools_platforms));
+assert('Section 32: proof item has federal_or_regulated_flag', typeof pbItem.federal_or_regulated_flag === 'boolean');
+assert('Section 32: proof item has strength', [PROOF_STRENGTH.HIGH, PROOF_STRENGTH.MEDIUM, PROOF_STRENGTH.LOW].includes(pbItem.strength));
+assert('Section 32: proof item has confidence_score', typeof pbItem.confidence_score === 'number');
+assert('Section 32: proof item has created_at', typeof pbItem.created_at === 'string');
+assert('Section 32: proof item has updated_at', typeof pbItem.updated_at === 'string');
+
+// Seeded content checks
+const pbIds = INITIAL_PROOF_BANK.map(i => i.id);
+assert('Section 32: pb-001 (IRS IAM) present', pbIds.includes('pb-001'));
+assert('Section 32: pb-003 (Maximo cloud migration) present', pbIds.includes('pb-003'));
+assert('Section 32: pb-005 ($1.2M budget) present', pbIds.includes('pb-005'));
+assert('Section 32: pb-006 (15+ team) present', pbIds.includes('pb-006'));
+assert('Section 32: pb-007 (Ping Identity) present', pbIds.includes('pb-007'));
+assert('Section 32: pb-008 (Splunk SOAR) present', pbIds.includes('pb-008'));
+assert('Section 32: pb-009 (40% provisioning) present', pbIds.includes('pb-009'));
+assert('Section 32: pb-010 (25% release velocity) present', pbIds.includes('pb-010'));
+assert('Section 32: pb-011 (50% incident response) present', pbIds.includes('pb-011'));
+
+// Federal items
+const federalItems = INITIAL_PROOF_BANK.filter(i => i.federal_or_regulated_flag);
+assert('Section 32: at least 2 federal/regulated proof items', federalItems.length >= 2);
+
+// Query helpers
+const tpmItems = getProofItemsByLane(INITIAL_PROOF_BANK, 'tpm');
+assert('Section 32: getProofItemsByLane returns items for tpm', tpmItems.length > 0);
+
+const iamItems = getProofItemsByCategory(INITIAL_PROOF_BANK, PROOF_CATEGORY.IAM_SECURITY);
+assert('Section 32: getProofItemsByCategory returns IAM items', iamItems.length > 0);
+
+const domainTagItems = getProofItemsByDomainTag(INITIAL_PROOF_BANK, 'federal');
+assert('Section 32: getProofItemsByDomainTag returns federal items', domainTagItems.length > 0);
+
+// selectProofItemsForRole
+const testOpp32 = { id: 'test-32', title: 'Technical Project Manager', company: 'Leidos', lane: 'tpm', fit_score: 80, fit_signals: ['federal'], description: 'federal IT delivery, IAM, cloud migration', approval_state: 'approved' };
+const selected32 = selectProofItemsForRole(testOpp32, INITIAL_PROOF_BANK, 5);
+assert('Section 32: selectProofItemsForRole returns up to 5 items', selected32.length <= 5 && selected32.length > 0);
+assert('Section 32: selectProofItemsForRole returns proof item objects', typeof selected32[0].id === 'string');
+
+// buildProofBankSummary
+const summary32 = buildProofBankSummary(INITIAL_PROOF_BANK);
+assert('Section 32: buildProofBankSummary returns total', typeof summary32.total === 'number');
+assert('Section 32: buildProofBankSummary total matches bank size', summary32.total === INITIAL_PROOF_BANK.length);
+assert('Section 32: buildProofBankSummary has by_category', typeof summary32.by_category === 'object');
+assert('Section 32: buildProofBankSummary has high_strength_count', typeof summary32.high_strength_count === 'number');
+assert('Section 32: buildProofBankSummary has federal_count', typeof summary32.federal_count === 'number');
+
+// loadProofBankFromPrefs
+const fromEmpty32 = loadProofBankFromPrefs(null);
+assert('Section 32: loadProofBankFromPrefs(null) returns INITIAL_PROOF_BANK', Array.isArray(fromEmpty32) && fromEmpty32.length === INITIAL_PROOF_BANK.length);
+
+const customPrefs32 = { proof_bank: [{ id: 'custom-1', title: 'Custom', category: 'delivery', tags: [], domain_tags: [], lane_tags: [], measurable_outcome: 'test', tools_platforms: [], federal_or_regulated_flag: false, strength: 'high', confidence_score: 80, created_at: '2024-01-01T00:00:00.000Z', updated_at: '2024-01-01T00:00:00.000Z' }] };
+const fromCustom32 = loadProofBankFromPrefs(customPrefs32);
+assert('Section 32: loadProofBankFromPrefs with data returns custom data', fromCustom32.length === 1 && fromCustom32[0].id === 'custom-1');
+
+// ─── 33. Story Bank ───────────────────────────────────────────────────────────
+
+import {
+  INITIAL_STORY_BANK,
+  STORY_CATEGORY,
+  STORY_FORMAT,
+  STORY_CATEGORY_LABELS,
+  loadStoryBankFromPrefs,
+  getStoriesByLane,
+  getStoriesByCategory,
+  selectStoriesForRole,
+  getStoriesForQuestion,
+} from '../netlify/functions/_shared/storyBank.js';
+
+console.log('\n== 33. Story Bank ==');
+
+// Exports
+assert('Section 33: INITIAL_STORY_BANK is an array', Array.isArray(INITIAL_STORY_BANK));
+assert('Section 33: INITIAL_STORY_BANK has 8+ items', INITIAL_STORY_BANK.length >= 8);
+assert('Section 33: STORY_CATEGORY constants present', typeof STORY_CATEGORY === 'object' && STORY_CATEGORY.FEDERAL_REGULATED);
+assert('Section 33: STORY_FORMAT.STAR present', STORY_FORMAT.STAR === 'star');
+assert('Section 33: STORY_CATEGORY_LABELS present', typeof STORY_CATEGORY_LABELS === 'object');
+
+// Story structure
+const sbItem = INITIAL_STORY_BANK[0];
+assert('Section 33: story item has id', typeof sbItem.id === 'string');
+assert('Section 33: story item has title', typeof sbItem.title === 'string');
+assert('Section 33: story item has category', typeof sbItem.category === 'string');
+assert('Section 33: story item has linked_proof_ids', Array.isArray(sbItem.linked_proof_ids));
+assert('Section 33: story item has lane_tags', Array.isArray(sbItem.lane_tags));
+assert('Section 33: story item has story_format', typeof sbItem.story_format === 'string');
+assert('Section 33: story item has situation', typeof sbItem.situation === 'string');
+assert('Section 33: story item has task', typeof sbItem.task === 'string');
+assert('Section 33: story item has action', typeof sbItem.action === 'string');
+assert('Section 33: story item has result', typeof sbItem.result === 'string');
+assert('Section 33: story item has short_version', typeof sbItem.short_version === 'string');
+assert('Section 33: story item has measurable_outcome', typeof sbItem.measurable_outcome === 'string');
+assert('Section 33: story item has best_for_questions', Array.isArray(sbItem.best_for_questions));
+assert('Section 33: story item has created_at', typeof sbItem.created_at === 'string');
+assert('Section 33: story item has updated_at', typeof sbItem.updated_at === 'string');
+
+// Seeded story ids
+const sbIds = INITIAL_STORY_BANK.map(s => s.id);
+assert('Section 33: sb-001 (IRS IAM story) present', sbIds.includes('sb-001'));
+assert('Section 33: sb-002 (Maximo migration story) present', sbIds.includes('sb-002'));
+assert('Section 33: sb-003 (25% velocity story) present', sbIds.includes('sb-003'));
+assert('Section 33: sb-004 (stakeholder alignment) present', sbIds.includes('sb-004'));
+assert('Section 33: sb-005 (SOAR 50% story) present', sbIds.includes('sb-005'));
+
+// Stories have linked_proof_ids that exist in the bank
+const allProofIds = INITIAL_PROOF_BANK.map(i => i.id);
+for (const story of INITIAL_STORY_BANK) {
+  const badLinks = story.linked_proof_ids.filter(pid => !allProofIds.includes(pid));
+  assert(`Section 33: story ${story.id} has no broken proof links`, badLinks.length === 0, badLinks.join(', '));
+}
+
+// Query helpers
+const tpmStories = getStoriesByLane(INITIAL_STORY_BANK, 'tpm');
+assert('Section 33: getStoriesByLane returns stories for tpm', tpmStories.length > 0);
+
+const fedStories = getStoriesByCategory(INITIAL_STORY_BANK, STORY_CATEGORY.FEDERAL_REGULATED);
+assert('Section 33: getStoriesByCategory returns federal stories', fedStories.length > 0);
+
+// selectStoriesForRole
+const testOpp33 = { id: 'test-33', title: 'Technical Project Manager', company: 'Booz Allen', lane: 'tpm', description: 'federal IT delivery, cloud migration', approval_state: 'approved' };
+const selected33 = selectStoriesForRole(testOpp33, INITIAL_STORY_BANK, 3);
+assert('Section 33: selectStoriesForRole returns up to 3 stories', selected33.length <= 3 && selected33.length > 0);
+assert('Section 33: selectStoriesForRole returns story objects', typeof selected33[0].id === 'string');
+
+// getStoriesForQuestion
+const matched33 = getStoriesForQuestion('Tell me about a time you managed stakeholders with conflicting priorities', INITIAL_STORY_BANK, 3);
+assert('Section 33: getStoriesForQuestion returns stories for stakeholder question', matched33.length > 0);
+
+// loadStoryBankFromPrefs
+const fromEmpty33 = loadStoryBankFromPrefs(null);
+assert('Section 33: loadStoryBankFromPrefs(null) returns INITIAL_STORY_BANK', Array.isArray(fromEmpty33) && fromEmpty33.length === INITIAL_STORY_BANK.length);
+
+// ─── 34. Target Employer Registry ────────────────────────────────────────────
+
+import {
+  TARGET_EMPLOYER_REGISTRY,
+  EMPLOYER_PRIORITY,
+  EMPLOYER_TYPE,
+  SOURCE_WARNING_LABELS,
+  getEmployerMeta,
+  isTargetEmployer,
+  classifyEmployerType,
+  isIntermediaryEmployer,
+  getActiveDirectTargetEmployers,
+  getKnownIntermediaries,
+  computeEmployerQualitySignals,
+  getSourceQualityWarnings,
+  buildApprovalQueueSignals,
+} from '../netlify/functions/_shared/targetEmployers.js';
+
+console.log('\n== 34. Target Employer Registry ==');
+
+// Exports
+assert('Section 34: TARGET_EMPLOYER_REGISTRY is array', Array.isArray(TARGET_EMPLOYER_REGISTRY));
+assert('Section 34: TARGET_EMPLOYER_REGISTRY has 18+ entries', TARGET_EMPLOYER_REGISTRY.length >= 18);
+assert('Section 34: EMPLOYER_PRIORITY constants present', EMPLOYER_PRIORITY.HIGH === 'high' && EMPLOYER_PRIORITY.MEDIUM === 'medium' && EMPLOYER_PRIORITY.LOW === 'low');
+assert('Section 34: EMPLOYER_TYPE constants present', EMPLOYER_TYPE.DIRECT === 'direct' && EMPLOYER_TYPE.INTERMEDIARY === 'intermediary');
+assert('Section 34: SOURCE_WARNING_LABELS present', typeof SOURCE_WARNING_LABELS === 'object');
+
+// Registry entry structure
+const terEntry = TARGET_EMPLOYER_REGISTRY[0];
+assert('Section 34: entry has id', typeof terEntry.id === 'string');
+assert('Section 34: entry has employer_name', typeof terEntry.employer_name === 'string');
+assert('Section 34: entry has careers_url', typeof terEntry.careers_url === 'string');
+assert('Section 34: entry has ats_type', typeof terEntry.ats_type === 'string');
+assert('Section 34: entry has direct_employer boolean', typeof terEntry.direct_employer === 'boolean');
+assert('Section 34: entry has intermediary boolean', typeof terEntry.intermediary === 'boolean');
+assert('Section 34: entry has priority', [EMPLOYER_PRIORITY.HIGH, EMPLOYER_PRIORITY.MEDIUM, EMPLOYER_PRIORITY.LOW].includes(terEntry.priority));
+assert('Section 34: entry has lane_relevance array', Array.isArray(terEntry.lane_relevance));
+assert('Section 34: entry has federal_relevance boolean', typeof terEntry.federal_relevance === 'boolean');
+assert('Section 34: entry has active boolean', typeof terEntry.active === 'boolean');
+assert('Section 34: entry has created_at', typeof terEntry.created_at === 'string');
+assert('Section 34: entry has updated_at', typeof terEntry.updated_at === 'string');
+
+// Known entries
+const terNames = TARGET_EMPLOYER_REGISTRY.map(e => e.employer_name);
+assert('Section 34: Leidos in registry', terNames.includes('Leidos'));
+assert('Section 34: SAIC in registry', terNames.includes('SAIC'));
+assert('Section 34: Booz Allen Hamilton in registry', terNames.includes('Booz Allen Hamilton'));
+assert('Section 34: Deloitte in registry', terNames.includes('Deloitte'));
+assert('Section 34: Accenture Federal Services in registry', terNames.includes('Accenture Federal Services'));
+assert('Section 34: Guidehouse in registry', terNames.includes('Guidehouse'));
+assert('Section 34: MITRE Corporation in registry', terNames.includes('MITRE Corporation'));
+
+// Has intermediaries
+const ters = TARGET_EMPLOYER_REGISTRY.filter(e => e.intermediary);
+assert('Section 34: registry has at least 2 intermediaries', ters.length >= 2);
+
+// Has high priority entries
+const highPri = TARGET_EMPLOYER_REGISTRY.filter(e => e.priority === EMPLOYER_PRIORITY.HIGH);
+assert('Section 34: registry has high priority entries', highPri.length >= 3);
+
+// getEmployerMeta
+const leidosMeta = getEmployerMeta('Leidos');
+assert('Section 34: getEmployerMeta returns Leidos record', leidosMeta !== null && leidosMeta.employer_name === 'Leidos');
+assert('Section 34: getEmployerMeta case-insensitive', getEmployerMeta('leidos') !== null);
+assert('Section 34: getEmployerMeta unknown returns null', getEmployerMeta('Completely Unknown Co') === null);
+assert('Section 34: getEmployerMeta null input returns null', getEmployerMeta(null) === null);
+
+// isTargetEmployer
+assert('Section 34: isTargetEmployer("Leidos") = true', isTargetEmployer('Leidos') === true);
+assert('Section 34: isTargetEmployer("Random Company") = false', isTargetEmployer('Random Company XYZ') === false);
+
+// classifyEmployerType
+assert('Section 34: classifyEmployerType("Leidos") = direct', classifyEmployerType('Leidos') === EMPLOYER_TYPE.DIRECT);
+assert('Section 34: classifyEmployerType intermediary', classifyEmployerType('Robert Half Technology') === EMPLOYER_TYPE.INTERMEDIARY);
+
+// isIntermediaryEmployer
+assert('Section 34: isIntermediaryEmployer("Robert Half Technology") = true', isIntermediaryEmployer('Robert Half Technology') === true);
+assert('Section 34: isIntermediaryEmployer("Leidos") = false', isIntermediaryEmployer('Leidos') === false);
+
+// getActiveDirectTargetEmployers
+const activeDirect34 = getActiveDirectTargetEmployers();
+assert('Section 34: getActiveDirectTargetEmployers returns array', Array.isArray(activeDirect34));
+assert('Section 34: getActiveDirectTargetEmployers contains no intermediaries', activeDirect34.every(e => !e.intermediary));
+assert('Section 34: getActiveDirectTargetEmployers sorted high first', activeDirect34[0].priority === EMPLOYER_PRIORITY.HIGH);
+
+// getKnownIntermediaries
+const intermediaries34 = getKnownIntermediaries();
+assert('Section 34: getKnownIntermediaries returns intermediaries', intermediaries34.every(e => e.intermediary));
+
+// computeEmployerQualitySignals
+const signals34a = computeEmployerQualitySignals({ company: 'Leidos' });
+assert('Section 34: signals for Leidos: is_target_employer=true', signals34a.is_target_employer === true);
+assert('Section 34: signals for Leidos: employer_type=direct', signals34a.employer_type === EMPLOYER_TYPE.DIRECT);
+assert('Section 34: signals for Leidos: is_intermediary=false', signals34a.is_intermediary === false);
+
+const signals34b = computeEmployerQualitySignals({ company: 'Robert Half Technology' });
+assert('Section 34: signals for Robert Half: is_intermediary=true', signals34b.is_intermediary === true);
+assert('Section 34: signals for Robert Half: employer_type=intermediary', signals34b.employer_type === EMPLOYER_TYPE.INTERMEDIARY);
+
+const signals34c = computeEmployerQualitySignals({ company: 'Unknown Corp XYZ' });
+assert('Section 34: signals for unknown: is_target_employer=false', signals34c.is_target_employer === false);
+assert('Section 34: signals for unknown: employer_meta=null', signals34c.employer_meta === null);
+
+// getSourceQualityWarnings
+const warnings34a = getSourceQualityWarnings({ company: 'Robert Half Technology', source_family: 'greenhouse' });
+assert('Section 34: warnings for intermediary include warning', warnings34a.length > 0);
+
+const warnings34b = getSourceQualityWarnings({ company: 'Leidos', source_family: 'greenhouse' });
+assert('Section 34: no warnings for target direct employer', warnings34b.length === 0);
+
+// buildApprovalQueueSignals
+const testOpps34 = [
+  { company: 'Leidos', approval_state: 'pending' },
+  { company: 'SAIC', approval_state: 'pending' },
+  { company: 'Robert Half Technology', approval_state: 'pending' },
+  { company: 'Unknown Corp', approval_state: 'pending' },
+  { company: 'Leidos', approval_state: 'approved' }, // Not pending
+];
+const queueSignals34 = buildApprovalQueueSignals(testOpps34);
+assert('Section 34: buildApprovalQueueSignals total_pending=4', queueSignals34.total_pending === 4);
+assert('Section 34: buildApprovalQueueSignals target_employer_count=2', queueSignals34.target_employer_count === 2);
+assert('Section 34: buildApprovalQueueSignals intermediary_count=1', queueSignals34.intermediary_count === 1);
+
+// ─── 35. normaliseJob employer tagging ────────────────────────────────────────
+
+console.log('\n== 35. normaliseJob employer tagging ==');
+
+const normLeidos = normaliseJob({ title: 'TPM', company: 'Leidos', description: 'test', location: 'VA', source_family: 'greenhouse', source_job_id: '123' });
+assert('Section 35: normaliseJob tags Leidos as is_target_employer=true', normLeidos.is_target_employer === true);
+assert('Section 35: normaliseJob tags Leidos as employer_type=direct', normLeidos.employer_type === EMPLOYER_TYPE.DIRECT);
+assert('Section 35: normaliseJob tags Leidos employer_priority', normLeidos.employer_priority === EMPLOYER_PRIORITY.HIGH);
+assert('Section 35: normaliseJob tags Leidos is_intermediary=false', normLeidos.is_intermediary === false);
+
+const normRH = normaliseJob({ title: 'PM', company: 'Robert Half Technology', description: 'test', location: 'VA', source_family: 'greenhouse', source_job_id: '456' });
+assert('Section 35: normaliseJob tags intermediary is_intermediary=true', normRH.is_intermediary === true);
+assert('Section 35: normaliseJob tags intermediary employer_type=intermediary', normRH.employer_type === EMPLOYER_TYPE.INTERMEDIARY);
+
+const normUnknown = normaliseJob({ title: 'PM', company: 'Unknown Corp XYZ', description: 'test', location: 'VA', source_family: 'rss', source_job_id: '789' });
+assert('Section 35: normaliseJob tags unknown employer is_target_employer=false', normUnknown.is_target_employer === false);
+assert('Section 35: normaliseJob tags unknown employer employer_priority=null', normUnknown.employer_priority === null);
+
+// ─── 36. Apply Pack — proof/story/employer integration ───────────────────────
+
+console.log('\n== 36. Apply Pack — proof/story/employer integration ==');
+
+assert('Section 36: APPLY_PACK_SYSTEM_VERSION updated to 4.1.0', APPLY_PACK_SYSTEM_VERSION === '4.1.0');
+
+const packOpp36 = {
+  id: 'test-pack-36',
+  approval_state: 'approved',
+  title: 'Senior Technical Project Manager',
+  company: 'Leidos',
+  lane: 'tpm',
+  fit_score: 82,
+  fit_signals: ['TPM title match', 'federal context', 'IAM delivery'],
+  recommended: true,
+  resume_emphasis: 'tpm',
+  status: 'approved',
+  description: 'Federal IT delivery, IAM, cloud migration, stakeholder management. IRS, VA delivery experience preferred.',
+};
+const pack36 = generateApplyPack(packOpp36);
+
+assert('Section 36: generateApplyPack returns proof_bank_items', Array.isArray(pack36.proof_bank_items));
+assert('Section 36: proof_bank_items has at least 1 item', pack36.proof_bank_items.length >= 1);
+assert('Section 36: proof_bank_items.length <= 5', pack36.proof_bank_items.length <= 5);
+
+assert('Section 36: generateApplyPack returns story_prompts', Array.isArray(pack36.story_prompts));
+assert('Section 36: story_prompts has at least 1 item', pack36.story_prompts.length >= 1);
+assert('Section 36: story_prompts.length <= 3', pack36.story_prompts.length <= 3);
+
+assert('Section 36: generateApplyPack returns employer_context', typeof pack36.employer_context === 'object');
+assert('Section 36: employer_context.is_target_employer=true for Leidos', pack36.employer_context.is_target_employer === true);
+assert('Section 36: employer_context.employer_type=direct for Leidos', pack36.employer_context.employer_type === 'direct');
+assert('Section 36: employer_context.priority=high for Leidos', pack36.employer_context.priority === EMPLOYER_PRIORITY.HIGH);
+assert('Section 36: employer_context.source_quality_warnings is array', Array.isArray(pack36.employer_context.source_quality_warnings));
+
+// Unknown employer — no target employer context
+const packOpp36b = { ...packOpp36, id: 'test-pack-36b', company: 'Unknown Corp XYZ' };
+const pack36b = generateApplyPack(packOpp36b);
+assert('Section 36: employer_context.is_target_employer=false for unknown', pack36b.employer_context.is_target_employer === false);
+assert('Section 36: story_prompts still returned for unknown employer', Array.isArray(pack36b.story_prompts));
+
+// Custom bank injection
+const pack36c = generateApplyPack(packOpp36, { proofBankItems: INITIAL_PROOF_BANK, storyBankItems: INITIAL_STORY_BANK });
+assert('Section 36: custom proofBankItems injection works', pack36c.proof_bank_items.length >= 1);
+
+// ─── 37. n8n workflow hardening ───────────────────────────────────────────────
+
+import { readFileSync as readFileSync37 } from 'fs';
+import { resolve as resolve37 } from 'path';
+
+console.log('\n== 37. n8n Workflow Hardening ==');
+
+function readWorkflow(filename) {
+  return readFileSync37(resolve37('n8n/workflows/' + filename), 'utf8');
+}
+
+const wf05 = readWorkflow('05-job-discovery.json');
+assert('Section 37: 05-job-discovery Log Result has try/catch', wf05.includes('try {') || wf05.includes('try{'));
+assert('Section 37: 05-job-discovery handles non-JSON (HTML)', wf05.includes('non_json_response') || wf05.includes('startsWith(\'<\')') || wf05.includes('startsWith("<")'));
+assert('Section 37: 05-job-discovery handles 401 explicitly', wf05.includes('unauthorized') || wf05.includes('UNAUTHORIZED'));
+assert('Section 37: 05-job-discovery handles 504 explicitly', wf05.includes('504') || wf05.includes('gateway_timeout'));
+assert('Section 37: 05-job-discovery Build Event Payload has try/catch', wf05.includes('build-event-payload') && wf05.includes('try {'));
+
+const wf01 = readWorkflow('01-rss-intake.json');
+assert('Section 37: 01-rss-intake Filter Sources has try/catch', wf01.includes('try {') || wf01.includes('try{'));
+assert('Section 37: 01-rss-intake handles null input', wf01.includes('!input') || wf01.includes('!Array.isArray'));
+
+const wf02 = readWorkflow('02-approval-digest.json');
+assert('Section 37: 02-approval-digest Check Queue has try/catch', wf02.includes('try {') || wf02.includes('try{'));
+assert('Section 37: 02-approval-digest Check Stale has try/catch', (() => { const count = (wf02.match(/try \{/g) || []).length; return count >= 2; })());
+
+const wf03 = readWorkflow('03-source-health.json');
+assert('Section 37: 03-source-health Filter Unhealthy has try/catch', wf03.includes('try {') || wf03.includes('try{'));
+assert('Section 37: 03-source-health handles non-array sources', wf03.includes('!Array.isArray') || wf03.includes('isArray'));
+
+const wf04 = readWorkflow('04-weekly-summary.json');
+assert('Section 37: 04-weekly-summary Format Summary has try/catch', wf04.includes('try {') || wf04.includes('try{'));
+assert('Section 37: 04-weekly-summary handles no response', wf04.includes('no_response') || wf04.includes('unavailable'));
+
+const wf06 = readWorkflow('06-daily-approval-digest.json');
+assert('Section 37: 06-daily-approval-digest uses jsCode not functionCode', !wf06.includes('"functionCode"'));
+assert('Section 37: 06-daily-approval-digest Format Message has try/catch', wf06.includes('try {') || wf06.includes('try{'));
+
+const wf07 = readWorkflow('07-weekly-readiness-summary.json');
+assert('Section 37: 07-weekly-readiness-summary uses jsCode not functionCode', !wf07.includes('"functionCode"'));
+assert('Section 37: 07-weekly-readiness-summary Format has try/catch', wf07.includes('try {') || wf07.includes('try{'));
+assert('Section 37: 07-weekly-readiness-summary handles no response', wf07.includes('no_input') || wf07.includes('no_response') || wf07.includes('unavailable'));

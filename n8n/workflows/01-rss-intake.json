@@ -26,7 +26,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter to live-capable enabled RSS sources only.\n// Business logic stays in the API — this node only filters.\nconst sources = $input.first().json.sources || [];\nconst liveEnabled = $input.first().json.liveIntakeEnabled;\nif (!liveEnabled) {\n  console.log('Live intake kill switch is OFF — skipping all sources.');\n  return [];\n}\nconst rss = sources.filter(s => s.type === 'rss' && s.enabled && s.liveCapable);\nreturn rss.map(s => ({ json: s }));"
+        "jsCode": "// Filter to live-capable enabled RSS sources only.\n// Business logic stays in the API — this node only filters.\n// Hardened: wraps in try/catch to prevent 'Unknown error' crashes on empty/malformed API responses.\ntry {\n  const input = $input.first();\n  if (!input || !input.json) {\n    console.warn('[rss-intake] No response from /sources endpoint — skipping.');\n    return [];\n  }\n  const liveEnabled = input.json.liveIntakeEnabled;\n  if (!liveEnabled) {\n    console.log('[rss-intake] Live intake kill switch is OFF — skipping all sources.');\n    return [];\n  }\n  const sources = input.json.sources;\n  if (!Array.isArray(sources)) {\n    console.warn('[rss-intake] sources is not an array — skipping. Got:', typeof sources);\n    return [];\n  }\n  const rss = sources.filter(s => s.type === 'rss' && s.enabled && s.liveCapable);\n  return rss.map(s => ({ json: s }));\n} catch (err) {\n  console.error('[rss-intake] Filter error:', err.message || String(err));\n  return [];\n}"
       },
       "id": "filter-rss-sources",
       "name": "Filter: Live RSS Sources",

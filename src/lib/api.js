@@ -12,6 +12,9 @@ import { evaluateStaleness, scanForStale, computeNextAction } from '../../netlif
 import { generateApplyPack, applyResumeOverride, regenerateApplyPack, computePackReadinessScore } from '../../netlify/functions/_shared/applyPack.js';
 import { DEFAULT_SOURCES } from '../../netlify/functions/_shared/sources.js';
 import { computeReadinessSummary } from '../../netlify/functions/_shared/readiness.js';
+import { INITIAL_PROOF_BANK, loadProofBankFromPrefs } from '../../netlify/functions/_shared/proofBank.js';
+import { INITIAL_STORY_BANK, loadStoryBankFromPrefs } from '../../netlify/functions/_shared/storyBank.js';
+import { TARGET_EMPLOYER_REGISTRY } from '../../netlify/functions/_shared/targetEmployers.js';
 import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
 // ─── Mode Detection ───────────────────────────────────────────────────────────
@@ -1076,4 +1079,163 @@ export async function fetchReadinessHistory(opportunityId = null, limit = 50) {
     console.warn('[api] fetchReadinessHistory fell back to localStorage:', err.message);
     return getReadinessHistory(opportunityId, limit);
   }
+}
+
+// ─── Proof Bank ───────────────────────────────────────────────────────────────
+
+const PROOF_BANK_LS_KEY = 'proof_bank';
+
+/**
+ * Load the Proof Bank.
+ * In demo mode: reads from localStorage, falls back to seeded data.
+ */
+export function loadProofBank() {
+  try {
+    const raw = localStorage.getItem(PROOF_BANK_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch { /* ignore */ }
+  return [...INITIAL_PROOF_BANK];
+}
+
+/**
+ * Save the full Proof Bank to localStorage.
+ */
+export function saveProofBank(items) {
+  try {
+    localStorage.setItem(PROOF_BANK_LS_KEY, JSON.stringify(items));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Save a single Proof Bank item (upsert by id).
+ */
+export function saveProofItem(item) {
+  const items = loadProofBank();
+  const idx = items.findIndex(i => i.id === item.id);
+  const now = new Date().toISOString();
+  const updated = { ...item, updated_at: now };
+  if (idx >= 0) {
+    items[idx] = updated;
+  } else {
+    items.unshift({ ...updated, created_at: updated.created_at || now });
+  }
+  saveProofBank(items);
+  return updated;
+}
+
+/**
+ * Reset the Proof Bank to the seeded initial data.
+ */
+export function resetProofBank() {
+  saveProofBank([...INITIAL_PROOF_BANK]);
+  return [...INITIAL_PROOF_BANK];
+}
+
+// ─── Story Bank ───────────────────────────────────────────────────────────────
+
+const STORY_BANK_LS_KEY = 'story_bank';
+
+/**
+ * Load the Story Bank.
+ * In demo mode: reads from localStorage, falls back to seeded data.
+ */
+export function loadStoryBank() {
+  try {
+    const raw = localStorage.getItem(STORY_BANK_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch { /* ignore */ }
+  return [...INITIAL_STORY_BANK];
+}
+
+/**
+ * Save the full Story Bank to localStorage.
+ */
+export function saveStoryBank(stories) {
+  try {
+    localStorage.setItem(STORY_BANK_LS_KEY, JSON.stringify(stories));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Save a single Story Bank item (upsert by id).
+ */
+export function saveStoryItem(story) {
+  const stories = loadStoryBank();
+  const idx = stories.findIndex(s => s.id === story.id);
+  const now = new Date().toISOString();
+  const updated = { ...story, updated_at: now };
+  if (idx >= 0) {
+    stories[idx] = updated;
+  } else {
+    stories.unshift({ ...updated, created_at: updated.created_at || now });
+  }
+  saveStoryBank(stories);
+  return updated;
+}
+
+/**
+ * Reset the Story Bank to the seeded initial data.
+ */
+export function resetStoryBank() {
+  saveStoryBank([...INITIAL_STORY_BANK]);
+  return [...INITIAL_STORY_BANK];
+}
+
+// ─── Target Employer Registry ─────────────────────────────────────────────────
+
+const EMPLOYER_REGISTRY_LS_KEY = 'target_employer_registry';
+
+/**
+ * Load the Target Employer Registry.
+ * Falls back to the seeded TARGET_EMPLOYER_REGISTRY if nothing customised.
+ */
+export function loadTargetEmployerRegistry() {
+  try {
+    const raw = localStorage.getItem(EMPLOYER_REGISTRY_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch { /* ignore */ }
+  return [...TARGET_EMPLOYER_REGISTRY];
+}
+
+/**
+ * Save the full Target Employer Registry to localStorage.
+ */
+export function saveTargetEmployerRegistry(entries) {
+  try {
+    localStorage.setItem(EMPLOYER_REGISTRY_LS_KEY, JSON.stringify(entries));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Save a single Target Employer Registry entry (upsert by id).
+ */
+export function saveTargetEmployerEntry(entry) {
+  const entries = loadTargetEmployerRegistry();
+  const idx = entries.findIndex(e => e.id === entry.id);
+  const now = new Date().toISOString();
+  const updated = { ...entry, updated_at: now };
+  if (idx >= 0) {
+    entries[idx] = updated;
+  } else {
+    entries.unshift({ ...updated, created_at: updated.created_at || now });
+  }
+  saveTargetEmployerRegistry(entries);
+  return updated;
+}
+
+/**
+ * Reset the Target Employer Registry to the seeded initial data.
+ */
+export function resetTargetEmployerRegistry() {
+  saveTargetEmployerRegistry([...TARGET_EMPLOYER_REGISTRY]);
+  return [...TARGET_EMPLOYER_REGISTRY];
 }
