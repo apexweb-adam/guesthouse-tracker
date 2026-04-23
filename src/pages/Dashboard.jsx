@@ -7,6 +7,7 @@ import { approveOpportunity } from '../lib/api.js';
 import { getBestNextActions, classifyReadinessGroup, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
 import { LANE_CONFIG } from '../../netlify/functions/_shared/scoring.js';
 import { isIntermediaryEmployer, EMPLOYER_TYPE } from '../../netlify/functions/_shared/targetEmployers.js';
+import { getFollowUpsDue, getAppliedUntouched } from '../../netlify/functions/_shared/outreach.js';
 
 const SOURCE_FAMILY_LABELS = {
   greenhouse: { label: 'Greenhouse', color: '#15803d', bg: '#dcfce7' },
@@ -140,6 +141,88 @@ function BestNewRolesPanel({ opps, onNavigate }) {
   );
 }
 
+// ─── Outreach Cadence Panel ───────────────────────────────────────────────────
+// Shows: follow-ups due today, applied but no outreach sent, outreach overdue.
+// Does NOT auto-send anything. All actions are manual.
+
+function OutreachCadencePanel({ opps, onNavigate }) {
+  const followUpsDue = useMemo(() => getFollowUpsDue(opps), [opps]);
+  const appliedUntouched = useMemo(() => getAppliedUntouched(opps), [opps]);
+
+  if (followUpsDue.length === 0 && appliedUntouched.length === 0) return null;
+
+  const overdue = followUpsDue.filter(o => o.next_action_due && new Date(o.next_action_due) < new Date());
+
+  return (
+    <div className="card" style={{ marginBottom: 24, borderLeft: '4px solid #0369a1' }}>
+      <div className="card-header" style={{ background: '#f0f9ff' }}>
+        <h2 style={{ color: '#0369a1' }}>📬 Outreach & Follow-Up Cadence</h2>
+        <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('/tracker')}>View tracker →</button>
+      </div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Follow-ups due / overdue */}
+        {followUpsDue.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: overdue.length > 0 ? '#c2410c' : '#92400e', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+              {overdue.length > 0 ? `🔴 ${overdue.length} follow-up${overdue.length > 1 ? 's' : ''} overdue` : `📅 ${followUpsDue.length} follow-up${followUpsDue.length > 1 ? 's' : ''} due`}
+            </div>
+            {followUpsDue.slice(0, 3).map(o => (
+              <div key={o.id} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '7px 0', borderBottom: '1px solid var(--gray-100)',
+                cursor: 'pointer',
+              }} onClick={() => onNavigate(`/opportunity/${o.id}`)}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {o.title}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{o.company}</div>
+                </div>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 8,
+                  background: o.next_action_due && new Date(o.next_action_due) < new Date() ? '#fee2e2' : '#fff7ed',
+                  color: o.next_action_due && new Date(o.next_action_due) < new Date() ? '#c2410c' : '#92400e',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {o.next_action_due ? (new Date(o.next_action_due) < new Date() ? '⚠ Overdue' : `Due ${o.next_action_due}`) : '📬 Follow-up due'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Applied but no outreach sent */}
+        {appliedUntouched.length > 0 && (
+          <div style={{ marginTop: followUpsDue.length > 0 ? 8 : 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+              ○ {appliedUntouched.length} applied role{appliedUntouched.length > 1 ? 's' : ''} — no outreach sent yet
+            </div>
+            {appliedUntouched.slice(0, 2).map(o => (
+              <div key={o.id} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '6px 0', borderBottom: '1px solid var(--gray-100)',
+                cursor: 'pointer',
+              }} onClick={() => onNavigate(`/opportunity/${o.id}`)}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {o.title}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{o.company}</div>
+                </div>
+                <span style={{ fontSize: 10, color: 'var(--gray-400)', whiteSpace: 'nowrap' }}>Open pack to draft outreach →</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 4, fontStyle: 'italic' }}>
+          Outreach must be sent manually. Open the Apply Pack → Outreach tab for drafts.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Follow-up Due Alert Banner ───────────────────────────────────────────────
 // Shows only when real follow-up actions are overdue or due today/tomorrow.
 // Dismissable for the session. Does not create fake urgency.
@@ -261,6 +344,9 @@ export default function Dashboard() {
 
       {/* Follow-up Due Alert — only when real overdue/upcoming tasks exist */}
       <FollowUpBanner opps={opps} onNavigate={nav} />
+
+      {/* Outreach Cadence Panel — follow-ups due, applied but untouched */}
+      <OutreachCadencePanel opps={opps} onNavigate={nav} />
 
       {/* Quick Add Widget */}
       <QuickAddWidget />

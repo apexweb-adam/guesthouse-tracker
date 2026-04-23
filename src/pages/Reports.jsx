@@ -12,11 +12,18 @@ import {
   EMPLOYER_PRIORITY,
   EMPLOYER_TYPE,
 } from '../../netlify/functions/_shared/targetEmployers.js';
+import {
+  computeOutreachResponseRate,
+  getFollowUpsDue,
+  getAppliedUntouched,
+  FOLLOW_UP_CADENCE,
+} from '../../netlify/functions/_shared/outreach.js';
 
 const DIGEST_TYPES = [
   { id: 'readiness',           label: 'Readiness Panel',    icon: '🎯' },
   { id: 'source_quality',      label: 'Source Quality',     icon: '📊' },
   { id: 'employer_targeting',  label: 'Employer Targets',   icon: '🏢' },
+  { id: 'outreach',            label: 'Outreach & Follow-Up', icon: '📬' },
   { id: 'approval',            label: 'Approval Queue',     icon: '✅' },
   { id: 'stale',               label: 'Stale / Ghosted',    icon: '⚠️' },
   { id: 'weekly',              label: 'Weekly Summary',     icon: '📅' },
@@ -469,6 +476,212 @@ function EmployerTargetPanel({ opps }) {
   );
 }
 
+// ─── Outreach & Follow-Up Panel (live, computed from opportunity state) ────────
+// Operator can answer:
+//   - Which applied roles need follow-up today?
+//   - Which roles have no outreach sent?
+//   - What is the response rate with outreach vs without?
+
+function OutreachPanel({ opps }) {
+  const responseRate = useMemo(() => computeOutreachResponseRate(opps), [opps]);
+  const followUpsDue = useMemo(() => getFollowUpsDue(opps), [opps]);
+  const untouched = useMemo(() => getAppliedUntouched(opps), [opps]);
+
+  const appliedStatuses = ['applied', 'follow_up_1', 'follow_up_2', 'interviewing', 'offer', 'rejected', 'ghosted'];
+  const allApplied = useMemo(() =>
+    opps.filter(o => appliedStatuses.includes(o.status))
+      .sort((a, b) => new Date(b.last_action_date || 0) - new Date(a.last_action_date || 0)),
+  [opps]);
+
+  const overdueDue = followUpsDue.filter(o => o.next_action_due && new Date(o.next_action_due) < new Date());
+
+  if (allApplied.length === 0 && followUpsDue.length === 0) {
+    return (
+      <div className="card card-pad" style={{ color: 'var(--gray-500)', fontSize: 13 }}>
+        No applied roles yet. Once you start applying, outreach stats and follow-up cadence will appear here.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="card card-pad" style={{ fontSize: 12, color: 'var(--gray-600)', borderLeft: '3px solid #0369a1', background: '#f0f9ff' }}>
+        <strong>Outreach & Follow-Up Report</strong> — live from your pipeline data.
+        Use this to see which applied roles are untouched, which follow-ups are overdue, and whether outreach improves response rates.
+        All outreach is sent manually — this panel tracks status and surfaces drafts to act on.
+      </div>
+
+      {/* Response Rate Summary */}
+      <div className="grid-4">
+        {[
+          {
+            label: 'Total Applied',
+            value: responseRate.totalApplied,
+            color: 'var(--gray-700)',
+            bg: '#f9fafb',
+          },
+          {
+            label: 'With Outreach',
+            value: responseRate.withOutreach.count,
+            sub: responseRate.withOutreach.responseRate !== null ? `${responseRate.withOutreach.responseRate}% response rate` : 'No data yet',
+            color: '#0369a1',
+            bg: '#f0f9ff',
+          },
+          {
+            label: 'Without Outreach',
+            value: responseRate.withoutOutreach.count,
+            sub: responseRate.withoutOutreach.responseRate !== null ? `${responseRate.withoutOutreach.responseRate}% response rate` : 'No data yet',
+            color: '#92400e',
+            bg: '#fef3c7',
+          },
+          {
+            label: 'Follow-Ups Due',
+            value: followUpsDue.length,
+            sub: overdueDue.length > 0 ? `${overdueDue.length} overdue` : 'On schedule',
+            color: overdueDue.length > 0 ? '#c2410c' : '#15803d',
+            bg: overdueDue.length > 0 ? '#fff1f2' : '#f0fdf4',
+          },
+        ].map((s, i) => (
+          <div key={i} className="card stat-card" style={{ background: s.bg, border: `1px solid ${s.color}22` }}>
+            <div className="stat-card__value" style={{ color: s.color, fontSize: 22 }}>{s.value}</div>
+            <div className="stat-card__label">{s.label}</div>
+            {s.sub && <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{s.sub}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Response rate insight */}
+      {responseRate.withOutreach.responseRate !== null && responseRate.withoutOutreach.responseRate !== null && (
+        <div className="card card-pad" style={{
+          borderLeft: '3px solid #0369a1', background: '#f0f9ff', fontSize: 12, color: '#0369a1',
+        }}>
+          {responseRate.withOutreach.responseRate > responseRate.withoutOutreach.responseRate
+            ? `✓ Outreach is working: ${responseRate.withOutreach.responseRate}% response rate with outreach vs ${responseRate.withoutOutreach.responseRate}% without`
+            : responseRate.withOutreach.responseRate === responseRate.withoutOutreach.responseRate
+              ? `Response rates are equal with and without outreach (${responseRate.withOutreach.responseRate}%) — need more data`
+              : `Outreach may not be differentiated yet (${responseRate.withOutreach.responseRate}% with vs ${responseRate.withoutOutreach.responseRate}% without) — check draft quality`
+          }
+        </div>
+      )}
+
+      {/* Follow-ups due */}
+      {followUpsDue.length > 0 && (
+        <div className="card">
+          <div className="card-header" style={{ background: overdueDue.length > 0 ? '#fff1f2' : '#fef3c7' }}>
+            <h2 style={{ color: overdueDue.length > 0 ? '#c2410c' : '#92400e' }}>
+              {overdueDue.length > 0 ? `🔴 Follow-Ups Overdue (${overdueDue.length})` : `📅 Follow-Ups Due (${followUpsDue.length})`}
+            </h2>
+          </div>
+          <div className="card-body">
+            {followUpsDue.map(o => (
+              <div key={o.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--gray-100)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 600 }}>{o.title}</span>
+                  <span style={{ color: 'var(--gray-500)', marginLeft: 8 }}>{o.company}</span>
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--gray-500)' }}>Status: {o.status}</span>
+                {o.next_action_due && (
+                  <span style={{
+                    background: new Date(o.next_action_due) < new Date() ? '#fee2e2' : '#fef3c7',
+                    color: new Date(o.next_action_due) < new Date() ? '#c2410c' : '#92400e',
+                    padding: '2px 8px', borderRadius: 10, fontSize: 11,
+                  }}>
+                    {new Date(o.next_action_due) < new Date() ? '⚠ Overdue' : `Due ${o.next_action_due}`}
+                  </span>
+                )}
+              </div>
+            ))}
+            <div style={{ marginTop: 10, fontSize: 12, color: '#6b7280' }}>
+              → Open the Apply Pack → Outreach tab to copy the appropriate follow-up draft
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Applied but no outreach */}
+      {untouched.length > 0 && (
+        <div className="card">
+          <div className="card-header" style={{ background: '#f3f4f6' }}>
+            <h2 style={{ color: '#6b7280' }}>○ Applied — No Outreach Sent ({untouched.length})</h2>
+          </div>
+          <div className="card-body">
+            {untouched.map(o => (
+              <div key={o.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--gray-100)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 600 }}>{o.title}</span>
+                  <span style={{ color: 'var(--gray-500)', marginLeft: 8 }}>{o.company}</span>
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--gray-400)', background: '#f3f4f6', padding: '2px 8px', borderRadius: 10 }}>
+                  No outreach
+                </span>
+              </div>
+            ))}
+            <div style={{ marginTop: 10, fontSize: 12, color: '#6b7280' }}>
+              → Open each Apply Pack → Outreach tab to copy and send recruiter or hiring manager outreach
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full applied pipeline */}
+      {allApplied.length > 0 && (
+        <div className="card">
+          <div className="card-header">
+            <h2>📋 Applied Pipeline — Outreach Status</h2>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="source-table">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Company</th>
+                  <th>Status</th>
+                  <th>Outreach Sent</th>
+                  <th>FU-1 Sent</th>
+                  <th>FU-2 Sent</th>
+                  <th>Response</th>
+                  <th>Screening</th>
+                  <th>Stage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allApplied.map(o => (
+                  <tr key={o.id}>
+                    <td style={{ fontSize: 12, fontWeight: 600, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.title}</td>
+                    <td style={{ fontSize: 12, color: 'var(--gray-600)' }}>{o.company}</td>
+                    <td style={{ fontSize: 11 }}>
+                      <span style={{ background: 'var(--gray-100)', padding: '2px 6px', borderRadius: 6 }}>{o.status}</span>
+                    </td>
+                    <td style={{ fontSize: 11, color: o.outreach_sent ? '#15803d' : 'var(--gray-400)' }}>
+                      {o.outreach_sent ? '✓ Yes' : '—'}
+                    </td>
+                    <td style={{ fontSize: 11, color: o.follow_up_1_sent ? '#15803d' : 'var(--gray-400)' }}>
+                      {o.follow_up_1_sent ? '✓ Yes' : '—'}
+                    </td>
+                    <td style={{ fontSize: 11, color: o.follow_up_2_sent ? '#15803d' : 'var(--gray-400)' }}>
+                      {o.follow_up_2_sent ? '✓ Yes' : '—'}
+                    </td>
+                    <td style={{ fontSize: 11, color: o.recruiter_response ? '#1d4ed8' : 'var(--gray-400)' }}>
+                      {o.recruiter_response ? '✉ Yes' : '—'}
+                    </td>
+                    <td style={{ fontSize: 11, color: o.screening_call ? '#15803d' : 'var(--gray-400)' }}>
+                      {o.screening_call ? '📞 Yes' : '—'}
+                    </td>
+                    <td style={{ fontSize: 11, color: 'var(--gray-600)' }}>{o.interview_stage || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--gray-400)', borderTop: '1px solid var(--gray-100)' }}>
+            Update outreach fields in the Apply Pack → Outreach tab as you take action. All updates are manual.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Readiness Panel (live, from local opportunity state) ─────────────────────
 
 function ReadinessPanel({ opps }) {
@@ -625,7 +838,7 @@ export default function Reports() {
   const [exporting, setExporting] = useState(false);
 
   const loadDigest = useCallback(async (type) => {
-    if (type === 'readiness' || type === 'source_quality' || type === 'employer_targeting') return; // These panels use live state
+    if (type === 'readiness' || type === 'source_quality' || type === 'employer_targeting' || type === 'outreach') return; // These panels use live state
     setLoading(true);
     setDigest(null);
     try {
@@ -695,11 +908,16 @@ export default function Reports() {
         <EmployerTargetPanel opps={state.opportunities} />
       )}
 
-      {activeType !== 'readiness' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && loading && (
+      {/* Outreach & Follow-Up Panel — live, computed from opportunity state */}
+      {activeType === 'outreach' && (
+        <OutreachPanel opps={state.opportunities} />
+      )}
+
+      {activeType !== 'readiness' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && activeType !== 'outreach' && loading && (
         <div className="card card-pad" style={{ color: 'var(--gray-500)', fontSize: 13 }}>Generating digest…</div>
       )}
 
-      {activeType !== 'readiness' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && !loading && digest && (
+      {activeType !== 'readiness' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && activeType !== 'outreach' && !loading && digest && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Summary banner */}
           <div className="card card-pad" style={{ borderLeft: '3px solid var(--blue)', background: '#eff6ff' }}>

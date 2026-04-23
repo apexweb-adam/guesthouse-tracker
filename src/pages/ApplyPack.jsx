@@ -20,6 +20,11 @@ import { fieldNeedsConfirmation, NEEDS_CONFIRMATION_FIELDS } from '../lib/candid
 import { RESUME_VERSIONS, RESUME_VERSION_LABELS } from '../../netlify/functions/_shared/scoring.js';
 import { computePackReadinessScore } from '../../netlify/functions/_shared/applyPack.js';
 import { INITIAL_VAULT, VAULT_STATUS_LABELS } from '../../netlify/functions/_shared/resumeVault.js';
+import {
+  computeFollowUpCadence,
+  daysSinceApplied,
+  FOLLOW_UP_CADENCE,
+} from '../../netlify/functions/_shared/outreach.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1447,9 +1452,130 @@ export default function ApplyPack() {
       {/* ── OUTREACH TAB ── */}
       {activeTab === 'outreach' && (
         <div>
+          {/* Cadence Timeline */}
+          {(() => {
+            const appliedDate = opportunity?.applied_date || opportunity?.last_action_date;
+            const cadence = computeFollowUpCadence(appliedDate);
+            const daysSince = daysSinceApplied(appliedDate);
+            const isApplied = ['applied', 'follow_up_1', 'follow_up_2'].includes(opportunity?.status);
+            return isApplied ? (
+              <div className="card card-pad" style={{ background: '#f0f9ff', borderLeft: '4px solid #0369a1', marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                  📅 Follow-Up Cadence
+                </div>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  {[
+                    {
+                      label: 'Applied',
+                      date: appliedDate ? appliedDate.slice(0, 10) : '—',
+                      done: true,
+                      icon: '✅',
+                    },
+                    {
+                      label: `Follow-Up 1 (Day ${FOLLOW_UP_CADENCE.FIRST_FOLLOW_UP_DAYS})`,
+                      date: cadence.follow_up_1_due,
+                      done: pack.follow_up_1_sent || opportunity?.status === 'follow_up_1' || opportunity?.status === 'follow_up_2',
+                      due: daysSince !== null && daysSince >= FOLLOW_UP_CADENCE.FIRST_FOLLOW_UP_DAYS && !(pack.follow_up_1_sent || opportunity?.status === 'follow_up_1' || opportunity?.status === 'follow_up_2'),
+                      icon: '📬',
+                    },
+                    {
+                      label: `Follow-Up 2 (Day ${FOLLOW_UP_CADENCE.SECOND_FOLLOW_UP_DAYS})`,
+                      date: cadence.follow_up_2_due,
+                      done: pack.follow_up_2_sent || opportunity?.status === 'follow_up_2',
+                      due: daysSince !== null && daysSince >= FOLLOW_UP_CADENCE.SECOND_FOLLOW_UP_DAYS && !(pack.follow_up_2_sent || opportunity?.status === 'follow_up_2'),
+                      icon: '📬',
+                    },
+                    {
+                      label: `Stale (Day ${FOLLOW_UP_CADENCE.STALE_DAYS})`,
+                      date: cadence.stale_after,
+                      done: ['ghosted', 'rejected'].includes(opportunity?.status),
+                      stale: daysSince !== null && daysSince >= FOLLOW_UP_CADENCE.STALE_DAYS,
+                      icon: '⏳',
+                    },
+                  ].map(step => (
+                    <div key={step.label} style={{
+                      flex: '1 1 120px', minWidth: 100,
+                      padding: '8px 10px', borderRadius: 6,
+                      background: step.done ? '#dcfce7' : step.due ? '#fff7ed' : step.stale ? '#fef2f2' : '#f9fafb',
+                      border: `1px solid ${step.done ? '#bbf7d0' : step.due ? '#fdba74' : step.stale ? '#fca5a5' : 'var(--gray-200)'}`,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: step.done ? '#15803d' : step.due ? '#c2410c' : step.stale ? '#9f1239' : 'var(--gray-600)' }}>
+                        {step.icon} {step.label}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 2 }}>{step.date}</div>
+                      {step.due && <div style={{ fontSize: 10, color: '#c2410c', fontWeight: 700, marginTop: 2 }}>ACTION DUE</div>}
+                      {step.done && <div style={{ fontSize: 10, color: '#15803d', fontWeight: 700, marginTop: 2 }}>DONE</div>}
+                    </div>
+                  ))}
+                </div>
+                {daysSince !== null && (
+                  <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 8 }}>
+                    {daysSince} day{daysSince !== 1 ? 's' : ''} since application{!appliedDate ? ' (estimated)' : ''}
+                  </div>
+                )}
+              </div>
+            ) : null;
+          })()}
+
+          {/* Outreach sent / response tracking */}
+          <div className="card card-pad" style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+              📊 Outreach Status
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{
+                padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                background: pack.outreach_sent ? '#dcfce7' : '#f3f4f6',
+                color: pack.outreach_sent ? '#15803d' : 'var(--gray-500)',
+              }}>
+                {pack.outreach_sent ? '✓ Outreach sent' : '○ Outreach not yet sent'}
+              </span>
+              {pack.outreach_type && (
+                <span style={{ fontSize: 11, color: 'var(--gray-500)' }}>
+                  Type: <strong>{pack.outreach_type}</strong>
+                </span>
+              )}
+              {pack.outreach_date && (
+                <span style={{ fontSize: 11, color: 'var(--gray-500)' }}>
+                  Sent: <strong>{pack.outreach_date}</strong>
+                </span>
+              )}
+              <span style={{
+                padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                background: pack.recruiter_response ? '#eff6ff' : '#f9fafb',
+                color: pack.recruiter_response ? '#1d4ed8' : 'var(--gray-400)',
+              }}>
+                {pack.recruiter_response ? '✉ Recruiter responded' : '— No response yet'}
+              </span>
+              {pack.screening_call && (
+                <span style={{ padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: '#f0fdf4', color: '#15803d' }}>
+                  📞 Screening booked
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 8, fontStyle: 'italic' }}>
+              Update outreach status in the Tracker as you take action. These fields are for tracking only — no automation.
+            </div>
+          </div>
+
+          {/* Talking Points */}
+          {Array.isArray(pack.role_talking_points) && pack.role_talking_points.length > 0 && (
+            <Section title="💬 Role Talking Points" actionSlot={<CopyButton text={(pack.role_talking_points || []).join('\n')} label="📋 Copy All" />}>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--gray-700)', lineHeight: 1.7 }}>
+                {pack.role_talking_points.map((pt, i) => (
+                  <li key={i}>{pt}</li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {/* All 5 outreach drafts */}
           {[
             { key: 'recruiter_outreach_draft', label: '📧 Recruiter Outreach Draft' },
             { key: 'hiring_manager_outreach_draft', label: '📧 Hiring Manager Outreach Draft' },
+            { key: 'referral_ask_draft', label: '🤝 Referral Ask Draft' },
+            { key: 'first_follow_up_draft', label: '📬 First Follow-Up Draft (Day 7)' },
+            { key: 'second_follow_up_draft', label: '📬 Second Follow-Up Draft (Day 14)' },
           ].map(({ key, label }) => (
             <Section key={key} title={label} actionSlot={<CopyButton text={pack[key] || ''} />}>
               <pre style={{
@@ -1461,7 +1587,7 @@ export default function ApplyPack() {
             </Section>
           ))}
           <div style={{ fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic', marginTop: 8 }}>
-            ⚠ Outreach drafts require human review and personalisation before sending. Do NOT auto-send.
+            ⚠ All outreach drafts require human review and personalisation before sending. Do NOT auto-send.
           </div>
         </div>
       )}

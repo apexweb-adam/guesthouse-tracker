@@ -27,6 +27,10 @@ import {
   recommendVaultResume,
   getVaultQualityGates,
 } from './resumeVault.js';
+import {
+  DEFAULT_OUTREACH_TRACKING,
+  computeFollowUpCadence,
+} from './outreach.js';
 
 // ─── System version stamp ─────────────────────────────────────────────────────
 
@@ -379,6 +383,10 @@ export function generateApplyPack(opp, vault = null) {
     bullet_emphasis_notes: bulletEmphasisNotes,
     recruiter_outreach_draft: prep.outreach.recruiterDraft,
     hiring_manager_outreach_draft: prep.outreach.hiringManagerDraft,
+    referral_ask_draft: prep.outreach.referralAskDraft,
+    first_follow_up_draft: prep.outreach.firstFollowUpDraft,
+    second_follow_up_draft: prep.outreach.secondFollowUpDraft,
+    role_talking_points: prep.outreach.talkingPoints,
 
     // Copy-ready blocks — draft-ready content, review before use
     copy_ready_summary_block: generateCopyReadySummaryBlock(opp, prep.keywordMirrorList),
@@ -392,6 +400,13 @@ export function generateApplyPack(opp, vault = null) {
     apply_checklist: applyChecklist,
     suggested_follow_up_date: suggestedFollowUpDate,
     next_action: prep.nextAction,
+
+    // Outreach cadence dates (computed at pack generation from today's date)
+    // Updated when the operator marks the role as applied.
+    ...computeFollowUpCadence(null),
+
+    // Outreach tracking defaults — updated manually by the operator
+    ...DEFAULT_OUTREACH_TRACKING,
   };
 
   // Compute readiness score and embed it in the pack (persisted with the pack)

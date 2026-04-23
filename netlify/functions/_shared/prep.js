@@ -9,6 +9,12 @@
  */
 
 import { LANES, LANE_CONFIG, getRecommendation } from './scoring.js';
+import {
+  buildReferralAskDraft,
+  buildFirstFollowUpDraft,
+  buildSecondFollowUpDraft,
+  buildRoleTalkingPoints,
+} from './outreach.js';
 
 // ─── Keyword Extraction ───────────────────────────────────────────────────────
 
@@ -126,7 +132,7 @@ const SUMMARY_DIRECTION = {
 
 // ─── Outreach Templates ───────────────────────────────────────────────────────
 
-function buildRecruiterOutreach(opp) {
+export function buildRecruiterOutreach(opp) {
   const laneLabel = LANE_CONFIG[opp.lane]?.label || opp.lane;
   return `Hi [Recruiter Name],
 
@@ -140,7 +146,7 @@ Kind regards,
 Sample Candidate`;
 }
 
-function buildHiringManagerOutreach(opp) {
+export function buildHiringManagerOutreach(opp) {
   const laneLabel = LANE_CONFIG[opp.lane]?.label || opp.lane;
   return `Hi [Hiring Manager Name],
 
@@ -208,6 +214,10 @@ export function generatePrepPackage(opp) {
     outreach: {
       recruiterDraft: buildRecruiterOutreach(opp),
       hiringManagerDraft: buildHiringManagerOutreach(opp),
+      referralAskDraft: buildReferralAskDraft(opp),
+      firstFollowUpDraft: buildFirstFollowUpDraft(opp),
+      secondFollowUpDraft: buildSecondFollowUpDraft(opp),
+      talkingPoints: buildRoleTalkingPoints(opp),
     },
     fitSignals: opp.fit_signals || [],
     generatedAt: new Date().toISOString(),

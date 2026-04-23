@@ -3097,5 +3097,311 @@ assert('29bw. Approval gate intact: pending roles not in READY_TO_APPLY group',
 assert('29bx. targetEmployers.js does not contain auto-submit',
   !TARGET_EMPLOYER_REGISTRY.some(e => typeof e === 'object' && JSON.stringify(e).includes('autoSubmit')));
 
+// ─── Section 30: Outreach & Follow-Up Cadence System ─────────────────────────
+
+console.log('\n== Section 30: Outreach & Follow-Up Cadence System ==');
+
+import {
+  computeFollowUpCadence,
+  daysSinceApplied,
+  isFollowUp1Due,
+  isFollowUp2Due,
+  isOutreachStale,
+  getNextTouchRecommendation,
+  getFollowUpsDue,
+  getAppliedUntouched,
+  computeOutreachResponseRate,
+  buildReferralAskDraft,
+  buildFirstFollowUpDraft,
+  buildSecondFollowUpDraft,
+  buildRoleTalkingPoints,
+  DEFAULT_OUTREACH_TRACKING,
+  FOLLOW_UP_CADENCE,
+  OUTREACH_TYPE,
+  INTERVIEW_STAGE,
+  OUTCOME,
+} from '../netlify/functions/_shared/outreach.js';
+
+// 30a. Module exports exist
+assert('30a. FOLLOW_UP_CADENCE has FIRST_FOLLOW_UP_DAYS=7', FOLLOW_UP_CADENCE.FIRST_FOLLOW_UP_DAYS === 7);
+assert('30b. FOLLOW_UP_CADENCE has SECOND_FOLLOW_UP_DAYS=14', FOLLOW_UP_CADENCE.SECOND_FOLLOW_UP_DAYS === 14);
+assert('30c. FOLLOW_UP_CADENCE has STALE_DAYS=21', FOLLOW_UP_CADENCE.STALE_DAYS === 21);
+assert('30d. OUTREACH_TYPE has recruiter constant', typeof OUTREACH_TYPE.RECRUITER === 'string');
+assert('30e. OUTREACH_TYPE has hiring_manager constant', typeof OUTREACH_TYPE.HIRING_MANAGER === 'string');
+assert('30f. OUTREACH_TYPE has referral_ask constant', typeof OUTREACH_TYPE.REFERRAL_ASK === 'string');
+assert('30g. OUTREACH_TYPE has follow_up_1 constant', typeof OUTREACH_TYPE.FOLLOW_UP_1 === 'string');
+assert('30h. OUTREACH_TYPE has follow_up_2 constant', typeof OUTREACH_TYPE.FOLLOW_UP_2 === 'string');
+assert('30i. INTERVIEW_STAGE has NONE constant', typeof INTERVIEW_STAGE.NONE === 'string');
+assert('30j. INTERVIEW_STAGE has SCREENING_BOOKED constant', typeof INTERVIEW_STAGE.SCREENING_BOOKED === 'string');
+assert('30k. OUTCOME has PENDING constant', typeof OUTCOME.PENDING === 'string');
+assert('30l. OUTCOME has NO_RESPONSE constant', typeof OUTCOME.NO_RESPONSE === 'string');
+
+// 30b. DEFAULT_OUTREACH_TRACKING fields
+assert('30m. DEFAULT_OUTREACH_TRACKING has outreach_sent=false', DEFAULT_OUTREACH_TRACKING.outreach_sent === false);
+assert('30n. DEFAULT_OUTREACH_TRACKING has outreach_type=null', DEFAULT_OUTREACH_TRACKING.outreach_type === null);
+assert('30o. DEFAULT_OUTREACH_TRACKING has follow_up_1_sent=false', DEFAULT_OUTREACH_TRACKING.follow_up_1_sent === false);
+assert('30p. DEFAULT_OUTREACH_TRACKING has follow_up_2_sent=false', DEFAULT_OUTREACH_TRACKING.follow_up_2_sent === false);
+assert('30q. DEFAULT_OUTREACH_TRACKING has recruiter_response=false', DEFAULT_OUTREACH_TRACKING.recruiter_response === false);
+assert('30r. DEFAULT_OUTREACH_TRACKING has screening_call=false', DEFAULT_OUTREACH_TRACKING.screening_call === false);
+assert('30s. DEFAULT_OUTREACH_TRACKING has interview_stage field', typeof DEFAULT_OUTREACH_TRACKING.interview_stage === 'string');
+assert('30t. DEFAULT_OUTREACH_TRACKING has outcome field', typeof DEFAULT_OUTREACH_TRACKING.outcome === 'string');
+assert('30u. DEFAULT_OUTREACH_TRACKING has last_touch_date=null', DEFAULT_OUTREACH_TRACKING.last_touch_date === null);
+
+// 30c. computeFollowUpCadence
+const cadenceToday = computeFollowUpCadence(null);
+assert('30v. computeFollowUpCadence returns follow_up_1_due', typeof cadenceToday.follow_up_1_due === 'string');
+assert('30w. computeFollowUpCadence returns follow_up_2_due', typeof cadenceToday.follow_up_2_due === 'string');
+assert('30x. computeFollowUpCadence returns stale_after', typeof cadenceToday.stale_after === 'string');
+
+// follow_up_1 should be 7 days after today
+const f1Date = new Date(cadenceToday.follow_up_1_due);
+const f2Date = new Date(cadenceToday.follow_up_2_due);
+const staleDate = new Date(cadenceToday.stale_after);
+const today = new Date();
+const diffDays = (d) => Math.round((d - today) / 86400000);
+assert('30y. follow_up_1_due is ~7 days from today', Math.abs(diffDays(f1Date) - 7) <= 1);
+assert('30z. follow_up_2_due is ~14 days from today', Math.abs(diffDays(f2Date) - 14) <= 1);
+assert('30aa. stale_after is ~21 days from today', Math.abs(diffDays(staleDate) - 21) <= 1);
+
+// With specific applied date
+const pastDate = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10);
+const pastCadence = computeFollowUpCadence(pastDate);
+assert('30ab. computeFollowUpCadence works with past applied date', typeof pastCadence.follow_up_1_due === 'string');
+
+// 30d. daysSinceApplied
+assert('30ac. daysSinceApplied returns null for null input', daysSinceApplied(null) === null);
+const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+const daysResult = daysSinceApplied(sevenDaysAgo);
+assert('30ad. daysSinceApplied returns ~7 for 7 days ago', daysResult >= 6 && daysResult <= 8);
+
+// 30e. isFollowUp1Due
+const oppApplied7DaysAgo = {
+  status: 'applied',
+  follow_up_1_sent: false,
+  last_action_date: new Date(Date.now() - 8 * 86400000).toISOString(),
+};
+assert('30ae. isFollowUp1Due returns true for applied 8 days ago', isFollowUp1Due(oppApplied7DaysAgo) === true);
+
+const oppApplied1DayAgo = {
+  status: 'applied',
+  follow_up_1_sent: false,
+  last_action_date: new Date(Date.now() - 1 * 86400000).toISOString(),
+};
+assert('30af. isFollowUp1Due returns false for applied 1 day ago', isFollowUp1Due(oppApplied1DayAgo) === false);
+
+const oppFollowUp1AlreadySent = {
+  status: 'applied',
+  follow_up_1_sent: true,
+  last_action_date: new Date(Date.now() - 8 * 86400000).toISOString(),
+};
+assert('30ag. isFollowUp1Due returns false when follow_up_1_sent=true', isFollowUp1Due(oppFollowUp1AlreadySent) === false);
+
+// 30f. isFollowUp2Due
+const opp14DaysAgo = {
+  status: 'follow_up_1',
+  follow_up_2_sent: false,
+  last_action_date: new Date(Date.now() - 15 * 86400000).toISOString(),
+};
+assert('30ah. isFollowUp2Due returns true for applied 15 days ago', isFollowUp2Due(opp14DaysAgo) === true);
+
+const oppFU2AlreadySent = { ...opp14DaysAgo, follow_up_2_sent: true };
+assert('30ai. isFollowUp2Due returns false when follow_up_2_sent=true', isFollowUp2Due(oppFU2AlreadySent) === false);
+
+// 30g. isOutreachStale
+const opp25DaysAgo = {
+  status: 'applied',
+  recruiter_response: false,
+  last_action_date: new Date(Date.now() - 25 * 86400000).toISOString(),
+};
+assert('30aj. isOutreachStale returns true for applied 25 days, no response', isOutreachStale(opp25DaysAgo) === true);
+
+const oppWithResponse = { ...opp25DaysAgo, recruiter_response: true };
+assert('30ak. isOutreachStale returns false when recruiter_response=true', isOutreachStale(oppWithResponse) === false);
+
+const oppInterviewing = { ...opp25DaysAgo, status: 'interviewing' };
+assert('30al. isOutreachStale returns false when status=interviewing', isOutreachStale(oppInterviewing) === false);
+
+// 30h. getNextTouchRecommendation
+const recApplied8Days = getNextTouchRecommendation(oppApplied7DaysAgo);
+assert('30am. getNextTouchRecommendation returns object with action', typeof recApplied8Days.action === 'string');
+assert('30an. getNextTouchRecommendation returns object with urgency', typeof recApplied8Days.urgency === 'string');
+assert('30ao. getNextTouchRecommendation for 8-day applied opp suggests follow-up 1', recApplied8Days.action.toLowerCase().includes('follow'));
+
+const recRejected = getNextTouchRecommendation({ status: 'rejected' });
+assert('30ap. getNextTouchRecommendation for rejected opp returns low urgency', recRejected.urgency === 'low');
+
+const recInterviewing = getNextTouchRecommendation({ status: 'interviewing' });
+assert('30aq. getNextTouchRecommendation for interviewing returns high urgency', recInterviewing.urgency === 'high');
+
+// 30i. getFollowUpsDue
+const dueSampleOpps = [
+  { status: 'applied', next_action_due: new Date(Date.now() - 1 * 86400000).toISOString().slice(0, 10), follow_up_1_sent: false },
+  { status: 'applied', next_action_due: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10), follow_up_1_sent: false },
+  { status: 'rejected', next_action_due: new Date(Date.now() - 1 * 86400000).toISOString().slice(0, 10) },
+];
+const dueFU = getFollowUpsDue(dueSampleOpps);
+assert('30ar. getFollowUpsDue returns array', Array.isArray(dueFU));
+assert('30as. getFollowUpsDue excludes rejected roles', dueFU.every(o => o.status !== 'rejected'));
+assert('30at. getFollowUpsDue includes overdue applied role', dueFU.some(o => o.status === 'applied'));
+assert('30au. getFollowUpsDue excludes far-future due date', dueFU.every(o => !o.next_action_due || new Date(o.next_action_due) <= new Date(Date.now() + 2 * 86400000)));
+
+// 30j. getAppliedUntouched
+const untouchedSample = [
+  { status: 'applied', outreach_sent: false },
+  { status: 'applied', outreach_sent: true },
+  { status: 'follow_up_1', outreach_sent: false },
+  { status: 'rejected', outreach_sent: false },
+  { status: 'discovered', outreach_sent: false },
+];
+const untouchedResult = getAppliedUntouched(untouchedSample);
+assert('30av. getAppliedUntouched returns array', Array.isArray(untouchedResult));
+assert('30aw. getAppliedUntouched excludes roles with outreach_sent=true', untouchedResult.every(o => !o.outreach_sent));
+assert('30ax. getAppliedUntouched excludes rejected roles', untouchedResult.every(o => o.status !== 'rejected'));
+assert('30ay. getAppliedUntouched excludes non-applied roles', untouchedResult.every(o => ['applied','follow_up_1','follow_up_2'].includes(o.status)));
+assert('30az. getAppliedUntouched count is 2 (applied + follow_up_1, both untouched)', untouchedResult.length === 2);
+
+// 30k. computeOutreachResponseRate
+const rateSample = [
+  { status: 'applied',       outreach_sent: true,  recruiter_response: true  },
+  { status: 'applied',       outreach_sent: true,  recruiter_response: false },
+  { status: 'interviewing',  outreach_sent: true,  recruiter_response: false },
+  { status: 'applied',       outreach_sent: false, recruiter_response: false },
+  { status: 'rejected',      outreach_sent: false, recruiter_response: false },
+];
+const rateResult = computeOutreachResponseRate(rateSample);
+assert('30ba. computeOutreachResponseRate returns object', typeof rateResult === 'object' && rateResult !== null);
+assert('30bb. computeOutreachResponseRate.totalApplied counts all applied/terminal', rateResult.totalApplied === 5);
+assert('30bc. computeOutreachResponseRate.withOutreach.count is 3', rateResult.withOutreach.count === 3);
+assert('30bd. computeOutreachResponseRate.withoutOutreach.count is 2', rateResult.withoutOutreach.count === 2);
+// With outreach: 2 responses (recruiter_response + interviewing) out of 3 = 67%
+assert('30be. computeOutreachResponseRate.withOutreach.responseRate is 67', rateResult.withOutreach.responseRate === 67);
+// Without outreach: 0 responses out of 2 = 0%
+assert('30bf. computeOutreachResponseRate.withoutOutreach.responseRate is 0', rateResult.withoutOutreach.responseRate === 0);
+
+const emptyRateResult = computeOutreachResponseRate([]);
+assert('30bg. computeOutreachResponseRate handles empty array', emptyRateResult.totalApplied === 0);
+assert('30bh. computeOutreachResponseRate.withOutreach.responseRate is null for empty', emptyRateResult.withOutreach.responseRate === null);
+
+// 30l. buildReferralAskDraft
+const tpmOpp30 = { title: 'Senior Technical Project Manager', company: 'Leidos', lane: LANES.TPM };
+const referralDraft = buildReferralAskDraft(tpmOpp30);
+assert('30bi. buildReferralAskDraft returns non-empty string', typeof referralDraft === 'string' && referralDraft.length > 100);
+assert('30bj. buildReferralAskDraft mentions the role title', referralDraft.includes('Senior Technical Project Manager'));
+assert('30bk. buildReferralAskDraft mentions the company', referralDraft.includes('Leidos'));
+assert('30bl. buildReferralAskDraft does NOT auto-send', !referralDraft.toLowerCase().includes('auto-send') && !referralDraft.includes('autoSubmit'));
+assert('30bm. buildReferralAskDraft is signed with candidate name', referralDraft.includes('Sample Candidate'));
+
+// 30m. buildFirstFollowUpDraft
+const fu1Draft = buildFirstFollowUpDraft(tpmOpp30);
+assert('30bn. buildFirstFollowUpDraft returns non-empty string', typeof fu1Draft === 'string' && fu1Draft.length > 100);
+assert('30bo. buildFirstFollowUpDraft mentions the role title', fu1Draft.includes('Senior Technical Project Manager'));
+assert('30bp. buildFirstFollowUpDraft mentions the company', fu1Draft.includes('Leidos'));
+assert('30bq. buildFirstFollowUpDraft references approx one week timing', fu1Draft.toLowerCase().includes('week') || fu1Draft.toLowerCase().includes('seven') || fu1Draft.toLowerCase().includes('7'));
+assert('30br. buildFirstFollowUpDraft is signed', fu1Draft.includes('Sample Candidate'));
+
+// 30n. buildSecondFollowUpDraft
+const fu2Draft = buildSecondFollowUpDraft(tpmOpp30);
+assert('30bs. buildSecondFollowUpDraft returns non-empty string', typeof fu2Draft === 'string' && fu2Draft.length > 100);
+assert('30bt. buildSecondFollowUpDraft mentions the role title', fu2Draft.includes('Senior Technical Project Manager'));
+assert('30bu. buildSecondFollowUpDraft mentions the company', fu2Draft.includes('Leidos'));
+assert('30bv. buildSecondFollowUpDraft references approx two weeks timing', fu2Draft.toLowerCase().includes('two week') || fu2Draft.toLowerCase().includes('14'));
+assert('30bw. buildSecondFollowUpDraft is signed', fu2Draft.includes('Sample Candidate'));
+
+// 30o. buildRoleTalkingPoints
+const talkingPoints = buildRoleTalkingPoints(tpmOpp30);
+assert('30bx. buildRoleTalkingPoints returns array', Array.isArray(talkingPoints));
+assert('30by. buildRoleTalkingPoints returns at least 3 points', talkingPoints.length >= 3);
+assert('30bz. buildRoleTalkingPoints returns strings', talkingPoints.every(p => typeof p === 'string'));
+
+// 30p. prep.js exports outreach builders
+import {
+  buildRecruiterOutreach,
+  buildHiringManagerOutreach,
+  generatePrepPackage as generatePrepPackage30,
+} from '../netlify/functions/_shared/prep.js';
+assert('30ca. prep.js exports buildRecruiterOutreach', typeof buildRecruiterOutreach === 'function');
+assert('30cb. prep.js exports buildHiringManagerOutreach', typeof buildHiringManagerOutreach === 'function');
+
+const prepOpp30 = { id: 'opp-30', title: 'IT Project Manager', company: 'SAIC', lane: LANES.TPM, fit_score: 80, recommended: true, approval_state: 'approved', status: 'approved' };
+const prepPkg30 = generatePrepPackage30(prepOpp30);
+assert('30cc. generatePrepPackage outreach includes recruiterDraft', typeof prepPkg30.outreach.recruiterDraft === 'string' && prepPkg30.outreach.recruiterDraft.length > 50);
+assert('30cd. generatePrepPackage outreach includes hiringManagerDraft', typeof prepPkg30.outreach.hiringManagerDraft === 'string');
+assert('30ce. generatePrepPackage outreach includes referralAskDraft', typeof prepPkg30.outreach.referralAskDraft === 'string' && prepPkg30.outreach.referralAskDraft.length > 50);
+assert('30cf. generatePrepPackage outreach includes firstFollowUpDraft', typeof prepPkg30.outreach.firstFollowUpDraft === 'string' && prepPkg30.outreach.firstFollowUpDraft.length > 50);
+assert('30cg. generatePrepPackage outreach includes secondFollowUpDraft', typeof prepPkg30.outreach.secondFollowUpDraft === 'string' && prepPkg30.outreach.secondFollowUpDraft.length > 50);
+assert('30ch. generatePrepPackage outreach includes talkingPoints array', Array.isArray(prepPkg30.outreach.talkingPoints) && prepPkg30.outreach.talkingPoints.length >= 3);
+
+// 30q. applyPack.js includes new outreach fields
+import { generateApplyPack as generateApplyPack30 } from '../netlify/functions/_shared/applyPack.js';
+const pack30 = generateApplyPack30(prepOpp30);
+assert('30ci. Apply Pack includes referral_ask_draft', typeof pack30.referral_ask_draft === 'string' && pack30.referral_ask_draft.length > 50);
+assert('30cj. Apply Pack includes first_follow_up_draft', typeof pack30.first_follow_up_draft === 'string' && pack30.first_follow_up_draft.length > 50);
+assert('30ck. Apply Pack includes second_follow_up_draft', typeof pack30.second_follow_up_draft === 'string' && pack30.second_follow_up_draft.length > 50);
+assert('30cl. Apply Pack includes role_talking_points array', Array.isArray(pack30.role_talking_points) && pack30.role_talking_points.length >= 3);
+assert('30cm. Apply Pack includes follow_up_1_due cadence date', typeof pack30.follow_up_1_due === 'string');
+assert('30cn. Apply Pack includes follow_up_2_due cadence date', typeof pack30.follow_up_2_due === 'string');
+assert('30co. Apply Pack includes stale_after cadence date', typeof pack30.stale_after === 'string');
+assert('30cp. Apply Pack includes outreach_sent tracking field (default false)', pack30.outreach_sent === false);
+assert('30cq. Apply Pack includes follow_up_1_sent tracking field (default false)', pack30.follow_up_1_sent === false);
+assert('30cr. Apply Pack includes follow_up_2_sent tracking field (default false)', pack30.follow_up_2_sent === false);
+assert('30cs. Apply Pack includes recruiter_response tracking field (default false)', pack30.recruiter_response === false);
+assert('30ct. Apply Pack includes screening_call tracking field (default false)', pack30.screening_call === false);
+assert('30cu. Apply Pack includes interview_stage tracking field', typeof pack30.interview_stage === 'string');
+assert('30cv. Apply Pack includes outcome tracking field', typeof pack30.outcome === 'string');
+
+// 30r. ApplyPack.jsx enhanced outreach tab
+import { readFileSync as readFileSync30 } from 'fs';
+import { join as join30, dirname as dirname30 } from 'path';
+import { fileURLToPath as fileURLToPath30 } from 'url';
+const __dirname_v30 = dirname30(fileURLToPath30(import.meta.url));
+
+let applyPackSrc30 = '';
+try { applyPackSrc30 = readFileSync30(join30(__dirname_v30, '../src/pages/ApplyPack.jsx'), 'utf-8'); } catch {}
+assert('30cw. ApplyPack.jsx imports outreach module', applyPackSrc30.includes('outreach.js') || applyPackSrc30.includes("from '../../netlify/functions/_shared/outreach"));
+assert('30cx. ApplyPack.jsx renders referral_ask_draft', applyPackSrc30.includes('referral_ask_draft'));
+assert('30cy. ApplyPack.jsx renders first_follow_up_draft', applyPackSrc30.includes('first_follow_up_draft'));
+assert('30cz. ApplyPack.jsx renders second_follow_up_draft', applyPackSrc30.includes('second_follow_up_draft'));
+assert('30da. ApplyPack.jsx renders role_talking_points', applyPackSrc30.includes('role_talking_points'));
+assert('30db. ApplyPack.jsx shows follow-up cadence timeline', applyPackSrc30.includes('FOLLOW_UP_CADENCE') || applyPackSrc30.includes('follow_up_1_due'));
+assert('30dc. ApplyPack.jsx shows outreach_sent status', applyPackSrc30.includes('outreach_sent'));
+assert('30dd. ApplyPack.jsx warns do NOT auto-send', applyPackSrc30.toLowerCase().includes('do not auto-send') || applyPackSrc30.toLowerCase().includes('do not auto send'));
+
+// 30s. Dashboard.jsx outreach panel
+let dashSrc30 = '';
+try { dashSrc30 = readFileSync30(join30(__dirname_v30, '../src/pages/Dashboard.jsx'), 'utf-8'); } catch {}
+assert('30de. Dashboard.jsx imports outreach module', dashSrc30.includes('outreach.js') || dashSrc30.includes("from '../../netlify/functions/_shared/outreach"));
+assert('30df. Dashboard.jsx has OutreachCadencePanel component', dashSrc30.includes('OutreachCadencePanel'));
+assert('30dg. Dashboard.jsx uses getFollowUpsDue', dashSrc30.includes('getFollowUpsDue'));
+assert('30dh. Dashboard.jsx uses getAppliedUntouched', dashSrc30.includes('getAppliedUntouched'));
+
+// 30t. Reports.jsx outreach panel
+let reportsSrc30 = '';
+try { reportsSrc30 = readFileSync30(join30(__dirname_v30, '../src/pages/Reports.jsx'), 'utf-8'); } catch {}
+assert('30di. Reports.jsx imports outreach module', reportsSrc30.includes('outreach.js') || reportsSrc30.includes("from '../../netlify/functions/_shared/outreach"));
+assert('30dj. Reports.jsx has OutreachPanel component', reportsSrc30.includes('OutreachPanel'));
+assert('30dk. Reports.jsx has outreach tab in DIGEST_TYPES', reportsSrc30.includes("'outreach'") || reportsSrc30.includes('"outreach"'));
+assert('30dl. Reports.jsx uses computeOutreachResponseRate', reportsSrc30.includes('computeOutreachResponseRate'));
+assert('30dm. Reports.jsx shows response rate with outreach vs without', reportsSrc30.includes('withOutreach') && reportsSrc30.includes('withoutOutreach'));
+
+// 30u. Hierarchy and approval gate intact after outreach changes
+assert('30dn. Hierarchy intact: outreach module does not affect lane classification',
+  scoreOpportunity('Operations Manager', 'Retail store ops, scheduling').lane !== LANES.TPM);
+assert('30do. Approval gate intact: pending roles still not READY_TO_APPLY',
+  classifyReadinessGroup({ approval_state: 'pending', status: 'discovered', fit_score: 95 }) !== READINESS_GROUPS.READY_TO_APPLY);
+
+// 30v. No auto-send anywhere
+assert('30dp. outreach.js does not contain auto-send reference', (() => {
+  try {
+    const src = readFileSync30(join30(__dirname_v30, '../netlify/functions/_shared/outreach.js'), 'utf-8');
+    return !src.toLowerCase().includes('auto-send') || src.includes('Do NOT auto-send');
+  } catch { return true; }
+})());
+assert('30dq. outreach.js does not auto-submit anything', (() => {
+  try {
+    const src = readFileSync30(join30(__dirname_v30, '../netlify/functions/_shared/outreach.js'), 'utf-8');
+    return !src.includes('autoSubmit') && !src.includes('sendEmail') && !src.includes('sendMessage');
+  } catch { return true; }
+})());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);
