@@ -3,14 +3,24 @@ import { fetchDigest, triggerExport } from '../lib/api.js';
 import { useApp } from '../context/AppContext.jsx';
 import { computeReadinessSummary, classifyReadinessGroup, READINESS_GROUPS, READINESS_GROUP_LABELS } from '../../netlify/functions/_shared/readiness.js';
 import { LANE_CONFIG } from '../../netlify/functions/_shared/scoring.js';
+import {
+  getActiveDirectTargetEmployers,
+  getKnownIntermediaries,
+  computeEmployerQualitySignals,
+  getSourceQualityWarnings,
+  SOURCE_WARNING_LABELS,
+  EMPLOYER_PRIORITY,
+  EMPLOYER_TYPE,
+} from '../../netlify/functions/_shared/targetEmployers.js';
 
 const DIGEST_TYPES = [
-  { id: 'readiness',      label: 'Readiness Panel',  icon: '🎯' },
-  { id: 'source_quality', label: 'Source Quality',   icon: '📊' },
-  { id: 'approval',       label: 'Approval Queue',   icon: '✅' },
-  { id: 'stale',          label: 'Stale / Ghosted',  icon: '⚠️' },
-  { id: 'weekly',         label: 'Weekly Summary',   icon: '📅' },
-  { id: 'ingestion',      label: 'Ingestion Health', icon: '📡' },
+  { id: 'readiness',           label: 'Readiness Panel',    icon: '🎯' },
+  { id: 'source_quality',      label: 'Source Quality',     icon: '📊' },
+  { id: 'employer_targeting',  label: 'Employer Targets',   icon: '🏢' },
+  { id: 'approval',            label: 'Approval Queue',     icon: '✅' },
+  { id: 'stale',               label: 'Stale / Ghosted',    icon: '⚠️' },
+  { id: 'weekly',              label: 'Weekly Summary',     icon: '📅' },
+  { id: 'ingestion',           label: 'Ingestion Health',   icon: '📡' },
 ];
 
 const SF_META = {
@@ -82,6 +92,15 @@ function SourceQualityPanel({ opps }) {
   const isNoisy = (s) => s.total >= 5 && s.junk_pct > 50;
   const isNoiseAlert = (s) => s.total >= 5 && s.junk_pct > 60;
 
+  // Pre-compute source quality warnings from targetEmployers module
+  const sourceWarnings = useMemo(() => {
+    const map = {};
+    for (const sf of Object.keys(SF_META)) {
+      map[sf] = getSourceQualityWarnings(sf, opps);
+    }
+    return map;
+  }, [opps]);
+
   // Find the best-signal source (highest recommended_pct) among families with >= 3 records
   const eligibleForBadge = familyStats.filter(s => s.total >= 3);
   const bestSignalFamily = eligibleForBadge.length >= 2
@@ -132,6 +151,7 @@ function SourceQualityPanel({ opps }) {
                 <th>Missing URL</th>
                 <th>Top Lane</th>
                 <th>Quality</th>
+                <th>Warnings</th>
               </tr>
             </thead>
             <tbody>
@@ -188,6 +208,17 @@ function SourceQualityPanel({ opps }) {
                         <span style={{ color: 'var(--amber)' }}>Mixed</span>
                       )}
                     </td>
+                    <td style={{ fontSize: 10, maxWidth: 140 }}>
+                      {(sourceWarnings[s.source_family] || []).length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {(sourceWarnings[s.source_family] || []).map(w => (
+                            <span key={w} style={{ color: '#92400e', background: '#fef3c7', borderRadius: 4, padding: '1px 4px', fontSize: 9, fontWeight: 600 }}>
+                              {w.replace(/_/g, ' ')}
+                            </span>
+                          ))}
+                        </div>
+                      ) : '—'}
+                    </td>
                   </tr>
                 );
               })}
@@ -225,6 +256,214 @@ function SourceQualityPanel({ opps }) {
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+// ─── Employer Target Panel ────────────────────────────────────────────────────
+// Shows which target employers have yielded opportunities, source combinations,
+// and which are producing the best TPM / IT PM results.
+// Also shows known intermediaries for awareness.
+
+function EmployerTargetPanel({ opps }) {
+  const directTargets = getActiveDirectTargetEmployers();
+  const intermediaries = getKnownIntermediaries();
+
+  // Build per-employer stats from ingested opportunities
+  const employerStats = useMemo(() => {
+    return directTargets.map(emp => {
+      const signals = computeEmployerQualitySignals(opps, emp.name);
+      return { ...emp, signals };
+    });
+  }, [opps, directTargets]);
+
+  // Split by priority
+  const highPriority = employerStats.filter(e => e.priority === EMPLOYER_PRIORITY.HIGH);
+  const mediumPriority = employerStats.filter(e => e.priority === EMPLOYER_PRIORITY.MEDIUM);
+
+  // Intermediary warnings from ingested data
+  const intermediaryStats = useMemo(() => {
+    return intermediaries.map(emp => {
+      const signals = computeEmployerQualitySignals(opps, emp.name);
+      return { ...emp, signals };
+    }).filter(e => e.signals !== null); // only show if we've seen roles from them
+  }, [opps, intermediaries]);
+
+  const totalTargetRoles = opps.filter(o => o.is_target_employer).length;
+  const totalIntermediaryRoles = opps.filter(o => o.is_intermediary).length;
+
+  function EmployerRow({ emp }) {
+    const s = emp.signals;
+    const priorityColor = emp.priority === EMPLOYER_PRIORITY.HIGH ? '#15803d' : emp.priority === EMPLOYER_PRIORITY.MEDIUM ? '#1d4ed8' : '#6b7280';
+    const priorityBg = emp.priority === EMPLOYER_PRIORITY.HIGH ? '#dcfce7' : emp.priority === EMPLOYER_PRIORITY.MEDIUM ? '#eff6ff' : '#f9fafb';
+    return (
+      <tr>
+        <td>
+          <div style={{ fontWeight: 600, fontSize: 12 }}>{emp.name}</div>
+          <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 1 }}>{emp.notes}</div>
+        </td>
+        <td>
+          <span style={{ background: priorityBg, color: priorityColor, padding: '1px 6px', borderRadius: 8, fontSize: 10, fontWeight: 700 }}>
+            {emp.priority}
+          </span>
+        </td>
+        <td style={{ fontSize: 11 }}>
+          {emp.domain_tags.slice(0, 3).map(tag => (
+            <span key={tag} style={{ display: 'inline-block', background: '#f1f5f9', color: '#475569', padding: '1px 5px', borderRadius: 6, fontSize: 9, marginRight: 3, marginBottom: 2 }}>
+              {tag}
+            </span>
+          ))}
+        </td>
+        <td style={{ fontSize: 11 }}>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {emp.federal && <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '1px 5px', borderRadius: 6, fontSize: 9, fontWeight: 600 }}>🏛 federal</span>}
+            {emp.security && <span style={{ background: '#f5f3ff', color: '#7c3aed', padding: '1px 5px', borderRadius: 6, fontSize: 9, fontWeight: 600 }}>🔒 security</span>}
+            {emp.cloud && <span style={{ background: '#ecfdf5', color: '#059669', padding: '1px 5px', borderRadius: 6, fontSize: 9, fontWeight: 600 }}>☁️ cloud</span>}
+          </div>
+        </td>
+        <td style={{ fontSize: 12, fontWeight: 600, color: s ? '#1d4ed8' : 'var(--gray-400)' }}>
+          {s ? s.total : '—'}
+        </td>
+        <td style={{ fontSize: 12, color: s ? (s.recommendedRate >= 60 ? '#15803d' : s.recommendedRate >= 40 ? 'var(--amber)' : 'var(--red)') : 'var(--gray-400)' }}>
+          {s ? `${s.recommendedRate}%` : '—'}
+        </td>
+        <td style={{ fontSize: 12, color: s && s.highFitCount > 0 ? '#1d4ed8' : 'var(--gray-400)' }}>
+          {s ? s.highFitCount : '—'}
+        </td>
+        <td style={{ fontSize: 12, color: s && s.responseReadyCount > 0 ? '#15803d' : 'var(--gray-400)' }}>
+          {s ? s.responseReadyCount : '—'}
+        </td>
+        <td style={{ fontSize: 11 }}>
+          {s ? (
+            s.total === 0 ? <span style={{ color: 'var(--gray-400)' }}>Not yet seen</span>
+            : s.recommendedRate >= 60 ? <span style={{ color: '#15803d', fontWeight: 700 }}>✓ Strong signal</span>
+            : <span style={{ color: 'var(--amber)' }}>Mixed</span>
+          ) : (
+            <span style={{ color: 'var(--gray-400)', fontStyle: 'italic' }}>No roles ingested yet</span>
+          )}
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="card card-pad" style={{ fontSize: 12, color: 'var(--gray-600)', borderLeft: '3px solid #1d4ed8', background: '#eff6ff' }}>
+        <strong>Employer Targeting Panel</strong> — shows which target employers are active in your pipeline
+        and how many TPM/IT PM roles they've produced. Use this to decide which Lever/Greenhouse boards to
+        add next. Intermediary warnings flag staffing firms that may mask end employers.
+      </div>
+
+      {/* Summary stats */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div className="card stat-card" style={{ background: '#dcfce7', border: '1px solid #15803d33', minWidth: 140 }}>
+          <div className="stat-card__value" style={{ color: '#15803d', fontSize: 22 }}>{directTargets.filter(e => e.priority === EMPLOYER_PRIORITY.HIGH).length}</div>
+          <div className="stat-card__label">High-priority targets</div>
+        </div>
+        <div className="card stat-card" style={{ background: '#eff6ff', border: '1px solid #1d4ed833', minWidth: 140 }}>
+          <div className="stat-card__value" style={{ color: '#1d4ed8', fontSize: 22 }}>{totalTargetRoles}</div>
+          <div className="stat-card__label">Roles from target employers</div>
+        </div>
+        <div className="card stat-card" style={{ background: '#fef3c7', border: '1px solid #92400e33', minWidth: 140 }}>
+          <div className="stat-card__value" style={{ color: '#92400e', fontSize: 22 }}>{totalIntermediaryRoles}</div>
+          <div className="stat-card__label">Roles from intermediaries</div>
+        </div>
+      </div>
+
+      {/* High-priority target employers */}
+      <div className="card">
+        <div className="card-header" style={{ background: '#f0fdf4' }}>
+          <h2 style={{ color: '#15803d' }}>🎯 High-Priority Target Employers</h2>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="source-table">
+            <thead>
+              <tr>
+                <th>Employer</th>
+                <th>Priority</th>
+                <th>Domain tags</th>
+                <th>Signals</th>
+                <th>Roles seen</th>
+                <th>Rec rate</th>
+                <th>High fit</th>
+                <th>Response-ready</th>
+                <th>Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              {highPriority.map(emp => <EmployerRow key={emp.id} emp={emp} />)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Medium-priority target employers */}
+      <div className="card">
+        <div className="card-header">
+          <h2>📌 Medium-Priority Target Employers</h2>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table className="source-table">
+            <thead>
+              <tr>
+                <th>Employer</th>
+                <th>Priority</th>
+                <th>Domain tags</th>
+                <th>Signals</th>
+                <th>Roles seen</th>
+                <th>Rec rate</th>
+                <th>High fit</th>
+                <th>Response-ready</th>
+                <th>Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mediumPriority.map(emp => <EmployerRow key={emp.id} emp={emp} />)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Intermediary warning section */}
+      {intermediaryStats.length > 0 && (
+        <div className="card">
+          <div className="card-header" style={{ background: '#fef3c7' }}>
+            <h2 style={{ color: '#92400e' }}>⚙ Known Intermediaries / Staffing Firms ({intermediaryStats.length} seen)</h2>
+          </div>
+          <div className="card-body" style={{ fontSize: 12, color: 'var(--gray-600)', marginBottom: 10 }}>
+            These companies are staffing firms that may post roles without naming the end employer.
+            Review end-client details before applying. Roles from these sources are flagged in the approval queue.
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="source-table">
+              <thead>
+                <tr>
+                  <th>Firm</th>
+                  <th>Roles seen</th>
+                  <th>Rec rate</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {intermediaryStats.map(emp => (
+                  <tr key={emp.id}>
+                    <td style={{ fontSize: 12, fontWeight: 600 }}>{emp.name}</td>
+                    <td style={{ fontSize: 12 }}>{emp.signals?.total ?? 0}</td>
+                    <td style={{ fontSize: 12, color: 'var(--amber)' }}>{emp.signals ? `${emp.signals.recommendedRate}%` : '—'}</td>
+                    <td style={{ fontSize: 11, color: 'var(--gray-500)' }}>{emp.notes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="card card-pad" style={{ fontSize: 12, color: 'var(--gray-500)', borderLeft: '3px solid var(--gray-300)' }}>
+        <strong>How to use this panel:</strong> High-priority employers with zero roles seen → add their
+        Lever/Greenhouse board slugs to your env vars. Employers with strong rec rate ≥ 60% → prioritise
+        reviewing their approval queue. Intermediary-heavy sources → request end-client name before applying.
+      </div>
     </div>
   );
 }
@@ -385,7 +624,7 @@ export default function Reports() {
   const [exporting, setExporting] = useState(false);
 
   const loadDigest = useCallback(async (type) => {
-    if (type === 'readiness' || type === 'source_quality') return; // These panels use live state
+    if (type === 'readiness' || type === 'source_quality' || type === 'employer_targeting') return; // These panels use live state
     setLoading(true);
     setDigest(null);
     try {
@@ -450,11 +689,16 @@ export default function Reports() {
         <SourceQualityPanel opps={state.opportunities} />
       )}
 
-      {activeType !== 'readiness' && activeType !== 'source_quality' && loading && (
+      {/* Employer Targeting Panel — live, computed from opportunity state + registry */}
+      {activeType === 'employer_targeting' && (
+        <EmployerTargetPanel opps={state.opportunities} />
+      )}
+
+      {activeType !== 'readiness' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && loading && (
         <div className="card card-pad" style={{ color: 'var(--gray-500)', fontSize: 13 }}>Generating digest…</div>
       )}
 
-      {activeType !== 'readiness' && activeType !== 'source_quality' && !loading && digest && (
+      {activeType !== 'readiness' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && !loading && digest && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Summary banner */}
           <div className="card card-pad" style={{ borderLeft: '3px solid var(--blue)', background: '#eff6ff' }}>

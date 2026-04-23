@@ -21,6 +21,7 @@
  */
 
 import { passesDiscoveryProfile, DEFAULT_DISCOVERY_PROFILE, SOURCE_FAMILIES } from './sources.js';
+import { getEmployerMeta, isIntermediaryEmployer, EMPLOYER_TYPE } from './targetEmployers.js';
 
 // ─── Shared request helper ────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ async function fetchText(url) {
 /**
  * Normalise any discovered job to the standard intake schema.
  * Adds canonical_job_url, application_url, source_job_id, source_family, is_demo_record.
+ * Also tags with employer metadata: is_target_employer, employer_type, employer_priority.
  */
 export function normaliseJob({
   title,
@@ -65,9 +67,18 @@ export function normaliseJob({
   source_id,
   extra = {},
 }) {
+  const companyStr = String(company || '').trim();
+
+  // Employer signal tags — added at intake so approval queue + reports can use them
+  const employerMeta = getEmployerMeta(companyStr);
+  const is_target_employer = employerMeta !== null;
+  const employer_type = employerMeta ? employerMeta.type : null;
+  const employer_priority = employerMeta ? employerMeta.priority : null;
+  const is_intermediary = isIntermediaryEmployer(companyStr);
+
   return {
     title: String(title || '').trim(),
-    company: String(company || '').trim(),
+    company: companyStr,
     description: String(description || '').trim(),
     location: String(location || '').trim(),
     canonical_job_url: canonical_job_url ? String(canonical_job_url).trim() : null,
@@ -77,6 +88,11 @@ export function normaliseJob({
     source: source_id || 'src-live',
     is_demo_record: false,
     discovered_at: new Date().toISOString(),
+    // Employer targeting fields
+    is_target_employer,
+    employer_type,
+    employer_priority,
+    is_intermediary,
     ...extra,
   };
 }

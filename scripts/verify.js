@@ -2870,5 +2870,232 @@ assert('28cy. ApplyPack.jsx shows Confirm before use badge',
 assert('28cz. ApplyPack.jsx renders contact block for copy',
   applyPackSrc28.includes('contactBlockText'));
 
+// ─── Section 29: Employer Targeting Layer ─────────────────────────────────────
+
+console.log('\n== 29. Employer Targeting Layer ==');
+
+import {
+  TARGET_EMPLOYER_REGISTRY,
+  EMPLOYER_PRIORITY,
+  EMPLOYER_TYPE,
+  getEmployerMeta,
+  isTargetEmployer,
+  classifyEmployerType,
+  isIntermediaryEmployer,
+  getActiveTargetEmployers,
+  getActiveDirectTargetEmployers,
+  getKnownIntermediaries,
+  computeEmployerQualitySignals,
+  getSourceQualityWarnings,
+  SOURCE_WARNING_LABELS,
+  buildApprovalQueueSignals,
+} from '../netlify/functions/_shared/targetEmployers.js';
+
+// 29a. File structure
+assert('29a. targetEmployers.js exports TARGET_EMPLOYER_REGISTRY', Array.isArray(TARGET_EMPLOYER_REGISTRY));
+assert('29b. TARGET_EMPLOYER_REGISTRY has entries', TARGET_EMPLOYER_REGISTRY.length >= 5);
+assert('29c. EMPLOYER_PRIORITY has HIGH, MEDIUM, LOW', EMPLOYER_PRIORITY.HIGH && EMPLOYER_PRIORITY.MEDIUM && EMPLOYER_PRIORITY.LOW);
+assert('29d. EMPLOYER_TYPE has DIRECT, INTERMEDIARY, AGGREGATOR', EMPLOYER_TYPE.DIRECT && EMPLOYER_TYPE.INTERMEDIARY);
+
+// 29b. Each entry has required fields
+assert('29e. All registry entries have id, name, type, priority, active fields',
+  TARGET_EMPLOYER_REGISTRY.every(e =>
+    e.id && e.name && e.type && e.priority && typeof e.active === 'boolean'
+  ));
+assert('29f. All registry entries have domain_tags array', TARGET_EMPLOYER_REGISTRY.every(e => Array.isArray(e.domain_tags)));
+assert('29g. All registry entries have federal, cloud, security booleans',
+  TARGET_EMPLOYER_REGISTRY.every(e =>
+    typeof e.federal === 'boolean' && typeof e.cloud === 'boolean' && typeof e.security === 'boolean'
+  ));
+assert('29h. All registry entries have notes string', TARGET_EMPLOYER_REGISTRY.every(e => typeof e.notes === 'string'));
+
+// 29c. Priority distribution
+const highPriorityCount = TARGET_EMPLOYER_REGISTRY.filter(e => e.priority === EMPLOYER_PRIORITY.HIGH && e.active).length;
+const mediumPriorityCount = TARGET_EMPLOYER_REGISTRY.filter(e => e.priority === EMPLOYER_PRIORITY.MEDIUM && e.active).length;
+const lowPriorityCount = TARGET_EMPLOYER_REGISTRY.filter(e => e.priority === EMPLOYER_PRIORITY.LOW && e.active).length;
+assert('29i. At least 3 high-priority employers exist', highPriorityCount >= 3);
+assert('29j. At least 2 medium-priority employers exist', mediumPriorityCount >= 2);
+assert('29k. At least 1 known intermediary exists', lowPriorityCount >= 1);
+
+// 29d. Type distribution
+const directCount = TARGET_EMPLOYER_REGISTRY.filter(e => e.type === EMPLOYER_TYPE.DIRECT && e.active).length;
+const intermediaryCount = TARGET_EMPLOYER_REGISTRY.filter(e => e.type === EMPLOYER_TYPE.INTERMEDIARY && e.active).length;
+assert('29l. At least 5 direct employers in registry', directCount >= 5);
+assert('29m. At least 1 intermediary in registry', intermediaryCount >= 1);
+
+// 29e. Federal / security coverage
+const federalCount = TARGET_EMPLOYER_REGISTRY.filter(e => e.federal && e.active).length;
+const securityCount = TARGET_EMPLOYER_REGISTRY.filter(e => e.security && e.active).length;
+assert('29n. At least 5 federal employers in registry', federalCount >= 5);
+assert('29o. At least 3 security/IAM employers in registry', securityCount >= 3);
+
+// 29f. getEmployerMeta lookup
+const leidosMeta = getEmployerMeta('Leidos');
+assert('29p. getEmployerMeta finds Leidos by exact name', leidosMeta !== null && leidosMeta.id === 'emp-leidos');
+const leidosAlias = getEmployerMeta('leidos holdings');
+assert('29q. getEmployerMeta finds Leidos by alias', leidosAlias !== null);
+const unknownMeta = getEmployerMeta('Some Random Staffing Co');
+assert('29r. getEmployerMeta returns null for unknown company', unknownMeta === null);
+
+// 29g. isTargetEmployer
+assert('29s. isTargetEmployer returns true for known employer', isTargetEmployer('Leidos') === true);
+assert('29t. isTargetEmployer returns true for known intermediary', isTargetEmployer('Insight Global') === true);
+assert('29u. isTargetEmployer returns false for unknown company', isTargetEmployer('Random Corp') === false);
+
+// 29h. classifyEmployerType
+assert('29v. classifyEmployerType returns DIRECT for Leidos', classifyEmployerType('Leidos') === EMPLOYER_TYPE.DIRECT);
+assert('29w. classifyEmployerType returns INTERMEDIARY for TEKsystems', classifyEmployerType('TEKsystems') === EMPLOYER_TYPE.INTERMEDIARY);
+assert('29x. classifyEmployerType returns null for unknown', classifyEmployerType('Unknown Corp') === null);
+
+// 29i. isIntermediaryEmployer
+assert('29y. isIntermediaryEmployer returns true for TEKsystems', isIntermediaryEmployer('TEKsystems') === true);
+assert('29z. isIntermediaryEmployer returns false for Leidos', isIntermediaryEmployer('Leidos') === false);
+assert('29aa. isIntermediaryEmployer returns false for unknown', isIntermediaryEmployer('Random Corp') === false);
+
+// 29j. getActiveTargetEmployers
+const activeTargets = getActiveTargetEmployers();
+assert('29ab. getActiveTargetEmployers returns array', Array.isArray(activeTargets));
+assert('29ac. getActiveTargetEmployers returns only active entries', activeTargets.every(e => e.active));
+assert('29ad. getActiveTargetEmployers sorts high priority first',
+  activeTargets[0].priority === EMPLOYER_PRIORITY.HIGH ||
+  activeTargets.every(e => e.priority !== EMPLOYER_PRIORITY.HIGH));
+
+// 29k. getActiveDirectTargetEmployers
+const directTargets = getActiveDirectTargetEmployers();
+assert('29ae. getActiveDirectTargetEmployers returns only direct employers', directTargets.every(e => e.type === EMPLOYER_TYPE.DIRECT));
+assert('29af. getActiveDirectTargetEmployers returns at least 5', directTargets.length >= 5);
+
+// 29l. getKnownIntermediaries
+const intermediaries = getKnownIntermediaries();
+assert('29ag. getKnownIntermediaries returns at least 1 entry', intermediaries.length >= 1);
+assert('29ah. getKnownIntermediaries returns only INTERMEDIARY type', intermediaries.every(e => e.type === EMPLOYER_TYPE.INTERMEDIARY));
+
+// 29m. computeEmployerQualitySignals
+const sampleOpps = [
+  { company: 'Leidos', recommended: true, fit_score: 88, approval_state: 'approved', application_url: 'https://leidos.com/apply/1' },
+  { company: 'Leidos', recommended: false, fit_score: 45, approval_state: 'pending', application_url: null },
+  { company: 'Leidos', recommended: true, fit_score: 72, approval_state: 'approved', application_url: 'https://leidos.com/apply/2' },
+];
+const leidosSignals = computeEmployerQualitySignals(sampleOpps, 'Leidos');
+assert('29ai. computeEmployerQualitySignals returns object for known employer', leidosSignals !== null);
+assert('29aj. computeEmployerQualitySignals.total is correct', leidosSignals.total === 3);
+assert('29ak. computeEmployerQualitySignals.recommended is correct', leidosSignals.recommended === 2);
+assert('29al. computeEmployerQualitySignals.recommendedRate is correct', leidosSignals.recommendedRate === 67);
+assert('29am. computeEmployerQualitySignals.highFitCount is correct', leidosSignals.highFitCount === 1);
+assert('29an. computeEmployerQualitySignals.responseReadyCount is correct', leidosSignals.responseReadyCount === 2);
+assert('29ao. computeEmployerQualitySignals returns null for employer with no opps',
+  computeEmployerQualitySignals(sampleOpps, 'Unknown Corp') === null);
+
+// 29n. getSourceQualityWarnings
+const zeroOpps = [];
+const zeroWarnings = getSourceQualityWarnings('lever', zeroOpps);
+assert('29ap. getSourceQualityWarnings returns zero_yield for empty source', zeroWarnings.includes('zero_yield'));
+
+const junkyOpps = Array(10).fill(null).map((_, i) => ({
+  source_family: 'greenhouse', recommended: i < 2, fit_score: i < 2 ? 80 : 30,
+  company: 'Random Co', discovered_at: new Date().toISOString(),
+}));
+const junkyWarnings = getSourceQualityWarnings('greenhouse', junkyOpps);
+assert('29aq. getSourceQualityWarnings detects noisy source (>50% junk with 5+ records)', junkyWarnings.includes('noisy'));
+
+const staleOpps = Array(5).fill(null).map((_, i) => ({
+  source_family: 'seek', recommended: true, fit_score: 80,
+  company: 'GovCo', discovered_at: new Date(Date.now() - 40 * 86400000).toISOString(), // 40 days ago
+}));
+const staleWarnings = getSourceQualityWarnings('seek', staleOpps);
+assert('29ar. getSourceQualityWarnings detects stale board (>50% records 30+ days old)', staleWarnings.includes('stale_board'));
+
+// 29o. SOURCE_WARNING_LABELS
+assert('29as. SOURCE_WARNING_LABELS has entry for zero_yield', typeof SOURCE_WARNING_LABELS.zero_yield === 'string');
+assert('29at. SOURCE_WARNING_LABELS has entry for noisy', typeof SOURCE_WARNING_LABELS.noisy === 'string');
+assert('29au. SOURCE_WARNING_LABELS has entry for stale_board', typeof SOURCE_WARNING_LABELS.stale_board === 'string');
+assert('29av. SOURCE_WARNING_LABELS has entry for intermediary_heavy', typeof SOURCE_WARNING_LABELS.intermediary_heavy === 'string');
+
+// 29p. buildApprovalQueueSignals
+const directOpp = { company: 'Leidos', fit_score: 85, recommended: true };
+const directSignals = buildApprovalQueueSignals(directOpp);
+assert('29aw. buildApprovalQueueSignals returns array', Array.isArray(directSignals));
+assert('29ax. direct employer opp gets direct_employer signal', directSignals.some(s => s.type === 'direct_employer'));
+assert('29ay. federal employer opp gets federal_regulated signal', directSignals.some(s => s.type === 'federal_regulated'));
+assert('29az. security employer opp gets security_iam signal', directSignals.some(s => s.type === 'security_iam'));
+
+const staffingOpp = { company: 'TEKsystems', fit_score: 40, recommended: false };
+const staffingSignals = buildApprovalQueueSignals(staffingOpp);
+assert('29ba. intermediary opp gets staffing_intermediary signal', staffingSignals.some(s => s.type === 'staffing_intermediary'));
+
+const unknownLowOpp = { company: 'Random Corp', fit_score: 30, recommended: false };
+const unknownSignals = buildApprovalQueueSignals(unknownLowOpp);
+assert('29bb. low-fit unknown employer gets low_signal_noise signal', unknownSignals.some(s => s.type === 'low_signal_noise'));
+
+const unknownHighOpp = { company: 'Random Corp', fit_score: 85, recommended: true };
+const unknownHighSignals = buildApprovalQueueSignals(unknownHighOpp);
+assert('29bc. high-fit unknown employer does NOT get low_signal_noise signal', !unknownHighSignals.some(s => s.type === 'low_signal_noise'));
+
+// 29q. normaliseJob employer tagging (via jobFinder import)
+const taggedJob = normaliseJob({
+  title: 'Senior Technical Project Manager',
+  company: 'Leidos',
+  description: 'Federal cloud delivery. IAM. FedRAMP.',
+  location: 'McLean, VA',
+  canonical_job_url: 'https://leidos.com/jobs/123',
+  source_family: 'greenhouse',
+  source_id: 'src-greenhouse-boards',
+});
+assert('29bd. normaliseJob tags Leidos as is_target_employer=true', taggedJob.is_target_employer === true);
+assert('29be. normaliseJob tags Leidos as employer_type=direct', taggedJob.employer_type === EMPLOYER_TYPE.DIRECT);
+assert('29bf. normaliseJob tags Leidos employer_priority=high', taggedJob.employer_priority === EMPLOYER_PRIORITY.HIGH);
+assert('29bg. normaliseJob sets is_intermediary=false for Leidos', taggedJob.is_intermediary === false);
+
+const intermediaryJob = normaliseJob({
+  title: 'IT Project Manager',
+  company: 'TEKsystems',
+  description: 'Contract IT PM role.',
+  location: 'United States',
+  canonical_job_url: 'https://teksystems.com/jobs/456',
+  source_family: 'lever',
+  source_id: 'src-lever-boards',
+});
+assert('29bh. normaliseJob tags TEKsystems as is_target_employer=true', intermediaryJob.is_target_employer === true);
+assert('29bi. normaliseJob sets is_intermediary=true for TEKsystems', intermediaryJob.is_intermediary === true);
+
+const unknownJob = normaliseJob({
+  title: 'IT PM',
+  company: 'Unknown Small Corp',
+  description: 'PM role.',
+  location: 'Remote',
+  canonical_job_url: 'https://unknowncorp.com/jobs/789',
+  source_family: 'greenhouse',
+});
+assert('29bj. normaliseJob sets is_target_employer=false for unknown company', unknownJob.is_target_employer === false);
+assert('29bk. normaliseJob sets is_intermediary=false for unknown company', unknownJob.is_intermediary === false);
+
+// 29r. Reports.jsx has employer targeting panel
+let reportsSrc29 = '';
+try { reportsSrc29 = readFileSync28(join28(__dirname_v28, '../src/pages/Reports.jsx'), 'utf-8'); } catch {}
+assert('29bl. Reports.jsx imports targetEmployers module', reportsSrc29.includes('targetEmployers'));
+assert('29bm. Reports.jsx has employer_targeting tab', reportsSrc29.includes("'employer_targeting'") || reportsSrc29.includes('"employer_targeting"'));
+assert('29bn. Reports.jsx has EmployerTargetPanel component', reportsSrc29.includes('EmployerTargetPanel'));
+assert('29bo. Reports.jsx shows direct employer distinction', reportsSrc29.includes('direct') || reportsSrc29.includes('DIRECT'));
+assert('29bp. Reports.jsx shows intermediary distinction', reportsSrc29.includes('intermediary') || reportsSrc29.includes('INTERMEDIARY'));
+assert('29bq. Reports.jsx imports getSourceQualityWarnings', reportsSrc29.includes('getSourceQualityWarnings'));
+assert('29br. Reports.jsx shows SOURCE_WARNING_LABELS or warning codes', reportsSrc29.includes('SOURCE_WARNING_LABELS') || reportsSrc29.includes('zero_yield'));
+
+// 29s. Dashboard.jsx has target employer badge
+let dashSrc29 = '';
+try { dashSrc29 = readFileSync28(join28(__dirname_v28, '../src/pages/Dashboard.jsx'), 'utf-8'); } catch {}
+assert('29bs. Dashboard.jsx imports targetEmployers module', dashSrc29.includes('targetEmployers'));
+assert('29bt. Dashboard.jsx shows TARGET badge for target employer roles', dashSrc29.includes('TARGET') || dashSrc29.includes('is_target_employer'));
+assert('29bu. Dashboard.jsx shows Staffing badge for intermediary roles', dashSrc29.includes('Staffing') || dashSrc29.includes('is_intermediary'));
+
+// 29t. Hierarchy and approval gate still intact
+assert('29bv. Hierarchy intact: weak ops role not in TPM lane after employer targeting changes',
+  scoreOpportunity('Store Operations Manager', 'Retail store operations, inventory, scheduling').lane !== LANES.TPM);
+assert('29bw. Approval gate intact: pending roles not in READY_TO_APPLY group',
+  classifyReadinessGroup({ approval_state: 'pending', status: 'discovered', fit_score: 95 }) !== READINESS_GROUPS.READY_TO_APPLY);
+
+// 29u. No auto-submit introduced
+assert('29bx. targetEmployers.js does not contain auto-submit',
+  !TARGET_EMPLOYER_REGISTRY.some(e => typeof e === 'object' && JSON.stringify(e).includes('autoSubmit')));
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);

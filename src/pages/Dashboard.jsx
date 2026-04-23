@@ -6,6 +6,7 @@ import QuickAddWidget from '../components/QuickAddWidget.jsx';
 import { approveOpportunity } from '../lib/api.js';
 import { getBestNextActions, classifyReadinessGroup, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
 import { LANE_CONFIG } from '../../netlify/functions/_shared/scoring.js';
+import { isIntermediaryEmployer, EMPLOYER_TYPE } from '../../netlify/functions/_shared/targetEmployers.js';
 
 const SOURCE_FAMILY_LABELS = {
   greenhouse: { label: 'Greenhouse', color: '#15803d', bg: '#dcfce7' },
@@ -90,6 +91,26 @@ function BestNewRolesPanel({ opps, onNavigate }) {
                   whiteSpace: 'nowrap', letterSpacing: '0.04em',
                 }}>
                   NEW TODAY
+                </span>
+              )}
+              {/* TARGET EMPLOYER badge */}
+              {o.is_target_employer && !o.is_intermediary && (
+                <span style={{
+                  background: '#eff6ff', color: '#1d4ed8',
+                  padding: '1px 6px', borderRadius: 8, fontSize: 9, fontWeight: 700,
+                  whiteSpace: 'nowrap', letterSpacing: '0.04em', border: '1px solid #bfdbfe',
+                }}>
+                  🎯 TARGET
+                </span>
+              )}
+              {/* INTERMEDIARY warning badge */}
+              {o.is_intermediary && (
+                <span style={{
+                  background: '#fef3c7', color: '#92400e',
+                  padding: '1px 6px', borderRadius: 8, fontSize: 9, fontWeight: 700,
+                  whiteSpace: 'nowrap', letterSpacing: '0.04em',
+                }}>
+                  ⚙ Staffing
                 </span>
               )}
               {/* Lane badge */}
