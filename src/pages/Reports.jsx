@@ -18,16 +18,28 @@ import {
   getAppliedUntouched,
   FOLLOW_UP_CADENCE,
 } from '../../netlify/functions/_shared/outreach.js';
+import {
+  computeConversionFunnel,
+  computeResponseRateBySource,
+  computeResponseRateByEmployerType,
+  computeResponseRateByResumeVersion,
+  computeResponseRateByLane,
+  runExperimentComparisons,
+  buildDecisionSupportSummary,
+  getZeroConversionWarnings,
+  EXPERIMENT_TYPE,
+} from '../../netlify/functions/_shared/conversionMetrics.js';
 
 const DIGEST_TYPES = [
-  { id: 'readiness',           label: 'Readiness Panel',    icon: '🎯' },
-  { id: 'source_quality',      label: 'Source Quality',     icon: '📊' },
-  { id: 'employer_targeting',  label: 'Employer Targets',   icon: '🏢' },
-  { id: 'outreach',            label: 'Outreach & Follow-Up', icon: '📬' },
-  { id: 'approval',            label: 'Approval Queue',     icon: '✅' },
-  { id: 'stale',               label: 'Stale / Ghosted',    icon: '⚠️' },
-  { id: 'weekly',              label: 'Weekly Summary',     icon: '📅' },
-  { id: 'ingestion',           label: 'Ingestion Health',   icon: '📡' },
+  { id: 'readiness',           label: 'Readiness Panel',       icon: '🎯' },
+  { id: 'conversion_metrics',  label: 'Conversion Metrics',    icon: '📈' },
+  { id: 'source_quality',      label: 'Source Quality',        icon: '📊' },
+  { id: 'employer_targeting',  label: 'Employer Targets',      icon: '🏢' },
+  { id: 'outreach',            label: 'Outreach & Follow-Up',  icon: '📬' },
+  { id: 'approval',            label: 'Approval Queue',        icon: '✅' },
+  { id: 'stale',               label: 'Stale / Ghosted',       icon: '⚠️' },
+  { id: 'weekly',              label: 'Weekly Summary',        icon: '📅' },
+  { id: 'ingestion',           label: 'Ingestion Health',      icon: '📡' },
 ];
 
 const SF_META = {
@@ -476,6 +488,293 @@ function EmployerTargetPanel({ opps }) {
   );
 }
 
+// ─── Conversion Metrics Panel ────────────────────────────────────────────────
+// Answers: which sources convert, which resume versions win, does outreach help,
+// which lanes are wasting time, what to keep / stop / test.
+
+const SF_META_CONV = {
+  greenhouse: '#15803d',
+  lever:      '#7c3aed',
+  usajobs:    '#1d4ed8',
+  seek:       '#0369a1',
+  apsjobs:    '#b45309',
+  manual:     '#6b7280',
+  csv:        '#6b7280',
+};
+
+function RateBadge({ rate }) {
+  if (rate === null) return <span style={{ color: 'var(--gray-400)', fontSize: 11 }}>—</span>;
+  const color = rate >= 30 ? '#15803d' : rate >= 15 ? '#1d4ed8' : rate >= 1 ? '#92400e' : '#c2410c';
+  return (
+    <span style={{
+      background: rate >= 30 ? '#dcfce7' : rate >= 15 ? '#eff6ff' : rate >= 1 ? '#fef3c7' : '#fee2e2',
+      color, padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+    }}>
+      {rate}%
+    </span>
+  );
+}
+
+function ConversionMetricsPanel({ opps }) {
+  const funnel   = useMemo(() => computeConversionFunnel(opps),           [opps]);
+  const bySrc    = useMemo(() => computeResponseRateBySource(opps),       [opps]);
+  const byEmp    = useMemo(() => computeResponseRateByEmployerType(opps), [opps]);
+  const byResume = useMemo(() => computeResponseRateByResumeVersion(opps),[opps]);
+  const byLane   = useMemo(() => computeResponseRateByLane(opps),         [opps]);
+  const exps     = useMemo(() => runExperimentComparisons(opps),          [opps]);
+  const decision = useMemo(() => buildDecisionSupportSummary(opps),       [opps]);
+  const zeros    = useMemo(() => getZeroConversionWarnings(opps),         [opps]);
+
+  if (funnel.applications_sent === 0) {
+    return (
+      <div className="card card-pad" style={{ color: 'var(--gray-500)', fontSize: 13 }}>
+        No applied roles yet. Once you start applying and tracking outcomes, conversion metrics will appear here.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Header note */}
+      <div className="card card-pad" style={{ fontSize: 12, color: 'var(--gray-600)', borderLeft: '3px solid #1d4ed8', background: '#eff6ff' }}>
+        <strong>Conversion Metrics</strong> — live from your pipeline data.
+        All metrics are derived from operator-entered outcomes (no AI inference).
+        Update interview stage and outcome fields in the Apply Pack → Outreach tab as each role progresses.
+      </div>
+
+      {/* Zero-conversion warnings */}
+      {zeros.length > 0 && (
+        <div className="card card-pad" style={{ borderLeft: '3px solid #c2410c', background: '#fff1f2', fontSize: 12 }}>
+          {zeros.map((w, i) => (
+            <div key={i} style={{ color: '#c2410c', fontWeight: 600 }}>⚠ {w}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Funnel stats */}
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--gray-700)' }}>Application Funnel</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {[
+            { label: 'Applications Sent',  value: funnel.applications_sent, color: '#1d4ed8', bg: '#eff6ff' },
+            { label: 'Responses',          value: funnel.responses,         sub: funnel.response_rate !== null ? `${funnel.response_rate}% response rate` : null, color: '#15803d', bg: '#f0fdf4' },
+            { label: 'Screening Calls',    value: funnel.screens,           sub: funnel.screen_rate !== null ? `${funnel.screen_rate}% screen rate` : null,    color: '#0369a1', bg: '#f0f9ff' },
+            { label: 'Interviews',         value: funnel.interviews,        sub: funnel.interview_rate !== null ? `${funnel.interview_rate}% interview rate` : null, color: '#7c3aed', bg: '#f5f3ff' },
+            { label: 'Offers',             value: funnel.offers,            sub: funnel.offer_rate !== null ? `${funnel.offer_rate}% offer rate` : null,        color: '#059669', bg: '#ecfdf5' },
+            { label: 'Rejections',         value: funnel.rejections,        color: '#c2410c', bg: '#fff1f2' },
+            { label: 'No Response',        value: funnel.no_responses,      color: '#92400e', bg: '#fef3c7' },
+          ].map((s, i) => (
+            <div key={i} className="card stat-card" style={{ background: s.bg, border: `1px solid ${s.color}22`, minWidth: 110 }}>
+              <div className="stat-card__value" style={{ color: s.color, fontSize: 22 }}>{s.value ?? 0}</div>
+              <div className="stat-card__label">{s.label}</div>
+              {s.sub && <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>{s.sub}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Response rate by source */}
+      {bySrc.length > 0 && (
+        <div className="card">
+          <div className="card-header"><h2>📡 Response Rate by Source</h2></div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="source-table">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Applied</th>
+                  <th>Responses</th>
+                  <th>Response Rate</th>
+                  <th>Data Quality</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bySrc.map(s => (
+                  <tr key={s.source_family}>
+                    <td>
+                      <span style={{ color: SF_META_CONV[s.source_family] || '#6b7280', fontWeight: 700, fontSize: 12 }}>
+                        {s.source_family}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>{s.total}</td>
+                    <td style={{ fontSize: 12 }}>{s.responses}</td>
+                    <td><RateBadge rate={s.response_rate} /></td>
+                    <td style={{ fontSize: 11, color: s.has_enough_data ? 'var(--gray-500)' : 'var(--amber)' }}>
+                      {s.has_enough_data ? 'Sufficient' : `Low (need ${3 - s.total} more)`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Response rate by employer type */}
+      <div className="card">
+        <div className="card-header"><h2>🏢 Response Rate by Employer Type</h2></div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', padding: '12px' }}>
+          {[byEmp.direct, byEmp.intermediary].map(s => (
+            <div key={s.label} className="card stat-card" style={{ minWidth: 160, background: '#f9fafb' }}>
+              <div className="stat-card__value" style={{ fontSize: 20 }}>
+                <RateBadge rate={s.response_rate} />
+              </div>
+              <div className="stat-card__label" style={{ marginTop: 4 }}>{s.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--gray-500)', marginTop: 2 }}>
+                {s.responses}/{s.total} responses
+                {!s.has_enough_data && <span style={{ color: 'var(--amber)' }}> · Low data</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Response rate by lane */}
+      {byLane.length > 0 && (
+        <div className="card">
+          <div className="card-header"><h2>🎯 Response Rate by Role Lane</h2></div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="source-table">
+              <thead>
+                <tr>
+                  <th>Lane</th>
+                  <th>Applied</th>
+                  <th>Responses</th>
+                  <th>Response Rate</th>
+                  <th>Signal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byLane.map(l => {
+                  const laneMeta = LANE_CONFIG[l.lane];
+                  return (
+                    <tr key={l.lane}>
+                      <td>
+                        <span style={{
+                          background: laneMeta ? `${laneMeta.color}18` : '#f3f4f6',
+                          color: laneMeta ? laneMeta.color : '#6b7280',
+                          padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                        }}>
+                          {l.lane_label}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12 }}>{l.total}</td>
+                      <td style={{ fontSize: 12 }}>{l.responses}</td>
+                      <td><RateBadge rate={l.response_rate} /></td>
+                      <td style={{ fontSize: 11 }}>
+                        {!l.has_enough_data ? <span style={{ color: 'var(--amber)' }}>Low data</span>
+                          : l.response_rate === 0 ? <span style={{ color: '#c2410c', fontWeight: 700 }}>⚠ Zero conversion</span>
+                          : l.response_rate >= 30 ? <span style={{ color: '#15803d', fontWeight: 700 }}>✓ Converting</span>
+                          : <span style={{ color: 'var(--gray-500)' }}>Monitoring</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Response rate by resume version */}
+      {byResume.length > 0 && (
+        <div className="card">
+          <div className="card-header"><h2>📄 Response Rate by Resume Version</h2></div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="source-table">
+              <thead>
+                <tr>
+                  <th>Resume Version</th>
+                  <th>Applied</th>
+                  <th>Responses</th>
+                  <th>Response Rate</th>
+                  <th>Data Quality</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byResume.map(r => (
+                  <tr key={r.resume_version}>
+                    <td style={{ fontSize: 12, fontWeight: 600 }}>{r.resume_version}</td>
+                    <td style={{ fontSize: 12 }}>{r.total}</td>
+                    <td style={{ fontSize: 12 }}>{r.responses}</td>
+                    <td><RateBadge rate={r.response_rate} /></td>
+                    <td style={{ fontSize: 11, color: r.has_enough_data ? 'var(--gray-500)' : 'var(--amber)' }}>
+                      {r.has_enough_data ? 'Sufficient' : 'Low data'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Experiment comparisons */}
+      <div className="card">
+        <div className="card-header"><h2>🧪 Experiment Comparisons</h2></div>
+        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {exps.map(exp => (
+            <div key={exp.type} style={{
+              padding: '10px 12px',
+              borderRadius: 8,
+              background: exp.has_enough_data ? '#f0fdf4' : '#f9fafb',
+              border: `1px solid ${exp.has_enough_data ? '#bbf7d0' : '#e5e7eb'}`,
+            }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{exp.label}</div>
+              <div style={{
+                fontSize: 12,
+                color: exp.has_enough_data ? '#15803d' : 'var(--gray-500)',
+                fontStyle: exp.has_enough_data ? 'normal' : 'italic',
+              }}>
+                {exp.verdict}
+              </div>
+              {!exp.has_enough_data && (
+                <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
+                  ⚠ Low data — keep tracking to build reliable comparison
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Decision support */}
+      <div className="card">
+        <div className="card-header" style={{ background: '#f0fdf4' }}>
+          <h2 style={{ color: '#15803d' }}>🧭 Decision Support — Keep / Stop / Test</h2>
+        </div>
+        <div className="card-body" style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          {[
+            { label: '✅ Keep Doing',  items: decision.keep, color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+            { label: '🛑 Stop Doing',  items: decision.stop, color: '#c2410c', bg: '#fff1f2', border: '#fecaca' },
+            { label: '🧪 Test Next',   items: decision.test, color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+          ].map(col => (
+            <div key={col.label} style={{
+              flex: '1 1 220px',
+              background: col.bg,
+              border: `1px solid ${col.border}`,
+              borderRadius: 8,
+              padding: '12px 14px',
+            }}>
+              <div style={{ fontWeight: 700, fontSize: 12, color: col.color, marginBottom: 8 }}>{col.label}</div>
+              {col.items.map((item, i) => (
+                <div key={i} style={{ fontSize: 12, color: 'var(--gray-700)', marginBottom: 6, lineHeight: 1.5 }}>
+                  • {item}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--gray-400)', borderTop: '1px solid var(--gray-100)' }}>
+          Derived from real outcome data only. Update interview stage and outcome in each Apply Pack to improve accuracy.
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
 // ─── Outreach & Follow-Up Panel (live, computed from opportunity state) ────────
 // Operator can answer:
 //   - Which applied roles need follow-up today?
@@ -898,6 +1197,11 @@ export default function Reports() {
         <ReadinessPanel opps={state.opportunities} />
       )}
 
+      {/* Conversion Metrics Panel — live, computed from applied opportunity outcomes */}
+      {activeType === 'conversion_metrics' && (
+        <ConversionMetricsPanel opps={state.opportunities} />
+      )}
+
       {/* Source Quality Panel — live, computed from opportunity state */}
       {activeType === 'source_quality' && (
         <SourceQualityPanel opps={state.opportunities} />
@@ -913,11 +1217,11 @@ export default function Reports() {
         <OutreachPanel opps={state.opportunities} />
       )}
 
-      {activeType !== 'readiness' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && activeType !== 'outreach' && loading && (
+      {activeType !== 'readiness' && activeType !== 'conversion_metrics' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && activeType !== 'outreach' && loading && (
         <div className="card card-pad" style={{ color: 'var(--gray-500)', fontSize: 13 }}>Generating digest…</div>
       )}
 
-      {activeType !== 'readiness' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && activeType !== 'outreach' && !loading && digest && (
+      {activeType !== 'readiness' && activeType !== 'conversion_metrics' && activeType !== 'source_quality' && activeType !== 'employer_targeting' && activeType !== 'outreach' && !loading && digest && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Summary banner */}
           <div className="card card-pad" style={{ borderLeft: '3px solid var(--blue)', background: '#eff6ff' }}>

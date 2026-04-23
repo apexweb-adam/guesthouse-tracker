@@ -3403,5 +3403,242 @@ assert('30dq. outreach.js does not auto-submit anything', (() => {
   } catch { return true; }
 })());
 
+// ─── 31. Conversion Metrics Layer ─────────────────────────────────────────────
+
+console.log('\n== 31. Conversion Metrics Layer ==');
+
+import {
+  computeConversionFunnel,
+  computeResponseRateBySource,
+  computeResponseRateByEmployerType,
+  computeResponseRateByResumeVersion,
+  computeResponseRateByLane,
+  runExperimentComparisons,
+  buildDecisionSupportSummary,
+  getZeroConversionWarnings,
+  EXPERIMENT_TYPE,
+  MIN_SAMPLE_FOR_INSIGHT,
+} from '../netlify/functions/_shared/conversionMetrics.js';
+
+// 31a. Exports
+assert('31a. computeConversionFunnel is a function',        typeof computeConversionFunnel === 'function');
+assert('31b. computeResponseRateBySource is a function',    typeof computeResponseRateBySource === 'function');
+assert('31c. computeResponseRateByEmployerType is a function', typeof computeResponseRateByEmployerType === 'function');
+assert('31d. computeResponseRateByResumeVersion is a function', typeof computeResponseRateByResumeVersion === 'function');
+assert('31e. computeResponseRateByLane is a function',      typeof computeResponseRateByLane === 'function');
+assert('31f. runExperimentComparisons is a function',        typeof runExperimentComparisons === 'function');
+assert('31g. buildDecisionSupportSummary is a function',    typeof buildDecisionSupportSummary === 'function');
+assert('31h. getZeroConversionWarnings is a function',      typeof getZeroConversionWarnings === 'function');
+assert('31i. EXPERIMENT_TYPE has RESUME_COMPARISON',        typeof EXPERIMENT_TYPE.RESUME_COMPARISON === 'string');
+assert('31j. EXPERIMENT_TYPE has SOURCE_COMPARISON',        typeof EXPERIMENT_TYPE.SOURCE_COMPARISON === 'string');
+assert('31k. EXPERIMENT_TYPE has DIRECT_VS_INTERMEDIARY',   typeof EXPERIMENT_TYPE.DIRECT_VS_INTERMEDIARY === 'string');
+assert('31l. EXPERIMENT_TYPE has OUTREACH_VS_NONE',         typeof EXPERIMENT_TYPE.OUTREACH_VS_NONE === 'string');
+assert('31m. MIN_SAMPLE_FOR_INSIGHT is a number >= 3',      typeof MIN_SAMPLE_FOR_INSIGHT === 'number' && MIN_SAMPLE_FOR_INSIGHT >= 3);
+
+// 31b. Empty data — no crashes, sensible defaults
+const emptyFunnel = computeConversionFunnel([]);
+assert('31n. computeConversionFunnel([]) returns 0 applications_sent', emptyFunnel.applications_sent === 0);
+assert('31o. computeConversionFunnel([]) returns null response_rate',  emptyFunnel.response_rate === null);
+assert('31p. computeConversionFunnel([]) returns 0 offers',            emptyFunnel.offers === 0);
+
+const emptySrc = computeResponseRateBySource([]);
+assert('31q. computeResponseRateBySource([]) returns empty array', Array.isArray(emptySrc) && emptySrc.length === 0);
+
+const emptyEmp = computeResponseRateByEmployerType([]);
+assert('31r. computeResponseRateByEmployerType([]).direct.total === 0', emptyEmp.direct.total === 0);
+assert('31s. computeResponseRateByEmployerType([]).intermediary.total === 0', emptyEmp.intermediary.total === 0);
+assert('31t. computeResponseRateByEmployerType([]).direct.response_rate === null', emptyEmp.direct.response_rate === null);
+
+const emptyResume = computeResponseRateByResumeVersion([]);
+assert('31u. computeResponseRateByResumeVersion([]) returns empty array', Array.isArray(emptyResume) && emptyResume.length === 0);
+
+const emptyLane = computeResponseRateByLane([]);
+assert('31v. computeResponseRateByLane([]) returns empty array', Array.isArray(emptyLane) && emptyLane.length === 0);
+
+const emptyExps = runExperimentComparisons([]);
+assert('31w. runExperimentComparisons([]) returns array', Array.isArray(emptyExps));
+assert('31x. runExperimentComparisons([]) returns 4 experiments', emptyExps.length === 4);
+
+const emptyDecision = buildDecisionSupportSummary([]);
+assert('31y. buildDecisionSupportSummary([]).keep is array',  Array.isArray(emptyDecision.keep));
+assert('31z. buildDecisionSupportSummary([]).stop is array',  Array.isArray(emptyDecision.stop));
+assert('31aa. buildDecisionSupportSummary([]).test is array', Array.isArray(emptyDecision.test));
+
+const emptyZeros = getZeroConversionWarnings([]);
+assert('31ab. getZeroConversionWarnings([]) returns array', Array.isArray(emptyZeros));
+
+// 31c. Funnel with realistic test data
+const opps31 = [
+  // Applied, responded, screened, interviewed
+  { id: 'c1', status: 'interviewing', source_family: 'greenhouse', lane: 'tpm', is_intermediary: false, outreach_sent: true, recruiter_response: true, screening_call: true, interview_stage: 'interview_1', outcome: 'pending', recommended_resume_version: 'rv-tpm-01' },
+  { id: 'c2', status: 'applied',      source_family: 'greenhouse', lane: 'tpm', is_intermediary: false, outreach_sent: true, recruiter_response: true, screening_call: false, interview_stage: 'none', outcome: 'pending', recommended_resume_version: 'rv-tpm-01' },
+  { id: 'c3', status: 'rejected',     source_family: 'greenhouse', lane: 'tpm', is_intermediary: false, outreach_sent: false, recruiter_response: false, screening_call: false, interview_stage: 'none', outcome: 'rejected', recommended_resume_version: 'rv-tpm-01' },
+  { id: 'c4', status: 'ghosted',      source_family: 'lever',      lane: 'delivery_manager', is_intermediary: true, outreach_sent: false, recruiter_response: false, screening_call: false, interview_stage: 'none', outcome: 'no_response', recommended_resume_version: 'rv-it-pm-01' },
+  { id: 'c5', status: 'applied',      source_family: 'lever',      lane: 'delivery_manager', is_intermediary: true, outreach_sent: true, recruiter_response: false, screening_call: false, interview_stage: 'none', outcome: 'pending', recommended_resume_version: 'rv-it-pm-01' },
+  { id: 'c6', status: 'offer',        source_family: 'greenhouse', lane: 'tpm', is_intermediary: false, outreach_sent: true, recruiter_response: true, screening_call: true, interview_stage: 'offer', outcome: 'offer_made', recommended_resume_version: 'rv-tpm-01' },
+  { id: 'c7', status: 'rejected',     source_family: 'lever',      lane: 'delivery_manager', is_intermediary: true, outreach_sent: false, recruiter_response: false, screening_call: false, interview_stage: 'none', outcome: 'rejected', recommended_resume_version: 'rv-it-pm-01' },
+  { id: 'c8', status: 'applied',      source_family: 'greenhouse', lane: 'tpm', is_intermediary: false, outreach_sent: false, recruiter_response: false, screening_call: false, interview_stage: 'none', outcome: 'pending', recommended_resume_version: 'rv-tpm-01' },
+];
+
+const funnel31 = computeConversionFunnel(opps31);
+assert('31ac. funnel applications_sent = 8',    funnel31.applications_sent === 8);
+assert('31ad. funnel responses >= 3',            funnel31.responses >= 3);
+assert('31ae. funnel offers >= 1',               funnel31.offers >= 1);
+assert('31af. funnel response_rate is a number', typeof funnel31.response_rate === 'number');
+assert('31ag. funnel screen_rate is a number or null', funnel31.screen_rate === null || typeof funnel31.screen_rate === 'number');
+assert('31ah. funnel interview_rate >= 0',       funnel31.interview_rate !== undefined);
+assert('31ai. funnel rejections >= 1',           funnel31.rejections >= 1);
+assert('31aj. funnel no_responses >= 0',         funnel31.no_responses >= 0);
+
+// 31d. Response rate by source
+const srcRates31 = computeResponseRateBySource(opps31);
+assert('31ak. computeResponseRateBySource returns array',             Array.isArray(srcRates31));
+assert('31al. computeResponseRateBySource returns greenhouse entry',  srcRates31.some(s => s.source_family === 'greenhouse'));
+assert('31am. computeResponseRateBySource returns lever entry',       srcRates31.some(s => s.source_family === 'lever'));
+assert('31an. greenhouse response_rate > lever response_rate (test data)', (() => {
+  const gh = srcRates31.find(s => s.source_family === 'greenhouse');
+  const lv = srcRates31.find(s => s.source_family === 'lever');
+  return gh && lv && gh.response_rate >= lv.response_rate;
+})());
+assert('31ao. each source entry has total, responses, response_rate', srcRates31.every(s => typeof s.total === 'number' && typeof s.responses === 'number'));
+assert('31ap. each source entry has has_enough_data boolean', srcRates31.every(s => typeof s.has_enough_data === 'boolean'));
+
+// 31e. Response rate by employer type
+const empRate31 = computeResponseRateByEmployerType(opps31);
+assert('31aq. empType.direct.total >= 1',                    empRate31.direct.total >= 1);
+assert('31ar. empType.intermediary.total >= 1',              empRate31.intermediary.total >= 1);
+assert('31as. empType.direct.label = "Direct Employer"',     empRate31.direct.label === 'Direct Employer');
+assert('31at. empType.intermediary.label contains Intermediary', empRate31.intermediary.label.includes('Intermediary'));
+assert('31au. direct.response_rate >= intermediary.response_rate (test data)', (() => {
+  const d = empRate31.direct.response_rate;
+  const i = empRate31.intermediary.response_rate;
+  return d !== null && i !== null && d >= i;
+})());
+
+// 31f. Response rate by resume version
+const resumeRates31 = computeResponseRateByResumeVersion(opps31);
+assert('31av. computeResponseRateByResumeVersion returns array',          Array.isArray(resumeRates31));
+assert('31aw. has rv-tpm-01 entry',                                       resumeRates31.some(r => r.resume_version === 'rv-tpm-01'));
+assert('31ax. has rv-it-pm-01 entry',                                     resumeRates31.some(r => r.resume_version === 'rv-it-pm-01'));
+assert('31ay. rv-tpm-01 response_rate > rv-it-pm-01 (test data)', (() => {
+  const tpm = resumeRates31.find(r => r.resume_version === 'rv-tpm-01');
+  const itpm = resumeRates31.find(r => r.resume_version === 'rv-it-pm-01');
+  return tpm && itpm && tpm.response_rate >= itpm.response_rate;
+})());
+
+// 31g. Response rate by lane
+const laneRates31 = computeResponseRateByLane(opps31);
+assert('31az. computeResponseRateByLane returns array',                   Array.isArray(laneRates31));
+assert('31ba. has tpm lane entry',                                        laneRates31.some(l => l.lane === 'tpm'));
+assert('31bb. has delivery_manager lane entry',                           laneRates31.some(l => l.lane === 'delivery_manager'));
+assert('31bc. each lane entry has lane_label string',                     laneRates31.every(l => typeof l.lane_label === 'string'));
+assert('31bd. tpm lane response_rate >= delivery_manager (test data)', (() => {
+  const tpm = laneRates31.find(l => l.lane === 'tpm');
+  const dm  = laneRates31.find(l => l.lane === 'delivery_manager');
+  return tpm && dm && tpm.response_rate >= dm.response_rate;
+})());
+
+// 31h. Experiment comparisons
+const exps31 = runExperimentComparisons(opps31);
+assert('31be. runExperimentComparisons returns 4 experiments', exps31.length === 4);
+assert('31bf. each experiment has type',     exps31.every(e => typeof e.type === 'string'));
+assert('31bg. each experiment has label',    exps31.every(e => typeof e.label === 'string'));
+assert('31bh. each experiment has verdict',  exps31.every(e => typeof e.verdict === 'string'));
+assert('31bi. each experiment has result',   exps31.every(e => e.result !== null && e.result !== undefined));
+assert('31bj. each experiment has has_enough_data', exps31.every(e => typeof e.has_enough_data === 'boolean'));
+assert('31bk. outreach_vs_none experiment present', exps31.some(e => e.type === EXPERIMENT_TYPE.OUTREACH_VS_NONE));
+assert('31bl. direct_vs_intermediary experiment present', exps31.some(e => e.type === EXPERIMENT_TYPE.DIRECT_VS_INTERMEDIARY));
+assert('31bm. source_comparison experiment present', exps31.some(e => e.type === EXPERIMENT_TYPE.SOURCE_COMPARISON));
+assert('31bn. resume_comparison experiment present', exps31.some(e => e.type === EXPERIMENT_TYPE.RESUME_COMPARISON));
+
+// 31i. Decision support
+const dec31 = buildDecisionSupportSummary(opps31);
+assert('31bo. buildDecisionSupportSummary.keep is non-empty array',  Array.isArray(dec31.keep) && dec31.keep.length > 0);
+assert('31bp. buildDecisionSupportSummary.stop is non-empty array',  Array.isArray(dec31.stop) && dec31.stop.length > 0);
+assert('31bq. buildDecisionSupportSummary.test is non-empty array',  Array.isArray(dec31.test) && dec31.test.length > 0);
+assert('31br. keep items are strings', dec31.keep.every(s => typeof s === 'string'));
+assert('31bs. stop items are strings', dec31.stop.every(s => typeof s === 'string'));
+assert('31bt. test items are strings', dec31.test.every(s => typeof s === 'string'));
+
+// 31j. Zero-conversion warnings — create scenario with 5+ apps, 0 responses
+const zeroOpps31 = Array.from({ length: 5 }, (_, i) => ({
+  id: `z${i}`, status: 'ghosted', source_family: 'manual', lane: 'generic_pm',
+  is_intermediary: false, outreach_sent: false, recruiter_response: false,
+  screening_call: false, interview_stage: 'none', outcome: 'no_response',
+  recommended_resume_version: 'rv-program-01',
+}));
+const zeros31 = getZeroConversionWarnings(zeroOpps31);
+assert('31bu. getZeroConversionWarnings detects zero-conversion source', zeros31.length >= 1);
+assert('31bv. zero-conversion warning is a string', zeros31.every(w => typeof w === 'string'));
+assert('31bw. zero-conversion warning mentions source family', zeros31.some(w => w.includes('manual')));
+
+// 31k. File existence
+import { readFileSync as readFileSync31 } from 'fs';
+import { join as join31, dirname as dirname31 } from 'path';
+import { fileURLToPath as fileURLToPath31 } from 'url';
+const __dirname_v31 = dirname31(fileURLToPath31(import.meta.url));
+
+let convMetricsSrc31 = '';
+try { convMetricsSrc31 = readFileSync31(join31(__dirname_v31, '../netlify/functions/_shared/conversionMetrics.js'), 'utf-8'); } catch {}
+assert('31bx. conversionMetrics.js file exists',                convMetricsSrc31.length > 0);
+assert('31by. conversionMetrics.js exports computeConversionFunnel',    convMetricsSrc31.includes('export function computeConversionFunnel'));
+assert('31bz. conversionMetrics.js exports computeResponseRateBySource', convMetricsSrc31.includes('export function computeResponseRateBySource'));
+assert('31ca. conversionMetrics.js exports computeResponseRateByEmployerType', convMetricsSrc31.includes('export function computeResponseRateByEmployerType'));
+assert('31cb. conversionMetrics.js exports computeResponseRateByResumeVersion', convMetricsSrc31.includes('export function computeResponseRateByResumeVersion'));
+assert('31cc. conversionMetrics.js exports computeResponseRateByLane', convMetricsSrc31.includes('export function computeResponseRateByLane'));
+assert('31cd. conversionMetrics.js exports runExperimentComparisons', convMetricsSrc31.includes('export function runExperimentComparisons'));
+assert('31ce. conversionMetrics.js exports buildDecisionSupportSummary', convMetricsSrc31.includes('export function buildDecisionSupportSummary'));
+assert('31cf. conversionMetrics.js exports getZeroConversionWarnings', convMetricsSrc31.includes('export function getZeroConversionWarnings'));
+assert('31cg. conversionMetrics.js does not auto-submit', !convMetricsSrc31.includes('autoSubmit') && !convMetricsSrc31.includes('sendEmail'));
+
+// 31l. Reports.jsx integration
+let reportsSrc31 = '';
+try { reportsSrc31 = readFileSync31(join31(__dirname_v31, '../src/pages/Reports.jsx'), 'utf-8'); } catch {}
+assert('31ch. Reports.jsx imports conversionMetrics.js', reportsSrc31.includes('conversionMetrics.js') || reportsSrc31.includes("from '../../netlify/functions/_shared/conversionMetrics"));
+assert('31ci. Reports.jsx has ConversionMetricsPanel component', reportsSrc31.includes('ConversionMetricsPanel'));
+assert('31cj. Reports.jsx has conversion_metrics tab in DIGEST_TYPES', reportsSrc31.includes("'conversion_metrics'") || reportsSrc31.includes('"conversion_metrics"'));
+assert('31ck. Reports.jsx uses computeConversionFunnel', reportsSrc31.includes('computeConversionFunnel'));
+assert('31cl. Reports.jsx uses computeResponseRateBySource', reportsSrc31.includes('computeResponseRateBySource'));
+assert('31cm. Reports.jsx uses buildDecisionSupportSummary', reportsSrc31.includes('buildDecisionSupportSummary'));
+assert('31cn. Reports.jsx uses runExperimentComparisons', reportsSrc31.includes('runExperimentComparisons'));
+assert('31co. Reports.jsx shows Keep/Stop/Test decision surface', reportsSrc31.includes('Keep Doing') && reportsSrc31.includes('Stop Doing') && reportsSrc31.includes('Test Next'));
+assert('31cp. Reports.jsx shows response rate by lane', reportsSrc31.includes('computeResponseRateByLane') || reportsSrc31.includes('byLane'));
+assert('31cq. Reports.jsx shows response rate by resume version', reportsSrc31.includes('computeResponseRateByResumeVersion') || reportsSrc31.includes('byResume'));
+
+// 31m. Hierarchy and approval gate still intact
+assert('31cr. Hierarchy intact: conversion metrics does not affect lane classification',
+  scoreOpportunity('Operations Manager', 'Retail store ops, scheduling').lane !== LANES.TPM);
+assert('31cs. Approval gate intact: pending roles not in funnel (not in applied statuses)',
+  (() => {
+    const testOpps = [{ id: 'x1', status: 'discovered', approval_state: 'pending', fit_score: 95 }];
+    return computeConversionFunnel(testOpps).applications_sent === 0;
+  })());
+assert('31ct. Approval gate intact: approved-but-not-applied not in funnel',
+  (() => {
+    const testOpps = [{ id: 'x2', status: 'approved', approval_state: 'approved', fit_score: 90 }];
+    return computeConversionFunnel(testOpps).applications_sent === 0;
+  })());
+
+// 31n. Rate calculation edge cases
+assert('31cu. pct returns null for 0 denominator (from funnel with no applied)',
+  computeConversionFunnel([{ id: 'x3', status: 'discovered' }]).response_rate === null);
+assert('31cv. computeResponseRateBySource single-record has_enough_data=false',
+  (() => {
+    const rates = computeResponseRateBySource([{ id: 'x4', status: 'applied', source_family: 'lever', recruiter_response: false }]);
+    const lv = rates.find(s => s.source_family === 'lever');
+    return lv && !lv.has_enough_data;
+  })());
+assert('31cw. computeResponseRateBySource 3+ records has_enough_data=true',
+  (() => {
+    const opps = [
+      { id: 'x5', status: 'applied', source_family: 'lever', recruiter_response: false },
+      { id: 'x6', status: 'applied', source_family: 'lever', recruiter_response: true },
+      { id: 'x7', status: 'applied', source_family: 'lever', recruiter_response: false },
+    ];
+    const rates = computeResponseRateBySource(opps);
+    const lv = rates.find(s => s.source_family === 'lever');
+    return lv && lv.has_enough_data;
+  })());
+
 console.log('\n== Result: ' + passed + ' passed, ' + failed + ' failed ==');
 if (failed > 0) process.exit(1);
