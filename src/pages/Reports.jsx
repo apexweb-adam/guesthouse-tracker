@@ -161,6 +161,7 @@ function SourceQualityPanel({ opps }) {
                 const noiseAlert = isNoiseAlert(s);
                 const isBestSignal = bestSignalFamily && s.source_family === bestSignalFamily.source_family;
                 const laneMeta = s.top_lane ? LANE_CONFIG[s.top_lane] : null;
+                const sfWarnings = sourceWarnings[s.source_family] || [];
                 return (
                   <tr key={s.source_family}>
                     <td>
@@ -209,9 +210,9 @@ function SourceQualityPanel({ opps }) {
                       )}
                     </td>
                     <td style={{ fontSize: 10, maxWidth: 140 }}>
-                      {(sourceWarnings[s.source_family] || []).length > 0 ? (
+                      {sfWarnings.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {(sourceWarnings[s.source_family] || []).map(w => (
+                          {sfWarnings.map(w => (
                             <span key={w} style={{ color: '#92400e', background: '#fef3c7', borderRadius: 4, padding: '1px 4px', fontSize: 9, fontWeight: 600 }}>
                               {w.replace(/_/g, ' ')}
                             </span>
