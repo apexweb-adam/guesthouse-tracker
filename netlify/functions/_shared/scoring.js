@@ -74,15 +74,20 @@ export const LANE_CONFIG = {
 const TPM_TITLE_SIGNALS = [
   'technical project manager',
   'technical programme manager',
+  'technical program manager',
   'tpm',
   'technology project manager',
   'it project manager',
+  'senior it project manager',
   'digital project manager',
   'engineering project manager',
   'software project manager',
   'tech project manager',
   'it programme manager',
   'technology programme manager',
+  'infrastructure project manager',
+  'cybersecurity project manager',
+  'security project manager',
 ];
 
 const TPM_DESC_SIGNALS = [
@@ -164,7 +169,6 @@ const PGM_TITLE_SIGNALS = [
   'programme manager',
   'senior program manager',
   'senior programme manager',
-  'technical program manager',
 ];
 
 const GENERIC_PM_TITLE_SIGNALS = [
