@@ -179,7 +179,7 @@ export default function Discovered() {
   // Show only newly-discovered / pending-approval records
   const discovered = useMemo(() => {
     let list = state.opportunities.filter(o =>
-      ['discovered', 'queued', 'pending'].includes(o.status) ||
+      ['discovered', 'queued', 'pending', 'apply_pack_generated'].includes(o.status) ||
       o.approval_state === 'pending'
     );
     if (filterRec) list = list.filter(o => o.recommended);

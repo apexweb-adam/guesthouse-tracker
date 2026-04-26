@@ -47,7 +47,8 @@ function djb2(str) {
 
 /**
  * Generate a dedup hash from an opportunity.
- * Uses title + company as primary key, falls back to URL if company is empty.
+ * Uses title + company + URL when URL is present, so same-title/company roles
+ * in different postings or locations are not collapsed into one record.
  *
  * @param {object} opp - { title, company, url }
  * @returns {string} hex hash
@@ -57,7 +58,12 @@ export function generateDedupHash({ title = '', company = '', url = '' }) {
   const normCompany = normalizeForDedup(company);
   const normUrl = normalizeUrl(url);
 
-  // Primary: title + company
+  // Primary: title + company + URL
+  if (normTitle && normCompany && normUrl) {
+    return djb2(`${normTitle}|${normCompany}|${normUrl}`);
+  }
+
+  // Fallback: title + company when no URL is available
   if (normTitle && normCompany) {
     return djb2(`${normTitle}|${normCompany}`);
   }
