@@ -80,6 +80,43 @@ export async function getExistingHashes() {
   return _demo.opportunities.map(o => o.dedup_hash);
 }
 
+function normalizeExistingKey(s = '') {
+  return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function normalizeExistingUrl(url = '') {
+  try {
+    const u = new URL(url);
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'ref', 'trk']
+      .forEach(k => u.searchParams.delete(k));
+    return `${u.origin}${u.pathname.replace(/\/+$/, '')}`.toLowerCase();
+  } catch {
+    return normalizeExistingKey(url);
+  }
+}
+
+function opportunityExactKey(opp = {}) {
+  const url = opp.url || opp.canonical_job_url || opp.application_url || '';
+  return [
+    normalizeExistingKey(opp.title),
+    normalizeExistingKey(opp.company),
+    normalizeExistingKey(opp.location),
+    normalizeExistingUrl(url),
+  ].join('|');
+}
+
+export async function getExistingOpportunityKeys() {
+  const sb = getSupabase();
+  if (sb) {
+    const { data, error } = await sb
+      .from('opportunities')
+      .select('title, company, location, canonical_job_url, application_url');
+    if (error) throw error;
+    return (data || []).map(opportunityExactKey);
+  }
+  return _demo.opportunities.map(opportunityExactKey);
+}
+
 /**
  * Fetch existing source_job_id values (for secondary dedup on live discovered roles).
  * Keyed as "source_family:source_job_id" to prevent cross-source false positives.
@@ -219,6 +256,7 @@ export async function listIngestionLogs({ sourceId, limit = 50 } = {}) {
  */
 export async function processBatch(rawJobs, sourceId) {
   const existingHashes = await getExistingHashes();
+  const existingOpportunityKeys = new Set(await getExistingOpportunityKeys());
   // Secondary dedup: source_family:source_job_id — catches re-runs even if title/content changes.
   const existingSourceJobIds = await getExistingSourceJobIds();
   const seenSourceJobIds = new Set(existingSourceJobIds);
@@ -236,6 +274,12 @@ export async function processBatch(rawJobs, sourceId) {
           deduped.push({ ...raw, dedup_reason: 'source_job_id' });
           continue;
         }
+      }
+
+      const exactKey = opportunityExactKey(raw);
+      if (existingOpportunityKeys.has(exactKey)) {
+        deduped.push({ ...raw, dedup_reason: 'exact_match' });
+        continue;
       }
 
       const hash = generateDedupHash({
@@ -265,6 +309,7 @@ export async function processBatch(rawJobs, sourceId) {
       const saved = await insertOpportunity(rec);
       inserted.push(saved);
       existingHashes.push(hash);
+      existingOpportunityKeys.add(exactKey);
       if (raw.source_job_id && raw.source_family) {
         seenSourceJobIds.add(`${raw.source_family}:${raw.source_job_id}`);
       }
