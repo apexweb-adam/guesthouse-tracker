@@ -110,7 +110,7 @@ export async function getExistingOpportunityKeys() {
   if (sb) {
     const { data, error } = await sb
       .from('opportunities')
-      .select('title, company, location, canonical_job_url, application_url');
+      .select('title, company, location, url, canonical_job_url, application_url');
     if (error) throw error;
     return (data || []).map(opportunityExactKey);
   }
@@ -172,6 +172,29 @@ export async function updateOpportunity(id, updates) {
   if (idx < 0) throw new Error(`Opportunity ${id} not found`);
   _demo.opportunities[idx] = { ..._demo.opportunities[idx], ...updates };
   return _demo.opportunities[idx];
+}
+
+export async function deleteOpportunities(ids = []) {
+  if (!ids.length) return [];
+  const sb = getSupabase();
+  if (sb) {
+    const { data, error } = await sb
+      .from('opportunities')
+      .delete()
+      .in('id', ids)
+      .select('id');
+    if (error) throw error;
+    return data || [];
+  }
+  const deleted = [];
+  _demo.opportunities = _demo.opportunities.filter(o => {
+    if (ids.includes(o.id)) {
+      deleted.push({ id: o.id });
+      return false;
+    }
+    return true;
+  });
+  return deleted;
 }
 
 // ─── Sources ──────────────────────────────────────────────────────────────────
