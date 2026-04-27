@@ -15,7 +15,6 @@
  * Schedule: every 2 hours (configurable via netlify.toml)
  */
 
-import { schedule } from '@netlify/functions';
 import { listSources, processBatch, logIngestion, isDemoMode } from './_shared/db.js';
 import { canSourceRunLive, SOURCE_TYPES, mergeWithDefaults, DEFAULT_DISCOVERY_PROFILE } from './_shared/sources.js';
 import { discoverJobsForSource } from './_shared/jobFinder.js';
@@ -58,9 +57,11 @@ async function fetchRSSJobs(source) {
 }
 
 async function runIngestion() {
+  const summary = { sources: 0, new: 0, deduped: 0, errors: 0 };
+
   if (isDemoMode()) {
     console.log('[ingest-scheduled] Demo mode — skipping live source ingestion.');
-    return;
+    return { skipped: 'demo_mode', ...summary };
   }
 
   const dbSources = await listSources();
@@ -69,7 +70,7 @@ async function runIngestion() {
 
   if (!liveSources.length) {
     console.log('[ingest-scheduled] No live-capable sources enabled.');
-    return;
+    return { skipped: 'no_live_sources', ...summary };
   }
 
   // Resolve job-finder config from env vars
@@ -82,14 +83,15 @@ async function runIngestion() {
   };
 
   for (const source of liveSources) {
-    const startedAt = new Date().toISOString();
+    summary.sources++;
     let jobs = [];
     let fetchError = null;
 
     try {
       if (source.sourceFamily && source.sourceFamily !== 'rss') {
         // Use the structured job-finder adapter for ATS/API sources
-        jobs = await discoverJobsForSource(source, config);
+        const result = await discoverJobsForSource(source, config);
+        jobs = Array.isArray(result) ? result : result.jobs || [];
       } else if (source.type === SOURCE_TYPES.RSS) {
         // Legacy RSS fetcher — preserve backward compat
         jobs = await fetchRSSJobs(source);
@@ -120,6 +122,9 @@ async function runIngestion() {
     }
 
     const { inserted, deduped, errors, high_review } = await processBatch(jobs, source.id);
+    summary.new += inserted.length;
+    summary.deduped += deduped.length;
+    summary.errors += errors.length;
     await logIngestion({
       source_id: source.id,
       count_discovered: discovered,
@@ -132,6 +137,24 @@ async function runIngestion() {
 
     console.log(`[ingest-scheduled] ${source.name}: ${inserted.length} new, ${deduped.length} deduped, ${high_review} high-review (low-fit)`);
   }
+
+  return summary;
 }
 
-export const handler = schedule('0 */2 * * *', runIngestion);
+export const handler = async () => {
+  try {
+    const summary = await runIngestion();
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: true, summary }),
+    };
+  } catch (err) {
+    console.error('[ingest-scheduled] Fatal error:', err);
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: false, error: err.message }),
+    };
+  }
+};

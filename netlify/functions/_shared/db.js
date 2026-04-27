@@ -21,12 +21,26 @@ function getSupabase() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
   if (!url || !key) return null;
-  _supabase = createClient(url, key);
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    _supabase = createClient(url, key);
+  } catch (err) {
+    console.warn(`[db] Ignoring invalid SUPABASE_URL: ${err.message}`);
+    return null;
+  }
   return _supabase;
 }
 
 export function isDemoMode() {
-  return !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY;
+  try {
+    const url = process.env.SUPABASE_URL;
+    if (!url || !process.env.SUPABASE_SERVICE_ROLE_KEY) return true;
+    const parsed = new URL(url);
+    return !['http:', 'https:'].includes(parsed.protocol);
+  } catch {
+    return true;
+  }
 }
 
 // ─── Demo In-Memory Store ──────────────────────────────────────────────────────

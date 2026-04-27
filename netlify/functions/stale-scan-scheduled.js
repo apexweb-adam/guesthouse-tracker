@@ -7,14 +7,13 @@
  * Schedule: daily at 08:00 UTC
  */
 
-import { schedule } from '@netlify/functions';
 import { listOpportunities, updateOpportunity, logIngestion, isDemoMode } from './_shared/db.js';
 import { scanForStale } from './_shared/stale.js';
 
 async function runStaleScan() {
   if (isDemoMode()) {
     console.log('[stale-scan] Demo mode — skipping stale scan.');
-    return;
+    return { skipped: 'demo_mode', scanned: 0, flagged: 0 };
   }
 
   // Only scan active/in-progress opportunities
@@ -58,6 +57,23 @@ async function runStaleScan() {
   });
 
   console.log(`[stale-scan] Scanned ${allActive.length} active opps, flagged ${flagged} stale/ghosted.`);
+  return { scanned: allActive.length, flagged, errors: errors.length };
 }
 
-export const handler = schedule('0 8 * * *', runStaleScan);
+export const handler = async () => {
+  try {
+    const summary = await runStaleScan();
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: true, summary }),
+    };
+  } catch (err) {
+    console.error('[stale-scan] Fatal error:', err);
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ok: false, error: err.message }),
+    };
+  }
+};

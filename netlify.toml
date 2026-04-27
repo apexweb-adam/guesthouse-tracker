@@ -16,3 +16,9 @@
 [functions]
   node_bundler = "nft"
   included_files = ["netlify/functions/_shared/**"]
+
+[functions."ingest-scheduled"]
+  schedule = "0 */2 * * *"
+
+[functions."stale-scan-scheduled"]
+  schedule = "0 8 * * *"
