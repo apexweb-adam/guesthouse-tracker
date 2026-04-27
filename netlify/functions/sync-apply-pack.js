@@ -248,7 +248,6 @@ export const handler = async (event) => {
       apply_pack: applyPack,
       status: 'apply_pack_generated',
       fit_score: body.score ?? body.scoring?.score ?? opp.fit_score,
-      score_breakdown: body.scoring?.breakdown || opp.score_breakdown,
       notes: body.scoring?.reasoning || opp.notes,
       pack_readiness_score: applyPack.pack_readiness_score,
       application_url: opp.application_url || body.application_url || body.url || opp.url || null,
