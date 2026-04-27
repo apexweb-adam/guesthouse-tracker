@@ -24,8 +24,15 @@ function getSupabase() {
   try {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol)) return null;
-    _supabase = createClient(url, key);
-  } catch (err) {
+    // Wrap every Supabase request with an 8-second timeout so functions never
+    // exceed Netlify's 10-second limit and return a clean error instead of 502.
+    _supabase = createClient(url, key, {
+      global: {
+        // signal placed after spread so callers cannot accidentally override the timeout.
+        fetch: (input, init) =>
+          fetch(input, { ...init, signal: AbortSignal.timeout(8000) }),
+      },
+    });  } catch (err) {
     console.warn(`[db] Ignoring invalid SUPABASE_URL: ${err.message}`);
     return null;
   }
