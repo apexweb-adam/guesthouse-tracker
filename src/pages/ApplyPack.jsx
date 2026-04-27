@@ -443,6 +443,9 @@ export default function ApplyPack() {
             <span style={{ color: '#065f46', marginLeft: 6 }}>✓ Refreshed — apply URL added</span>
           )}
           {' · '}System v{pack.generated_by_system_version}
+          {pack.python_agent_generated && (
+            <span style={{ color: '#065f46', marginLeft: 6 }}>✓ Tailored by local agent</span>
+          )}
         </div>
       </div>
 
@@ -627,6 +630,32 @@ export default function ApplyPack() {
             </Section>
           )}
 
+          {pack.python_agent_generated && (
+            <Section title="LOCAL GENERATED FILES">
+              <div style={{ display: 'grid', gap: 8 }}>
+                {pack.python_generated_resume?.local_path && (
+                  <div style={{ fontSize: 12, color: 'var(--gray-700)', background: 'var(--gray-50)', borderRadius: 6, padding: 10 }}>
+                    <strong>Resume DOCX:</strong>
+                    <div style={{ fontFamily: 'monospace', fontSize: 11, marginTop: 4, wordBreak: 'break-all' }}>
+                      {pack.python_generated_resume.local_path}
+                    </div>
+                  </div>
+                )}
+                {pack.python_generated_cover_letter?.local_path && (
+                  <div style={{ fontSize: 12, color: 'var(--gray-700)', background: 'var(--gray-50)', borderRadius: 6, padding: 10 }}>
+                    <strong>Cover letter DOCX:</strong>
+                    <div style={{ fontFamily: 'monospace', fontSize: 11, marginTop: 4, wordBreak: 'break-all' }}>
+                      {pack.python_generated_cover_letter.local_path}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 8 }}>
+                The tracker stores the full text for review. The DOCX files live on Adam's Mac because the agent runs locally using his API credits.
+              </div>
+            </Section>
+          )}
+
           {/* Keywords */}
           {pack.keyword_mirror_list?.length > 0 && (
             <Section title="KEYWORD MIRROR LIST"
@@ -805,6 +834,49 @@ export default function ApplyPack() {
                   </li>
                 ))}
               </ul>
+            </Section>
+          )}
+
+          {pack.python_generated_resume?.content && (
+            <Section title="TAILORED RESUME DRAFT"
+              actionSlot={<CopyButton text={[
+                pack.python_generated_resume.content.summary,
+                '',
+                (pack.python_generated_resume.content.core_skills || []).join(', '),
+                '',
+                Object.entries(pack.python_generated_resume.content.experience_bullets || {})
+                  .map(([jobName, bullets]) => `${jobName}:\n${(bullets || []).map(b => `- ${b}`).join('\n')}`)
+                  .join('\n\n'),
+                '',
+                (pack.python_generated_resume.content.key_achievements || []).map(a => `- ${a}`).join('\n'),
+              ].filter(Boolean).join('\n')} label="📋 Copy Resume Draft" />}
+            >
+              {pack.python_generated_resume.content.summary && (
+                <div style={{ fontSize: 13, color: 'var(--gray-800)', lineHeight: 1.6, marginBottom: 12 }}>
+                  {pack.python_generated_resume.content.summary}
+                </div>
+              )}
+              {(pack.python_generated_resume.content.core_skills || []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                  {pack.python_generated_resume.content.core_skills.map((skill, i) => (
+                    <span key={i} style={{ fontSize: 12, background: '#eef2ff', color: '#3730a3', borderRadius: 4, padding: '2px 8px' }}>
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {Object.entries(pack.python_generated_resume.content.experience_bullets || {}).map(([jobName, bullets]) => (
+                <div key={jobName} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-600)', marginBottom: 6 }}>{jobName}</div>
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {(bullets || []).map((bullet, i) => (
+                      <li key={i} style={{ fontSize: 13, color: 'var(--gray-700)', marginBottom: 6, lineHeight: 1.5 }}>
+                        {bullet}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </Section>
           )}
 
