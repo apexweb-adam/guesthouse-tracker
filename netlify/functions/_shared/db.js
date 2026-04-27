@@ -62,7 +62,7 @@ const _demo = {
 
 // ─── Opportunities ────────────────────────────────────────────────────────────
 
-const OPPORTUNITY_LIST_COLUMNS = [
+const MODERN_OPPORTUNITY_LIST_COLUMNS = [
   'id',
   'title',
   'company',
@@ -98,19 +98,53 @@ const OPPORTUNITY_LIST_COLUMNS = [
   'notes',
 ].join(',');
 
+const STABLE_OPPORTUNITY_LIST_COLUMNS = [
+  'id',
+  'title',
+  'company',
+  'location',
+  'lane',
+  'fit_score',
+  'fit_signals',
+  'recommended',
+  'high_fit',
+  'resume_emphasis',
+  'recommendation_text',
+  'status',
+  'approval_state',
+  'source',
+  'url',
+  'ingested_at',
+  'updated_at',
+  'applied_date',
+  'last_action_date',
+  'next_action',
+  'next_action_due',
+  'stale_flag',
+  'apply_pack_missing_url',
+  'pack_readiness_score',
+  'human_override',
+  'notes',
+].join(',');
+
 export async function listOpportunities({ status, lane, recommended } = {}) {
   const sb = getSupabase();
   if (sb) {
     // Keep list responses compact. Full apply_pack/description payloads can push
     // Netlify Functions over the response-size limit once the tracker has lots
     // of generated packs. Detail views still use getOpportunity(id) with select('*').
-    let q = sb.from('opportunities').select(OPPORTUNITY_LIST_COLUMNS).order('ingested_at', { ascending: false });
-    if (status) q = q.eq('status', status);
-    if (lane) q = q.eq('lane', lane);
-    if (recommended !== undefined) q = q.eq('recommended', recommended);
-    const { data, error } = await q;
-    if (error) throw error;
-    return data;
+    let lastError = null;
+    for (const columns of [MODERN_OPPORTUNITY_LIST_COLUMNS, STABLE_OPPORTUNITY_LIST_COLUMNS]) {
+      let q = sb.from('opportunities').select(columns).order('ingested_at', { ascending: false });
+      if (status) q = q.eq('status', status);
+      if (lane) q = q.eq('lane', lane);
+      if (recommended !== undefined) q = q.eq('recommended', recommended);
+      const { data, error } = await q;
+      if (!error) return data;
+      lastError = error;
+      if (!/does not exist|Could not find/i.test(error.message || '')) throw error;
+    }
+    throw lastError;
   }
   // Demo fallback
   let results = [..._demo.opportunities];
