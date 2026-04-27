@@ -62,10 +62,49 @@ const _demo = {
 
 // ─── Opportunities ────────────────────────────────────────────────────────────
 
+const OPPORTUNITY_LIST_COLUMNS = [
+  'id',
+  'title',
+  'company',
+  'location',
+  'lane',
+  'fit_score',
+  'fit_signals',
+  'recommended',
+  'high_fit',
+  'resume_emphasis',
+  'recommendation_text',
+  'status',
+  'approval_state',
+  'source',
+  'source_family',
+  'source_type',
+  'url',
+  'canonical_job_url',
+  'application_url',
+  'reference_posting_url',
+  'tracking_url',
+  'ingested_at',
+  'updated_at',
+  'applied_date',
+  'last_action_date',
+  'next_action',
+  'next_action_due',
+  'stale_flag',
+  'ghosted_flag',
+  'apply_pack_missing_url',
+  'pack_readiness_score',
+  'human_override',
+  'notes',
+].join(',');
+
 export async function listOpportunities({ status, lane, recommended } = {}) {
   const sb = getSupabase();
   if (sb) {
-    let q = sb.from('opportunities').select('*').order('ingested_at', { ascending: false });
+    // Keep list responses compact. Full apply_pack/description payloads can push
+    // Netlify Functions over the response-size limit once the tracker has lots
+    // of generated packs. Detail views still use getOpportunity(id) with select('*').
+    let q = sb.from('opportunities').select(OPPORTUNITY_LIST_COLUMNS).order('ingested_at', { ascending: false });
     if (status) q = q.eq('status', status);
     if (lane) q = q.eq('lane', lane);
     if (recommended !== undefined) q = q.eq('recommended', recommended);
