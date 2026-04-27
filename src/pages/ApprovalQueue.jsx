@@ -56,6 +56,7 @@ export default function ApprovalQueue() {
   const { state, loadOpportunities, notify } = useApp();
   const [reason, setReason] = useState('');
   const [processing, setProcessing] = useState(null);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
   const [sortBy, setSortBy] = useState('fit'); // 'fit' | 'readiness'
 
   // Split pending by fit tier for grouped display
@@ -93,6 +94,27 @@ export default function ApprovalQueue() {
       notify(e.message, 'error');
     } finally {
       setProcessing(null);
+    }
+  };
+
+  const handleBulkApprove = async (opps, label) => {
+    if (!opps.length) return;
+    const confirmed = window.confirm(
+      `Approve ${opps.length} ${label}? This will generate apply packs and move them out of the approval queue.`
+    );
+    if (!confirmed) return;
+
+    setBulkProcessing(true);
+    try {
+      for (const opp of opps) {
+        await approveOpportunity(opp.id, 'approve', `Bulk approved: ${label}`);
+      }
+      await loadOpportunities();
+      notify(`Approved ${opps.length} ${label}.`, 'success');
+    } catch (e) {
+      notify(e.message, 'error');
+    } finally {
+      setBulkProcessing(false);
     }
   };
 
@@ -147,7 +169,7 @@ export default function ApprovalQueue() {
           </p>
         </div>
         {total > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <span style={{ fontSize: 12, color: '#6b7280' }}>Sort by:</span>
             <button
               className={`btn btn-sm ${sortBy === 'fit' ? 'btn-primary' : 'btn-ghost'}`}
@@ -162,6 +184,33 @@ export default function ApprovalQueue() {
           </div>
         )}
       </div>
+
+      {total > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 700, color: 'var(--gray-800)', marginBottom: 2 }}>Bulk approvals</div>
+            <div className="text-muted text-sm">
+              Use high-fit first for safer automation, or approve everything currently in this queue.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-success"
+              disabled={bulkProcessing || highFit.length === 0}
+              onClick={() => handleBulkApprove(highFit, 'high-fit role' + (highFit.length === 1 ? '' : 's'))}
+            >
+              Approve High-Fit ({highFit.length})
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={bulkProcessing || total === 0}
+              onClick={() => handleBulkApprove([...highFit, ...standard, ...weakFit], 'queued role' + (total === 1 ? '' : 's'))}
+            >
+              Approve All ({total})
+            </button>
+          </div>
+        </div>
+      )}
 
       {total === 0 ? (
         <div className="card approval-empty">
@@ -220,4 +269,3 @@ export default function ApprovalQueue() {
     </div>
   );
 }
-
