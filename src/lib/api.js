@@ -18,8 +18,14 @@ import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
 export function isDemoMode() {
   if (import.meta.env.VITE_DEMO_MODE === 'true') return true;
+  // User-triggered override: set when they click "Use demo mode" after a backend failure.
+  try { if (localStorage.getItem('force_demo_mode') === 'true') return true; } catch { /* ignore */ }
   if (!import.meta.env.VITE_SUPABASE_URL) return true;
   return false;
+}
+
+export function enableDemoModeOverride() {
+  try { localStorage.setItem('force_demo_mode', 'true'); } catch { /* ignore */ }
 }
 
 const BASE = '/.netlify/functions';
@@ -67,7 +73,13 @@ async function apiFetch(path, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    // Non-JSON body (e.g. Netlify 502 HTML page) — surface a clean error.
+    throw new Error(`HTTP ${res.status}`);
+  }
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }

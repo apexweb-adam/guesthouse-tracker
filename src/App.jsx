@@ -1,6 +1,8 @@
 import React from 'react';
 import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom';
 import { AppProvider } from './context/AppContext.jsx';
+import { useApp } from './context/AppContext.jsx';
+import { enableDemoModeOverride } from './lib/api.js';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Notification from './components/Notification.jsx';
@@ -50,20 +52,58 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// ── Backend Error Banner ────────────────────────────────────────────────────
+// Shown when production-mode API calls fail (Supabase unreachable, 502, etc.)
+// Gives the user a one-click escape to demo mode so the app is still usable.
+
+function BackendErrorBanner() {
+  const { state } = useApp();
+  if (!state.error || state.demoMode) return null;
+  return (
+    <div
+      role="alert"
+      style={{
+        background: '#fff7ed', borderBottom: '1px solid #fed7aa',
+        padding: '10px 24px', fontSize: 13, color: '#9a3412',
+        display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+      }}
+    >
+      <span aria-label="Warning"><span aria-hidden="true">⚠️ </span><strong>Backend unavailable:</strong> {state.error}.</span>
+      <button
+        style={{
+          background: '#fff', border: '1px solid #fed7aa', borderRadius: 6,
+          padding: '3px 10px', fontSize: 12, color: '#9a3412', cursor: 'pointer',
+          fontWeight: 600,
+        }}
+        onClick={() => { enableDemoModeOverride(); window.location.reload(); }}
+      >
+        Switch to demo mode
+      </button>
+    </div>
+  );
+}
+
 // ── App Shell layout (rendered inside the router) ──────────────────────────
+function AppContent() {
+  return (
+    <div className="layout">
+      <Header />
+      <BackendErrorBanner />
+      <div className="main-content">
+        <Sidebar />
+        <main className="page-area">
+          <Outlet />
+        </main>
+      </div>
+      <Notification />
+    </div>
+  );
+}
+
 function AppShell() {
   return (
     <AppProvider>
-      <div className="layout">
-        <Header />
-        <div className="main-content">
-          <Sidebar />
-          <main className="page-area">
-            <Outlet />
-          </main>
-        </div>
-        <Notification />
-      </div>
+      <AppContent />
     </AppProvider>
   );
 }
