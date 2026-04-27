@@ -64,6 +64,9 @@ export const handler = async (event) => {
         updates.resume_emphasis = overrideFields.resume_emphasis;
         humanOverride.resume_emphasis_override = overrideFields.resume_emphasis;
       }
+      // Mark job as auto_apply_eligible when score is high enough (requires migration 005)
+      // The Python job agent reads this flag to decide which roles to auto-submit in Phase 4.
+      updates.auto_apply_eligible = (opp.fit_score || 0) >= 75 && !!opp.recommended;
       // Auto-generate Apply Pack immediately on approval
       try {
         const oppForPack = { ...opp, ...updates, approval_state: 'approved' };

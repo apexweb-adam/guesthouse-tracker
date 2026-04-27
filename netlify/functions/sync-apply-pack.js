@@ -254,6 +254,13 @@ export const handler = async (event) => {
       last_action_date: new Date().toISOString(),
     });
 
+    // Stamp python_agent_processed_at so this job is skipped on the next Python agent run.
+    // Non-fatal: requires migration 005. Jobs already processed won't burn LLM API credits again.
+    // The Python agent can query GET /opportunities?python_agent_pending=true for unprocessed jobs.
+    await updateOpportunity(opp.id, {
+      python_agent_processed_at: new Date().toISOString(),
+    }).catch(() => {});
+
     await insertReadinessHistory(opp.id, 'pack_synced_from_python_agent', {
       pack_readiness_score: applyPack.pack_readiness_score,
       score: body.score ?? body.scoring?.score ?? null,

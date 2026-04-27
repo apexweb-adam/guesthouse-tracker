@@ -38,11 +38,24 @@ export const handler = async (event) => {
         if (!opp) return json(404, { error: 'Not found' });
         return json(200, opp);
       }
-      const { status, lane, recommended } = event.queryStringParameters || {};
+      const {
+        status,
+        lane,
+        recommended,
+        approval_state,
+        python_agent_pending,
+        min_score,
+        auto_apply_eligible,
+      } = event.queryStringParameters || {};
       const opps = await listOpportunities({
         status: status || undefined,
         lane: lane || undefined,
         recommended: recommended !== undefined ? recommended === 'true' : undefined,
+        approval_state: approval_state || undefined,
+        // python_agent_pending=true → only jobs not yet LLM-scored (avoid wasting API credits)
+        python_agent_pending: python_agent_pending === 'true',
+        min_score: min_score !== undefined ? parseFloat(min_score) : undefined,
+        auto_apply_eligible: auto_apply_eligible !== undefined ? auto_apply_eligible === 'true' : undefined,
       });
       return json(200, { opportunities: opps, count: opps.length, demo: isDemoMode() });
     }
@@ -72,6 +85,8 @@ export const handler = async (event) => {
         'status', 'notes', 'next_action', 'next_action_due',
         'applied_date', 'last_action_date', 'tracking_url',
         'application_url', 'apply_pack_missing_url', 'pack_readiness_score',
+        // Python agent tracking fields (requires migration 005)
+        'python_agent_processed_at', 'auto_apply_eligible',
       ];
       const safe = Object.fromEntries(
         Object.entries(updates).filter(([k]) => allowed.includes(k))

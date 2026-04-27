@@ -62,13 +62,26 @@ const _demo = {
 
 // ─── Opportunities ────────────────────────────────────────────────────────────
 
-export async function listOpportunities({ status, lane, recommended } = {}) {
+export async function listOpportunities({
+  status,
+  lane,
+  recommended,
+  approval_state,
+  python_agent_pending,
+  min_score,
+  auto_apply_eligible,
+} = {}) {
   const sb = getSupabase();
   if (sb) {
     let q = sb.from('opportunities').select('*').order('ingested_at', { ascending: false });
     if (status) q = q.eq('status', status);
     if (lane) q = q.eq('lane', lane);
     if (recommended !== undefined) q = q.eq('recommended', recommended);
+    if (approval_state) q = q.eq('approval_state', approval_state);
+    // python_agent_pending=true → only jobs not yet processed by the Python agent (saves LLM API credits)
+    if (python_agent_pending) q = q.is('python_agent_processed_at', null);
+    if (min_score !== undefined) q = q.gte('fit_score', min_score);
+    if (auto_apply_eligible !== undefined) q = q.eq('auto_apply_eligible', auto_apply_eligible);
     const { data, error } = await q;
     if (error) throw error;
     return data;
@@ -78,6 +91,10 @@ export async function listOpportunities({ status, lane, recommended } = {}) {
   if (status) results = results.filter(o => o.status === status);
   if (lane) results = results.filter(o => o.lane === lane);
   if (recommended !== undefined) results = results.filter(o => o.recommended === recommended);
+  if (approval_state) results = results.filter(o => o.approval_state === approval_state);
+  if (python_agent_pending) results = results.filter(o => !o.python_agent_processed_at);
+  if (min_score !== undefined) results = results.filter(o => (o.fit_score || 0) >= min_score);
+  if (auto_apply_eligible !== undefined) results = results.filter(o => o.auto_apply_eligible === auto_apply_eligible);
   return results;
 }
 
