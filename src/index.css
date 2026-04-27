@@ -90,8 +90,12 @@ input, select, textarea { font-family: var(--font); font-size: 14px; }
 @media (max-width: 900px) {
   .grid-4 { grid-template-columns: repeat(2,1fr); }
   .grid-3 { grid-template-columns: repeat(2,1fr); }
+  .tracker-stats { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+  .tracker-toolbar { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
   .sidebar { width: 180px; min-width: 180px; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .tracker-stats { grid-template-columns: 1fr; }
+  .tracker-heading, .tracker-alert { flex-direction: column; align-items: stretch; }
 }
