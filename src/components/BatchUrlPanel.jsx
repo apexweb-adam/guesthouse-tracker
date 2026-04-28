@@ -24,13 +24,14 @@ export default function BatchUrlPanel({ onClose }) {
   [state.opportunities]);
 
   // Pre-fill inputs with existing canonical/posting URL if the opportunity has one
+  // (Only canonical/posting URL — not application_url, since that's what we're trying to add)
   useEffect(() => {
     setUrls(prev => {
       const next = { ...prev };
       needsUrl.forEach(opp => {
-        const existing = opp.canonical_job_url || opp.application_url || '';
-        if (!next[opp.id] && existing) {
-          next[opp.id] = existing;
+        const existingPosting = opp.canonical_job_url || opp.reference_posting_url || '';
+        if (!next[opp.id] && existingPosting) {
+          next[opp.id] = existingPosting;
         }
       });
       return next;

@@ -224,11 +224,10 @@ export function getBestNextActions(opps) {
     });
   }
 
-  if (packGenerated.length > 0 && readyNow.length === 0) {
-    // Only surface this if nothing is in the top READY_TO_APPLY bucket yet
+  if (packGenerated.length > 0) {
     actions.push({
       type: 'pack_generated',
-      priority: 1,
+      priority: readyNow.length > 0 ? 2 : 1,
       label: `${packGenerated.length} apply pack${packGenerated.length === 1 ? '' : 's'} generated — open and apply!`,
       detail: `Start with: ${packGenerated[0].title} @ ${packGenerated[0].company}`,
       topOpp: packGenerated[0],

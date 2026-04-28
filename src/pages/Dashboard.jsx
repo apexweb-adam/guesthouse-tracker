@@ -166,7 +166,7 @@ export default function Dashboard() {
               };
               const colorMap = {
                 ready_to_apply: 'var(--green)',
-                pack_generated: 'var(--green)',
+                pack_generated: 'var(--blue)',
                 follow_up_due: 'var(--amber)',
                 needs_apply_url: 'var(--blue)',
                 needs_approval: 'var(--amber)',
