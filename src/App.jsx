@@ -2,7 +2,7 @@ import React from 'react';
 import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom';
 import { AppProvider } from './context/AppContext.jsx';
 import { useApp } from './context/AppContext.jsx';
-import { enableDemoModeOverride } from './lib/api.js';
+import { enableDemoModeOverride, disableDemoMode } from './lib/api.js';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Notification from './components/Notification.jsx';
@@ -83,11 +83,40 @@ function BackendErrorBanner() {
   );
 }
 
+// ── Demo Mode Banner ────────────────────────────────────────────────────────
+// Shown at the top when demo mode is active so the user knows they can switch to live.
+function DemoModeBanner() {
+  const { state } = useApp();
+  if (!state.demoMode) return null;
+  return (
+    <div
+      style={{
+        background: '#fffbeb', borderBottom: '1px solid #fde68a',
+        padding: '8px 24px', fontSize: 12, color: '#92400e',
+        display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+      }}
+    >
+      <span>⚠️ <strong>Demo mode</strong> — showing sample data. Your real jobs won't appear here.</span>
+      <button
+        style={{
+          background: '#fff', border: '1px solid #fcd34d', borderRadius: 5,
+          padding: '2px 10px', fontSize: 12, color: '#92400e', cursor: 'pointer',
+          fontWeight: 600,
+        }}
+        onClick={() => { disableDemoMode(); window.location.reload(); }}
+      >
+        Switch to Live Mode
+      </button>
+    </div>
+  );
+}
+
 // ── App Shell layout (rendered inside the router) ──────────────────────────
 function AppContent() {
   return (
     <div className="layout">
       <Header />
+      <DemoModeBanner />
       <BackendErrorBanner />
       <div className="main-content">
         <Sidebar />

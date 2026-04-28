@@ -20,12 +20,21 @@ export function isDemoMode() {
   if (import.meta.env.VITE_DEMO_MODE === 'true') return true;
   // User-triggered override: set when they click "Use demo mode" after a backend failure.
   try { if (localStorage.getItem('force_demo_mode') === 'true') return true; } catch { /* ignore */ }
+  // Runtime live-mode override: allows switching to live even when VITE_SUPABASE_URL
+  // was not set at build time (e.g. in Netlify preview deploys that inherit the demo default).
+  try { if (localStorage.getItem('force_live_mode') === 'true') return false; } catch { /* ignore */ }
   if (!import.meta.env.VITE_SUPABASE_URL) return true;
   return false;
 }
 
 export function enableDemoModeOverride() {
   try { localStorage.setItem('force_demo_mode', 'true'); } catch { /* ignore */ }
+  try { localStorage.removeItem('force_live_mode'); } catch { /* ignore */ }
+}
+
+export function disableDemoMode() {
+  try { localStorage.removeItem('force_demo_mode'); } catch { /* ignore */ }
+  try { localStorage.setItem('force_live_mode', 'true'); } catch { /* ignore */ }
 }
 
 const BASE = '/.netlify/functions';
