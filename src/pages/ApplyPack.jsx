@@ -187,32 +187,164 @@ export default function ApplyPack() {
     finally { setSaving(false); }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!pack || !opportunity) return;
-    const exportData = {
-      opportunity: {
-        title: opportunity.title,
-        company: opportunity.company,
-        location: opportunity.location,
-        canonical_job_url: opportunity.canonical_job_url || opportunity.url || null,
-        application_url: opportunity.application_url || null,
-        source_family: opportunity.source_family || null,
-        source_job_id: opportunity.source_job_id || null,
-        is_demo_record: opportunity.is_demo_record || false,
-        lane: opportunity.lane,
-        fit_score: opportunity.fit_score,
-        status: opportunity.status,
-      },
-      apply_pack: pack,
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `apply-pack-${opportunity.company || 'export'}-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    notify('Apply Pack exported.', 'success');
+    try {
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle } = await import('docx');
+
+      const sep = () => new Paragraph({
+        border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC', space: 6 } },
+        spacing: { after: 120 },
+        children: [],
+      });
+
+      const heading = (text) => new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 240, after: 80 },
+        children: [new TextRun({ text, bold: true, color: '1e3a5f', size: 26 })],
+      });
+
+      const body = (text) => new Paragraph({
+        spacing: { after: 80 },
+        children: [new TextRun({ text: String(text || ''), size: 22 })],
+      });
+
+      const label = (text) => new Paragraph({
+        spacing: { after: 40 },
+        children: [new TextRun({ text, bold: true, size: 20, color: '6b7280' })],
+      });
+
+      const sections = [];
+
+      // ── Title block ──
+      sections.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 160 },
+          children: [new TextRun({ text: opportunity.title || 'Apply Pack', bold: true, size: 36, color: '1e3a5f' })],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 80 },
+          children: [new TextRun({ text: opportunity.company || '', size: 26, color: '374151' })],
+        }),
+        ...(opportunity.location ? [new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 80 },
+          children: [new TextRun({ text: opportunity.location, size: 22, color: '6b7280' })],
+        })] : []),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 240 },
+          children: [
+            new TextRun({ text: `Fit Score: ${opportunity.fit_score ?? '—'}   |   Pack Readiness: ${packReadiness}%   |   Resume: ${effectiveResume}`, size: 20, color: '6b7280' }),
+          ],
+        }),
+        sep(),
+      );
+
+      // ── Cover Letter ──
+      if (pack.copy_ready_cover_note_block || pack.python_generated_cover_letter?.content) {
+        const clText = pack.copy_ready_cover_note_block || pack.python_generated_cover_letter?.content || '';
+        sections.push(heading('COVER LETTER (DRAFT)'));
+        sections.push(label('⚠ Personalise all [bracketed] sections before using'));
+        clText.split('\n').forEach(line => sections.push(body(line)));
+        sections.push(sep());
+      }
+
+      // ── Tailored Resume ──
+      const resumeContent = pack.python_generated_resume?.content;
+      if (resumeContent) {
+        sections.push(heading('TAILORED RESUME — ' + effectiveResume));
+        if (resumeContent.summary) {
+          sections.push(label('PROFESSIONAL SUMMARY'));
+          sections.push(body(resumeContent.summary));
+        }
+        if (resumeContent.core_skills?.length) {
+          sections.push(label('CORE SKILLS'));
+          sections.push(body(resumeContent.core_skills.join(' · ')));
+        }
+        if (resumeContent.experience_bullets) {
+          sections.push(label('EXPERIENCE HIGHLIGHTS'));
+          Object.entries(resumeContent.experience_bullets).forEach(([jobName, bullets]) => {
+            sections.push(new Paragraph({
+              spacing: { before: 120, after: 40 },
+              children: [new TextRun({ text: jobName, bold: true, size: 22 })],
+            }));
+            (bullets || []).forEach(b => sections.push(new Paragraph({
+              spacing: { after: 40 },
+              bullet: { level: 0 },
+              children: [new TextRun({ text: b, size: 22 })],
+            })));
+          });
+        }
+        if (resumeContent.key_achievements?.length) {
+          sections.push(label('KEY ACHIEVEMENTS'));
+          resumeContent.key_achievements.forEach(a => sections.push(new Paragraph({
+            spacing: { after: 40 },
+            bullet: { level: 0 },
+            children: [new TextRun({ text: a, size: 22 })],
+          })));
+        }
+        sections.push(sep());
+      } else if (pack.copy_ready_resume_emphasis_block) {
+        sections.push(heading('RESUME EMPHASIS NOTES'));
+        sections.push(label('Use these themes and proof points when updating your resume for this role'));
+        pack.copy_ready_resume_emphasis_block.split('\n').forEach(line => sections.push(body(line)));
+        sections.push(sep());
+      }
+
+      // ── Summary block ──
+      if (pack.copy_ready_summary_block) {
+        sections.push(heading('COPY-READY SUMMARY'));
+        pack.copy_ready_summary_block.split('\n').forEach(line => sections.push(body(line)));
+        sections.push(sep());
+      }
+
+      // ── Keywords ──
+      if (pack.keyword_mirror_list?.length) {
+        sections.push(heading('KEYWORDS TO MIRROR'));
+        sections.push(body(pack.keyword_mirror_list.join(', ')));
+        sections.push(sep());
+      }
+
+      // ── Apply URL ──
+      sections.push(heading('APPLICATION DETAILS'));
+      if (opportunity.application_url) {
+        sections.push(body(`Apply URL: ${opportunity.application_url}`));
+      } else {
+        sections.push(body('⚠ Apply URL: MISSING — find the official ATS/careers link before applying'));
+      }
+      if (opportunity.canonical_job_url || opportunity.url) {
+        sections.push(body(`Original posting: ${opportunity.canonical_job_url || opportunity.url}`));
+      }
+      sections.push(sep());
+
+      // ── Footer ──
+      sections.push(new Paragraph({
+        spacing: { before: 240 },
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: `⚠ All drafted content requires human review before use. Generated ${new Date().toLocaleString()}`, size: 18, color: '9ca3af', italics: true })],
+      }));
+
+      const doc = new Document({
+        sections: [{ properties: {}, children: sections }],
+        title: `Apply Pack — ${opportunity.title} @ ${opportunity.company}`,
+        description: 'Generated by Sample Candidate Job Search System',
+      });
+
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = `${opportunity.company || 'company'}_${opportunity.title || 'role'}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+      a.download = `apply-pack-${safeName}-${new Date().toISOString().slice(0, 10)}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notify('sample-resume.pdf).', 'success');
+    } catch (err) {
+      notify(`Export failed: ${err.message}`, 'error');
+    }
   };
 
   const handleBrowserPrint = () => {
@@ -531,7 +663,7 @@ export default function ApplyPack() {
         )}
         <button className="btn btn-ghost btn-sm" onClick={handlePrintExport}>📄 Export Text Pack</button>
         <button className="btn btn-ghost btn-sm" onClick={handleBrowserPrint}>🖨 Print / Save PDF</button>
-        <button className="btn btn-ghost btn-sm" onClick={handleExport}>⬇ Export Pack JSON</button>
+        <button className="btn btn-ghost btn-sm" onClick={handleExport}>⬇ sample-resume.pdf)</button>
         {/* Pack readiness indicator */}
         {packReadiness !== undefined && (
           <span style={{
@@ -710,83 +842,111 @@ export default function ApplyPack() {
             background: '#eff6ff', border: '1px solid var(--blue)', borderRadius: 8,
             padding: 12, marginBottom: 14, fontSize: 12, color: '#1e40af', lineHeight: 1.6,
           }}>
-            ✍ <strong>Copy-Ready Blocks</strong> — These are draft-ready assets aligned to this role and lane.
-            Copy, review, and personalise before use. They are NOT finished statements —
-            they are starting points that save you the blank-page problem.
+            ✍ <strong>Copy-Ready Blocks</strong> — Click <strong>📋 Copy</strong> on any block, paste into your document, then fill in the <code style={{ background: '#dbeafe', padding: '1px 4px', borderRadius: 3 }}>[bracketed]</code> placeholders with your real information.
           </div>
 
-          {pack.copy_ready_summary_block && (
-            <Section
-              title="COPY-READY SUMMARY BLOCK"
-              actionSlot={<CopyButton text={pack.copy_ready_summary_block} label="📋 Copy Summary" />}
-            >
-              <pre style={{
-                fontSize: 13, color: 'var(--gray-800)', background: '#f0fdf4',
-                borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.7,
-                margin: 0, fontFamily: 'inherit', border: '1px solid var(--green)',
-              }}>
-                {pack.copy_ready_summary_block}
-              </pre>
-              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
-                Replace [X], [bracketed], and [Company] placeholders with your real experience before using.
-              </div>
-            </Section>
-          )}
-
-          {pack.copy_ready_resume_emphasis_block && (
-            <Section
-              title="COPY-READY RESUME EMPHASIS BLOCK"
-              actionSlot={<CopyButton text={pack.copy_ready_resume_emphasis_block} label="📋 Copy Emphasis" />}
-            >
-              <pre style={{
-                fontSize: 13, color: 'var(--gray-800)', background: '#fffbeb',
-                borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.7,
-                margin: 0, fontFamily: 'inherit', border: '1px solid #fde68a',
-              }}>
-                {pack.copy_ready_resume_emphasis_block}
-              </pre>
-              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
-                Use this as your editing checklist — these are themes and proof points to surface, not fabricated claims.
-              </div>
-            </Section>
-          )}
-
           {pack.copy_ready_cover_note_block && (
-            <Section
-              title="COPY-READY COVER NOTE BLOCK"
-              actionSlot={<CopyButton text={pack.copy_ready_cover_note_block} label="📋 Copy Cover Note" />}
-            >
+            <div className="card card-pad" style={{ marginBottom: 14, border: '2px solid #7dd3fc' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', margin: 0 }}>✉ COVER LETTER DRAFT</h3>
+                <CopyButton text={pack.copy_ready_cover_note_block} label="📋 Copy Cover Letter" />
+              </div>
               <pre style={{
                 fontSize: 13, color: 'var(--gray-800)', background: '#f0f9ff',
-                borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.7,
-                margin: 0, fontFamily: 'inherit', border: '1px solid #7dd3fc',
+                borderRadius: 6, padding: 14, whiteSpace: 'pre-wrap', lineHeight: 1.8,
+                margin: 0, fontFamily: 'inherit', border: '1px solid #bae6fd',
+                userSelect: 'all',
               }}>
                 {pack.copy_ready_cover_note_block}
               </pre>
               <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
-                3-paragraph draft. Personalise bracketed sections and review carefully before submitting.
-                This is a starting point — not a finished cover letter.
+                Fill in all <code style={{ background: '#f0f9ff', padding: '1px 3px', borderRadius: 2 }}>[bracketed]</code> placeholders before submitting. This is a draft, not a finished letter.
               </div>
-            </Section>
+            </div>
+          )}
+
+          {pack.copy_ready_summary_block && (
+            <div className="card card-pad" style={{ marginBottom: 14, border: '2px solid var(--green)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', margin: 0 }}>📝 PROFESSIONAL SUMMARY</h3>
+                <CopyButton text={pack.copy_ready_summary_block} label="📋 Copy Summary" />
+              </div>
+              <pre style={{
+                fontSize: 13, color: 'var(--gray-800)', background: '#f0fdf4',
+                borderRadius: 6, padding: 14, whiteSpace: 'pre-wrap', lineHeight: 1.8,
+                margin: 0, fontFamily: 'inherit', border: '1px solid #bbf7d0',
+                userSelect: 'all',
+              }}>
+                {pack.copy_ready_summary_block}
+              </pre>
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
+                Replace <code style={{ background: '#f0fdf4', padding: '1px 3px', borderRadius: 2 }}>[X]</code>, <code style={{ background: '#f0fdf4', padding: '1px 3px', borderRadius: 2 }}>[Company]</code> and other placeholders with your real experience.
+              </div>
+            </div>
+          )}
+
+          {pack.copy_ready_resume_emphasis_block && (
+            <div className="card card-pad" style={{ marginBottom: 14, border: '2px solid #fde68a' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', margin: 0 }}>📄 RESUME EMPHASIS NOTES</h3>
+                <CopyButton text={pack.copy_ready_resume_emphasis_block} label="📋 Copy Resume Notes" />
+              </div>
+              <pre style={{
+                fontSize: 13, color: 'var(--gray-800)', background: '#fffbeb',
+                borderRadius: 6, padding: 14, whiteSpace: 'pre-wrap', lineHeight: 1.8,
+                margin: 0, fontFamily: 'inherit', border: '1px solid #fde68a',
+                userSelect: 'all',
+              }}>
+                {pack.copy_ready_resume_emphasis_block}
+              </pre>
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 6, fontStyle: 'italic' }}>
+                These are themes to surface in your resume — not fabricated claims.
+              </div>
+            </div>
+          )}
+
+          {pack.keyword_mirror_list?.length > 0 && (
+            <div className="card card-pad" style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', margin: 0 }}>🔑 KEYWORDS TO MIRROR</h3>
+                <CopyButton text={pack.keyword_mirror_list.join(', ')} label="📋 Copy All Keywords" />
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                {pack.keyword_mirror_list.map((kw, i) => (
+                  <span key={i} style={{
+                    fontSize: 12, background: '#dbeafe', color: '#1e40af',
+                    borderRadius: 4, padding: '3px 10px', cursor: 'pointer',
+                    border: '1px solid #bfdbfe', fontWeight: 500,
+                  }}
+                    onClick={() => navigator.clipboard.writeText(kw)}
+                    title="Click to copy this keyword"
+                  >
+                    {kw}
+                  </span>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic' }}>Click any keyword to copy it individually, or copy all at once.</div>
+            </div>
           )}
 
           {/* Quick-access copies */}
-          <Section title="QUICK COPY ACCESS">
+          <div className="card card-pad" style={{ marginBottom: 14 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-700)', marginBottom: 10 }}>⚡ QUICK COPY</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {pack.keyword_mirror_list?.length > 0 && (
-                <CopyButton text={pack.keyword_mirror_list.join(', ')} label="📋 Copy Keywords" />
-              )}
               {pack.recruiter_outreach_draft && (
-                <CopyButton text={pack.recruiter_outreach_draft} label="📧 Copy Recruiter Outreach" />
+                <CopyButton text={pack.recruiter_outreach_draft} label="📧 Recruiter Message" />
               )}
               {pack.hiring_manager_outreach_draft && (
-                <CopyButton text={pack.hiring_manager_outreach_draft} label="📧 Copy HM Outreach" />
+                <CopyButton text={pack.hiring_manager_outreach_draft} label="📧 HM Message" />
               )}
               {pack.summary_direction && (
-                <CopyButton text={pack.summary_direction} label="📋 Copy Summary Direction" />
+                <CopyButton text={pack.summary_direction} label="📋 Summary Direction" />
+              )}
+              {pack.proof_points_to_surface?.length > 0 && (
+                <CopyButton text={pack.proof_points_to_surface.join('\n')} label="📋 Proof Points" />
               )}
             </div>
-          </Section>
+          </div>
 
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-secondary btn-sm" onClick={handlePrintExport}>
@@ -796,7 +956,7 @@ export default function ApplyPack() {
               🖨 Print / Save PDF
             </button>
             <button className="btn btn-ghost btn-sm" onClick={handleExport}>
-              ⬇ Export JSON Pack
+              ⬇ sample-resume.pdf)
             </button>
           </div>
         </div>

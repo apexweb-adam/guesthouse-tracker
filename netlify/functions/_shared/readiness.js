@@ -204,6 +204,14 @@ export function getBestNextActions(opps) {
   const followUp = groups[READINESS_GROUPS.APPLIED_FOLLOW_UP] || [];
   const stale = opps.filter(o => o.stale_flag || o.isStale);
 
+  // Jobs with apply pack generated — high priority signal to actually apply
+  const packGenerated = opps.filter(o =>
+    o.approval_state === 'approved' &&
+    o.apply_pack &&
+    ['apply_pack_generated', 'ready_to_apply'].includes(o.status) &&
+    !['rejected', 'ghosted', 'withdrawn'].includes(o.status)
+  );
+
   if (readyNow.length > 0) {
     actions.push({
       type: 'ready_to_apply',
@@ -213,6 +221,19 @@ export function getBestNextActions(opps) {
       topOpp: readyNow[0],
       count: readyNow.length,
       opps: readyNow.slice(0, 3),
+    });
+  }
+
+  if (packGenerated.length > 0 && readyNow.length === 0) {
+    // Only surface this if nothing is in the top READY_TO_APPLY bucket yet
+    actions.push({
+      type: 'pack_generated',
+      priority: 1,
+      label: `${packGenerated.length} apply pack${packGenerated.length === 1 ? '' : 's'} generated — open and apply!`,
+      detail: `Start with: ${packGenerated[0].title} @ ${packGenerated[0].company}`,
+      topOpp: packGenerated[0],
+      count: packGenerated.length,
+      opps: packGenerated.slice(0, 3),
     });
   }
 

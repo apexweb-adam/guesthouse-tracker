@@ -158,6 +158,7 @@ export default function Dashboard() {
             {bestActions.map((action, i) => {
               const iconMap = {
                 ready_to_apply: '✅',
+                pack_generated: '📦',
                 follow_up_due: '⏰',
                 needs_apply_url: '🔗',
                 needs_approval: '⭐',
@@ -165,6 +166,7 @@ export default function Dashboard() {
               };
               const colorMap = {
                 ready_to_apply: 'var(--green)',
+                pack_generated: 'var(--green)',
                 follow_up_due: 'var(--amber)',
                 needs_apply_url: 'var(--blue)',
                 needs_approval: 'var(--amber)',
@@ -172,6 +174,7 @@ export default function Dashboard() {
               };
               const navMap = {
                 ready_to_apply: '/tracker',
+                pack_generated: '/tracker',
                 follow_up_due: '/tracker',
                 needs_apply_url: '/tracker',
                 needs_approval: '/queue',

@@ -170,6 +170,7 @@ function DiscoveredCard({ opp, onApprove, onReject, processing }) {
 export default function Discovered() {
   const { state, loadOpportunities, notify } = useApp();
   const [processing, setProcessing] = useState(null);
+  const [approvingAll, setApprovingAll] = useState(false);
   const [discoverRunning, setDiscoverRunning] = useState(false);
   const [lastRunResult, setLastRunResult] = useState(null);
   const [filterRec, setFilterRec] = useState(false);
@@ -195,6 +196,33 @@ export default function Discovered() {
   }, [state.opportunities, filterRec, filterDemo, sortBy]);
 
   const strongFit = discovered.filter(o => (o.fit_score || 0) >= 75 && o.recommended).length;
+
+  const handleApproveAll = async () => {
+    const toApprove = discovered.filter(o => o.approval_state !== 'approved');
+    if (toApprove.length === 0) {
+      notify('No pending jobs to approve.', 'info');
+      return;
+    }
+    if (!window.confirm(`Approve all ${toApprove.length} visible job${toApprove.length !== 1 ? 's' : ''}? Apply packs will be generated automatically.`)) return;
+    setApprovingAll(true);
+    let approved = 0;
+    let failed = 0;
+    for (const opp of toApprove) {
+      try {
+        await approveOpportunity(opp.id, 'approve');
+        approved++;
+      } catch {
+        failed++;
+      }
+    }
+    await loadOpportunities();
+    setApprovingAll(false);
+    if (failed > 0) {
+      notify(`Approved ${approved} job${approved !== 1 ? 's' : ''}. ${failed} failed.`, 'warning');
+    } else {
+      notify(`✓ Approved ${approved} job${approved !== 1 ? 's' : ''} — apply packs generated.`, 'success');
+    }
+  };
 
   const handleApprove = async (id) => {
     setProcessing(id);
@@ -264,6 +292,20 @@ export default function Discovered() {
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            onClick={handleApproveAll}
+            disabled={approvingAll || discovered.filter(o => o.approval_state !== 'approved').length === 0}
+            style={{
+              padding: '8px 16px',
+              background: approvingAll ? '#93c5fd' : '#166534',
+              color: '#fff', border: 'none', borderRadius: 7,
+              fontWeight: 700, fontSize: 13,
+              cursor: approvingAll || discovered.filter(o => o.approval_state !== 'approved').length === 0 ? 'not-allowed' : 'pointer',
+              opacity: discovered.filter(o => o.approval_state !== 'approved').length === 0 ? 0.5 : 1,
+            }}
+          >
+            {approvingAll ? '⏳ Approving…' : `✓ Approve All (${discovered.filter(o => o.approval_state !== 'approved').length})`}
+          </button>
           <button
             onClick={handleRunDiscover}
             disabled={discoverRunning}

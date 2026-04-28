@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext.jsx';
 import { batchUpdateApplyUrls } from '../lib/api.js';
 import { classifyReadinessGroup, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
@@ -22,6 +22,20 @@ export default function BatchUrlPanel({ onClose }) {
       classifyReadinessGroup(o) === READINESS_GROUPS.NEEDS_APPLY_URL
     ).sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0)),
   [state.opportunities]);
+
+  // Pre-fill inputs with existing canonical/posting URL if the opportunity has one
+  useEffect(() => {
+    setUrls(prev => {
+      const next = { ...prev };
+      needsUrl.forEach(opp => {
+        const existing = opp.canonical_job_url || opp.application_url || '';
+        if (!next[opp.id] && existing) {
+          next[opp.id] = existing;
+        }
+      });
+      return next;
+    });
+  }, [needsUrl]);
 
   const handleChange = (id, value) => {
     setUrls(prev => ({ ...prev, [id]: value }));
