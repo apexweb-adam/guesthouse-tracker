@@ -72,7 +72,7 @@ export const handler = async (event) => {
         // Persist readiness score on the opportunity itself for reporting/sorting
         updates.pack_readiness_score = applyPack.pack_readiness_score || 0;
         // If manual external role with no apply URL, flag it
-        const hasApplyUrl = !!(opp.application_url || '').trim();
+        const hasApplyUrl = !!(opp.application_url || opp.canonical_job_url || opp.url || '').trim();
         if (opp.is_manual_external_intake && !hasApplyUrl) {
           updates.status = 'needs_apply_url';
           updates.apply_pack_missing_url = true;

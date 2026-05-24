@@ -47,6 +47,87 @@ function Section({ title, children, actionSlot }) {
   );
 }
 
+function xmlEscape(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function crc32(str) {
+  let crc = -1;
+  for (let i = 0; i < str.length; i += 1) {
+    crc ^= str.charCodeAt(i);
+    for (let j = 0; j < 8; j += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+function u16(n) {
+  return String.fromCharCode(n & 255, (n >>> 8) & 255);
+}
+
+function u32(n) {
+  return String.fromCharCode(n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255);
+}
+
+function makeZip(files) {
+  let offset = 0;
+  const localParts = [];
+  const centralParts = [];
+  const encoder = new TextEncoder();
+
+  for (const [name, content] of files) {
+    const data = Array.from(encoder.encode(content), b => String.fromCharCode(b)).join('');
+    const crc = crc32(data);
+    const size = data.length;
+    const nameBytes = Array.from(encoder.encode(name), b => String.fromCharCode(b)).join('');
+    const local =
+      'PK\x03\x04' + u16(20) + u16(0) + u16(0) + u16(0) + u16(0) +
+      u32(crc) + u32(size) + u32(size) + u16(nameBytes.length) + u16(0) +
+      nameBytes + data;
+    const central =
+      'PK\x01\x02' + u16(20) + u16(20) + u16(0) + u16(0) + u16(0) + u16(0) +
+      u32(crc) + u32(size) + u32(size) + u16(nameBytes.length) + u16(0) +
+      u16(0) + u16(0) + u16(0) + u32(0) + u32(offset) + nameBytes;
+    localParts.push(local);
+    centralParts.push(central);
+    offset += local.length;
+  }
+
+  const central = centralParts.join('');
+  const end = 'PK\x05\x06' + u16(0) + u16(0) + u16(files.length) + u16(files.length) +
+    u32(central.length) + u32(offset) + u16(0);
+  const zip = localParts.join('') + central + end;
+  const bytes = Uint8Array.from(zip, c => c.charCodeAt(0));
+  return new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+function textToDocxBlob(title, bodyText) {
+  const paragraphs = String(bodyText || '')
+    .split(/\n+/)
+    .map(line => `<w:p><w:r><w:t xml:space="preserve">${xmlEscape(line)}</w:t></w:r></w:p>`)
+    .join('');
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:rPr><w:b/></w:rPr><w:t>${xmlEscape(title)}</w:t></w:r></w:p>
+    ${paragraphs}
+    <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/></w:sectPr>
+  </w:body>
+</w:document>`;
+  return makeZip([
+    ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`],
+    ['_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`],
+    ['word/document.xml', documentXml],
+  ]);
+}
+
+function safeFilePart(value = 'apply-pack') {
+  return String(value || 'apply-pack').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 60) || 'apply-pack';
+}
+
 // ─── Override Resume Modal ────────────────────────────────────────────────────
 
 function OverrideResumeModal({ current, original, onSave, onClose }) {
@@ -187,32 +268,45 @@ export default function ApplyPack() {
     finally { setSaving(false); }
   };
 
+  const buildExportText = () => {
+    const applyUrl = opportunity.application_url || opportunity.canonical_job_url || opportunity.url || '';
+    return [
+      `Tailored Application Pack: ${opportunity.title}`,
+      `Company: ${opportunity.company || ''}`,
+      `Location: ${opportunity.location || ''}`,
+      `Apply URL: ${applyUrl || 'Not available'}`,
+      '',
+      'TAILORED RESUME',
+      '================',
+      pack.copy_ready_tailored_resume_block || pack.copy_ready_summary_block || '',
+      '',
+      'COVER LETTER',
+      '============',
+      pack.copy_ready_cover_letter_block || pack.cover_letter_text || pack.copy_ready_cover_note_block || '',
+      '',
+      'KEYWORDS TO MIRROR',
+      '==================',
+      (pack.keyword_mirror_list || []).join(', '),
+      '',
+      'APPLICATION CHECKLIST',
+      '=====================',
+      (pack.apply_checklist || []).map(item => `[${item.done ? 'x' : ' '}] ${item.step}`).join('\n'),
+      '',
+      `Generated: ${new Date().toLocaleString()}`,
+    ].join('\n');
+  };
+
   const handleExport = () => {
     if (!pack || !opportunity) return;
-    const exportData = {
-      opportunity: {
-        title: opportunity.title,
-        company: opportunity.company,
-        location: opportunity.location,
-        canonical_job_url: opportunity.canonical_job_url || opportunity.url || null,
-        application_url: opportunity.application_url || null,
-        source_family: opportunity.source_family || null,
-        source_job_id: opportunity.source_job_id || null,
-        is_demo_record: opportunity.is_demo_record || false,
-        lane: opportunity.lane,
-        fit_score: opportunity.fit_score,
-        status: opportunity.status,
-      },
-      apply_pack: pack,
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const text = buildExportText();
+    const blob = textToDocxBlob(`${opportunity.title || 'Application Pack'} - ${opportunity.company || ''}`, text);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `apply-pack-${opportunity.company || 'export'}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `sample-candidate-${safeFilePart(opportunity.company)}-${safeFilePart(opportunity.title)}-${new Date().toISOString().slice(0, 10)}.docx`;
     a.click();
     URL.revokeObjectURL(url);
-    notify('Apply Pack exported.', 'success');
+    notify('DOCX exported with tailored resume and cover letter.', 'success');
   };
 
   const handleBrowserPrint = () => {
@@ -257,6 +351,18 @@ export default function ApplyPack() {
       lines.push(`Original system recommendation: ${pack.original_system_recommendation}`);
     }
     lines.push('');
+    if (pack.copy_ready_tailored_resume_block) {
+      lines.push('COPY-READY TAILORED RESUME');
+      lines.push(sub);
+      lines.push(pack.copy_ready_tailored_resume_block);
+      lines.push('');
+    }
+    if (pack.copy_ready_cover_letter_block) {
+      lines.push('COPY-READY COVER LETTER');
+      lines.push(sub);
+      lines.push(pack.copy_ready_cover_letter_block);
+      lines.push('');
+    }
     if (pack.copy_ready_summary_block) {
       lines.push('COPY-READY SUMMARY BLOCK');
       lines.push(sub);
@@ -531,7 +637,7 @@ export default function ApplyPack() {
         )}
         <button className="btn btn-ghost btn-sm" onClick={handlePrintExport}>📄 Export Text Pack</button>
         <button className="btn btn-ghost btn-sm" onClick={handleBrowserPrint}>🖨 Print / Save PDF</button>
-        <button className="btn btn-ghost btn-sm" onClick={handleExport}>⬇ Export Pack JSON</button>
+        <button className="btn btn-ghost btn-sm" onClick={handleExport}>⬇ Export DOCX</button>
         {/* Pack readiness indicator */}
         {packReadiness !== undefined && (
           <span style={{
@@ -715,6 +821,36 @@ export default function ApplyPack() {
             they are starting points that save you the blank-page problem.
           </div>
 
+          {pack.copy_ready_tailored_resume_block && (
+            <Section
+              title="COPY-READY TAILORED RESUME"
+              actionSlot={<CopyButton text={pack.copy_ready_tailored_resume_block} label="📋 Copy Resume" />}
+            >
+              <pre style={{
+                fontSize: 13, color: 'var(--gray-800)', background: '#fff',
+                borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.7,
+                margin: 0, fontFamily: 'inherit', border: '1px solid var(--gray-200)',
+              }}>
+                {pack.copy_ready_tailored_resume_block}
+              </pre>
+            </Section>
+          )}
+
+          {pack.copy_ready_cover_letter_block && (
+            <Section
+              title="COPY-READY COVER LETTER"
+              actionSlot={<CopyButton text={pack.copy_ready_cover_letter_block} label="📋 Copy Cover Letter" />}
+            >
+              <pre style={{
+                fontSize: 13, color: 'var(--gray-800)', background: '#fff',
+                borderRadius: 6, padding: 12, whiteSpace: 'pre-wrap', lineHeight: 1.7,
+                margin: 0, fontFamily: 'inherit', border: '1px solid var(--gray-200)',
+              }}>
+                {pack.copy_ready_cover_letter_block}
+              </pre>
+            </Section>
+          )}
+
           {pack.copy_ready_summary_block && (
             <Section
               title="COPY-READY SUMMARY BLOCK"
@@ -773,6 +909,13 @@ export default function ApplyPack() {
           {/* Quick-access copies */}
           <Section title="QUICK COPY ACCESS">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <CopyButton text={buildExportText()} label="📋 Copy Full Pack" />
+              {pack.copy_ready_tailored_resume_block && (
+                <CopyButton text={pack.copy_ready_tailored_resume_block} label="📋 Copy Resume" />
+              )}
+              {pack.copy_ready_cover_letter_block && (
+                <CopyButton text={pack.copy_ready_cover_letter_block} label="📋 Copy Cover Letter" />
+              )}
               {pack.keyword_mirror_list?.length > 0 && (
                 <CopyButton text={pack.keyword_mirror_list.join(', ')} label="📋 Copy Keywords" />
               )}

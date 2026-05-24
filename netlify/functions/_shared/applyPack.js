@@ -262,6 +262,52 @@ export function generateCopyReadyCoverNoteBlock(opp, topKeywords = []) {
   ].join('\n');
 }
 
+export function generateCopyReadyTailoredResumeBlock(opp, topKeywords = [], proofPoints = []) {
+  const company = opp.company || 'the company';
+  const title = opp.title || 'the role';
+  const laneConfig = LANE_CONFIG[opp.lane] || LANE_CONFIG[LANES.OTHER];
+  const keywords = topKeywords.slice(0, 10);
+  const keywordLine = keywords.length ? keywords.join(' | ') : 'Technical delivery | Stakeholder management | Program governance';
+  const proofLine = (proofPoints || []).slice(0, 4).map(p => `- ${p.replace(/\[[^\]]+\]/g, 'relevant project')}`).join('\n');
+
+  return [
+    'SAMPLE CANDIDATE',
+    'United States | (+1 555 0100 | candidate@example.com | linkedin.com/in/candidate-candidate-pm',
+    '',
+    `${title.toUpperCase()} TARGET RESUME`,
+    `${company} | Fit Score: ${opp.fit_score ?? 'N/A'} | Focus: ${laneConfig.label}`,
+    '',
+    'PROFESSIONAL SUMMARY',
+    generateCopyReadySummaryBlock(opp, topKeywords).replace('[DRAFT — review and personalise before use]\n\n', ''),
+    '',
+    'CORE SKILLS ALIGNED TO THIS ROLE',
+    keywordLine,
+    '',
+    'SELECTED EXPERIENCE BULLETS TO USE',
+    proofLine || '- Lead cross-functional delivery across technical, business, and operational stakeholders.\n- Manage project scope, risks, milestones, dependencies, and executive-ready status reporting.\n- Coordinate Agile delivery rituals, issue resolution, documentation, and release readiness.\n- Translate business needs into clear delivery plans for technical teams.',
+    '',
+    'RESUME TAILORING NOTES',
+    `Lead the resume with ${laneConfig.label} language and mirror the employer wording for: ${keywordLine}.`,
+    'Keep every bullet evidence-based. Replace any generic bullet with a real project, system, stakeholder group, metric, or delivery outcome before submitting.',
+  ].join('\n');
+}
+
+export function generateCopyReadyCoverLetterBlock(opp, topKeywords = []) {
+  const company = opp.company || '[Company]';
+  const title = opp.title || '[Role Title]';
+  return [
+    'Sample Candidate',
+    'United States | (+1 555 0100 | candidate@example.com',
+    '',
+    `Re: ${title} at ${company}`,
+    '',
+    generateCopyReadyCoverNoteBlock(opp, topKeywords)
+      .replace('[DRAFT — review and personalise before use. This is a starting point, not a finished cover letter.]\n\n', '')
+      .replace(/\[personalise — insert what specifically appeals about the role\/company\]/g, `the opportunity to support ${company}'s project delivery goals`)
+      .replace(/\[Your Name\]\n\[Your Contact Details\]/g, 'Sample Candidate\n(+1 555 0100 | candidate@example.com'),
+  ].join('\n');
+}
+
 /**
  * Compute a pack readiness score (0–100).
  *
@@ -276,7 +322,9 @@ export function computePackReadinessScore(opp, pack) {
   if (pack.copy_ready_summary_block) score += 10;
   if (pack.copy_ready_resume_emphasis_block) score += 10;
   if (pack.copy_ready_cover_note_block) score += 10;
-  if (opp.application_url) score += 15;
+  if (pack.copy_ready_tailored_resume_block) score += 10;
+  if (pack.copy_ready_cover_letter_block) score += 10;
+  if (opp.application_url || opp.canonical_job_url || opp.url) score += 15;
   if ((pack.apply_checklist || []).some(c => c.done)) score += 5;
   if (pack.recruiter_outreach_draft) score += 5;
   return Math.min(100, score);
@@ -357,7 +405,11 @@ export function generateApplyPack(opp) {
       opp, bulletEmphasisNotes, prep.proofPointsToSurface
     ),
     copy_ready_cover_note_block: generateCopyReadyCoverNoteBlock(opp, prep.keywordMirrorList),
-    apply_url_missing_at_generation: !(opp.application_url || '').trim(),
+    copy_ready_tailored_resume_block: generateCopyReadyTailoredResumeBlock(
+      opp, prep.keywordMirrorList, prep.proofPointsToSurface
+    ),
+    copy_ready_cover_letter_block: generateCopyReadyCoverLetterBlock(opp, prep.keywordMirrorList),
+    apply_url_missing_at_generation: !(opp.application_url || opp.canonical_job_url || opp.url || '').trim(),
 
     // Workflow
     apply_checklist: applyChecklist,

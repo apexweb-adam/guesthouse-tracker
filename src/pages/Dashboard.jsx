@@ -78,25 +78,34 @@ export default function Dashboard() {
   const { opportunities: opps, logs, sources, demoMode } = state;
 
   const stats = useMemo(() => ({
-    queue: opps.filter(o => o.approval_state === 'pending' && !['rejected','ghosted','stale'].includes(o.status)).length,
+    queue: opps.filter(o => o.approval_state === 'pending' && !['rejected','ghosted','stale','archived_low_fit'].includes(o.status)).length,
     discovered: opps.filter(o => o.status === 'discovered').length,
     active: opps.filter(o => ['approved','applied','interviewing','offer'].includes(o.status)).length,
     stale: opps.filter(o => o.stale_flag || o.isStale || o.isGhosted).length,
     readyToApply: opps.filter(o => classifyReadinessGroup(o) === READINESS_GROUPS.READY_TO_APPLY).length,
+    archivedLowFit: opps.filter(o => o.status === 'archived_low_fit').length,
   }), [opps]);
 
   const bestActions = useMemo(() => getBestNextActions(opps), [opps]);
 
   const highFit = useMemo(() =>
-    opps.filter(o => o.recommended && !['rejected','ghosted'].includes(o.status))
+    opps.filter(o => o.recommended && !['rejected','ghosted','archived_low_fit'].includes(o.status))
       .sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0))
       .slice(0, 4),
   [opps]);
 
   const nextActions = useMemo(() =>
     opps
-      .filter(o => o.next_action_due && !['rejected','ghosted'].includes(o.status))
-      .sort((a, b) => new Date(a.next_action_due) - new Date(b.next_action_due))
+      .filter(o =>
+        !['rejected','ghosted','withdrawn','archived_low_fit'].includes(o.status) &&
+        (o.next_action_due || ['apply_pack_generated', 'ready_to_apply'].includes(o.status))
+      )
+      .sort((a, b) => {
+        const aReady = ['apply_pack_generated', 'ready_to_apply'].includes(a.status) ? 0 : 1;
+        const bReady = ['apply_pack_generated', 'ready_to_apply'].includes(b.status) ? 0 : 1;
+        if (aReady !== bReady) return aReady - bReady;
+        return new Date(a.next_action_due || 8640000000000000) - new Date(b.next_action_due || 8640000000000000);
+      })
       .slice(0, 4),
   [opps]);
 
@@ -137,7 +146,7 @@ export default function Dashboard() {
           { value: stats.readyToApply, label: 'Ready to Apply', sub: 'Pack 70%+ + apply URL', action: () => nav('/tracker'), color: 'var(--green)' },
           { value: stats.queue, label: 'Pending Approval', sub: 'Need review', action: () => nav('/queue'), color: 'var(--amber)' },
           { value: stats.active, label: 'In Progress', sub: 'Approved / applied / interviewing', color: 'var(--blue)' },
-          { value: stats.stale, label: 'Stale / Ghosted', sub: 'Need follow-up or close', color: stats.stale > 0 ? 'var(--red)' : undefined },
+          { value: stats.archivedLowFit, label: 'Archived Low Fit', sub: 'Hidden from review pressure', action: () => nav('/tracker'), color: 'var(--gray-600)' },
         ].map((s, i) => (
           <div key={i} className="card stat-card" style={{ cursor: s.action ? 'pointer' : 'default' }} onClick={s.action}>
             <div className="stat-card__value" style={s.color ? { color: s.color } : {}}>{s.value}</div>
@@ -223,9 +232,15 @@ export default function Dashboard() {
               <div key={o.id} className="flex items-center gap-2" style={{ padding: '8px 0', borderBottom: '1px solid var(--gray-100)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="font-medium truncate" style={{ fontSize: 13, cursor: 'pointer' }} onClick={() => nav(`/opportunity/${o.id}`)}>{o.title}</div>
-                  <div className="text-muted text-sm">{o.next_action}</div>
+                  <div className="text-muted text-sm">
+                    {['apply_pack_generated', 'ready_to_apply'].includes(o.status)
+                      ? 'Apply Pack is created. Review it, then apply.'
+                      : o.next_action}
+                  </div>
                 </div>
-                <span style={{ fontSize: 11, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{o.next_action_due}</span>
+                <span style={{ fontSize: 11, color: 'var(--amber)', whiteSpace: 'nowrap' }}>
+                  {['apply_pack_generated', 'ready_to_apply'].includes(o.status) ? 'Apply now' : o.next_action_due}
+                </span>
               </div>
             ))}
           </div>

@@ -2,7 +2,7 @@
  * Service Worker — Job Search OS
  *
  * Strategy:
- *  - App shell (JS/CSS/HTML) → Cache First (stale-while-revalidate)
+ *  - App shell (JS/CSS/HTML) → Network First
  *  - Netlify Functions / API calls → Network Only. Never cache live business data.
  *  - Fonts → Cache First (immutable external resources)
  *  - Navigation fallback → /offline.html when fully offline
@@ -15,7 +15,7 @@
  * offline.html which clearly explains that live data is unavailable.
  */
 
-const CACHE_NAME = 'job-search-os-shell-v2';
+const CACHE_NAME = 'job-search-os-shell-v3';
 
 // Static shell assets to cache on install
 const SHELL_ASSETS = [
@@ -104,47 +104,54 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. Navigation requests — Stale-While-Revalidate with offline fallback.
-  //    If fully offline, serve /offline.html so the user gets a clear message.
+  // 4. Navigation requests — Network First with offline fallback.
+  //    Always prefer the latest index.html so build-time mode flags cannot get
+  //    stuck behind a stale PWA shell.
   if (request.mode === 'navigate') {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) =>
-        cache.match(request).then((cached) => {
-          const networkFetch = fetch(request).then((res) => {
-            if (res && res.status === 200 && res.type !== 'opaque') {
-              cache.put(request, res.clone());
-            }
-            return res;
-          }).catch(() =>
-            // Offline: return the offline fallback page
-            cache.match('/offline.html').then((offlinePage) =>
-              offlinePage || new Response(
-                '<html><body><h1>Offline</h1><p>Please reconnect.</p></body></html>',
-                { headers: { 'Content-Type': 'text/html' } }
+        fetch(request).then((res) => {
+          if (res && res.status === 200 && res.type !== 'opaque') {
+            cache.put(request, res.clone());
+            cache.put('/index.html', res.clone());
+          }
+          return res;
+        }).catch(() =>
+          cache.match(request).then((cached) =>
+            cached || cache.match('/index.html').then((shellPage) =>
+              shellPage || cache.match('/offline.html').then((offlinePage) =>
+                offlinePage || new Response(
+                  '<html><body><h1>Offline</h1><p>Please reconnect.</p></body></html>',
+                  { headers: { 'Content-Type': 'text/html' } }
+                )
               )
             )
-          );
-          return cached || networkFetch;
-        })
+          )
+        )
       )
     );
     return;
   }
 
-  // 5. App shell / static assets — Stale-While-Revalidate
+  // 5. App shell / static assets — Network First.
+  //    Hashed Vite assets still cache well, but the network wins whenever
+  //    available so old demo-mode bundles do not linger.
   event.respondWith(
     caches.open(CACHE_NAME).then((cache) =>
-      cache.match(request).then((cached) => {
-        const networkFetch = fetch(request).then((res) => {
-          if (res && res.status === 200 && res.type !== 'opaque') {
-            cache.put(request, res.clone());
+      fetch(request).then((res) => {
+        if (res && res.status === 200 && res.type !== 'opaque') {
+          cache.put(request, res.clone());
+        }
+        return res;
+      }).catch(() =>
+        cache.match(request).then((cached) => {
+          if (cached) return cached;
+          if (request.destination === 'document') {
+            return cache.match('/offline.html');
           }
-          return res;
-        }).catch(() => cached); // Fallback to cache if network fails
-
-        // Return cached immediately if available, also refresh in background
-        return cached || networkFetch;
-      })
+          return Response.error();
+        })
+      )
     )
   );
 });

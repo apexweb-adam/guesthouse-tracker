@@ -1476,7 +1476,8 @@ let swSrc19 = '';
 try { swSrc19 = readFileSync19(join19(__dirname_v19, '../public/sw.js'), 'utf-8'); } catch {}
 assert('sw.js includes offline.html in SHELL_ASSETS', swSrc19.includes('/offline.html'));
 assert('sw.js has navigation fallback to offline.html', swSrc19.includes("cache.match('/offline.html')"));
-assert("sw.js CACHE_NAME updated (v2)", swSrc19.includes('shell-v2'));
+assert("sw.js CACHE_NAME updated (v3)", swSrc19.includes('shell-v3'));
+assert('sw.js uses Network First for app shell', swSrc19.includes('App shell (JS/CSS/HTML) → Network First'));
 assert('sw.js still has API Network Only strategy', swSrc19.includes('Network Only') || (swSrc19.includes('API_PATHS') && swSrc19.includes("fetch(request)")));
 
 // 19k. offline.html exists and is honest

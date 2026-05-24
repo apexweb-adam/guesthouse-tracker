@@ -21,33 +21,12 @@ function getSupabase() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
   if (!url || !key) return null;
-  try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
-    // Wrap every Supabase request with an 8-second timeout so functions never
-    // exceed Netlify's 10-second limit and return a clean error instead of 502.
-    _supabase = createClient(url, key, {
-      global: {
-        // signal placed after spread so callers cannot accidentally override the timeout.
-        fetch: (input, init) =>
-          fetch(input, { ...init, signal: AbortSignal.timeout(8000) }),
-      },
-    });  } catch (err) {
-    console.warn(`[db] Ignoring invalid SUPABASE_URL: ${err.message}`);
-    return null;
-  }
+  _supabase = createClient(url, key);
   return _supabase;
 }
 
 export function isDemoMode() {
-  try {
-    const url = process.env.SUPABASE_URL;
-    if (!url || !process.env.SUPABASE_SERVICE_ROLE_KEY) return true;
-    const parsed = new URL(url);
-    return !['http:', 'https:'].includes(parsed.protocol);
-  } catch {
-    return true;
-  }
+  return !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY;
 }
 
 // ─── Demo In-Memory Store ──────────────────────────────────────────────────────
@@ -62,47 +41,19 @@ const _demo = {
 
 // ─── Opportunities ────────────────────────────────────────────────────────────
 
-const MODERN_OPPORTUNITY_LIST_COLUMNS = [
+const OPPORTUNITY_LIST_COLUMNS = [
   'id',
   'title',
   'company',
   'location',
-  'lane',
-  'fit_score',
-  'fit_signals',
-  'recommended',
-  'high_fit',
-  'resume_emphasis',
-  'recommendation_text',
-  'status',
-  'approval_state',
-  'source',
-  'source_family',
-  'source_type',
   'url',
   'canonical_job_url',
   'application_url',
-  'reference_posting_url',
-  'tracking_url',
-  'ingested_at',
-  'updated_at',
-  'applied_date',
-  'last_action_date',
-  'next_action',
-  'next_action_due',
-  'stale_flag',
-  'ghosted_flag',
-  'apply_pack_missing_url',
-  'pack_readiness_score',
-  'human_override',
-  'notes',
-].join(',');
-
-const STABLE_OPPORTUNITY_LIST_COLUMNS = [
-  'id',
-  'title',
-  'company',
-  'location',
+  'source',
+  'source_family',
+  'source_job_id',
+  'discovery_source_id',
+  'is_demo_record',
   'lane',
   'fit_score',
   'fit_signals',
@@ -112,39 +63,45 @@ const STABLE_OPPORTUNITY_LIST_COLUMNS = [
   'recommendation_text',
   'status',
   'approval_state',
-  'source',
-  'url',
-  'ingested_at',
-  'updated_at',
-  'applied_date',
-  'last_action_date',
+  'notes',
   'next_action',
   'next_action_due',
+  'applied_date',
+  'last_action_date',
+  'ingested_at',
+  'updated_at',
+  'discovered_at',
   'stale_flag',
-  'apply_pack_missing_url',
+  'stale_reason',
   'pack_readiness_score',
-  'human_override',
-  'notes',
+  'apply_pack_missing_url',
 ].join(',');
 
 export async function listOpportunities({ status, lane, recommended } = {}) {
   const sb = getSupabase();
   if (sb) {
-    // Keep list responses compact. Full apply_pack/description payloads can push
-    // Netlify Functions over the response-size limit once the tracker has lots
-    // of generated packs. Detail views still use getOpportunity(id) with select('*').
-    let lastError = null;
-    for (const columns of [MODERN_OPPORTUNITY_LIST_COLUMNS, STABLE_OPPORTUNITY_LIST_COLUMNS]) {
-      let q = sb.from('opportunities').select(columns).order('ingested_at', { ascending: false });
+    const pageSize = 1000;
+    const rows = [];
+
+    for (let from = 0; ; from += pageSize) {
+      let q = sb
+        .from('opportunities')
+        .select(OPPORTUNITY_LIST_COLUMNS)
+        .order('ingested_at', { ascending: false })
+        .range(from, from + pageSize - 1);
       if (status) q = q.eq('status', status);
       if (lane) q = q.eq('lane', lane);
       if (recommended !== undefined) q = q.eq('recommended', recommended);
+
       const { data, error } = await q;
-      if (!error) return data;
-      lastError = error;
-      if (!/does not exist|Could not find/i.test(error.message || '')) throw error;
+      if (error) throw error;
+
+      const page = data || [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
     }
-    throw lastError;
+
+    return rows;
   }
   // Demo fallback
   let results = [..._demo.opportunities];
@@ -172,43 +129,6 @@ export async function getExistingHashes() {
     return (data || []).map(r => r.dedup_hash);
   }
   return _demo.opportunities.map(o => o.dedup_hash);
-}
-
-function normalizeExistingKey(s = '') {
-  return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function normalizeExistingUrl(url = '') {
-  try {
-    const u = new URL(url);
-    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'ref', 'trk']
-      .forEach(k => u.searchParams.delete(k));
-    return `${u.origin}${u.pathname.replace(/\/+$/, '')}`.toLowerCase();
-  } catch {
-    return normalizeExistingKey(url);
-  }
-}
-
-function opportunityExactKey(opp = {}) {
-  const url = opp.url || opp.canonical_job_url || opp.application_url || '';
-  return [
-    normalizeExistingKey(opp.title),
-    normalizeExistingKey(opp.company),
-    normalizeExistingKey(opp.location),
-    normalizeExistingUrl(url),
-  ].join('|');
-}
-
-export async function getExistingOpportunityKeys() {
-  const sb = getSupabase();
-  if (sb) {
-    const { data, error } = await sb
-      .from('opportunities')
-      .select('title, company, location, url, canonical_job_url, application_url');
-    if (error) throw error;
-    return (data || []).map(opportunityExactKey);
-  }
-  return _demo.opportunities.map(opportunityExactKey);
 }
 
 /**
@@ -266,29 +186,6 @@ export async function updateOpportunity(id, updates) {
   if (idx < 0) throw new Error(`Opportunity ${id} not found`);
   _demo.opportunities[idx] = { ..._demo.opportunities[idx], ...updates };
   return _demo.opportunities[idx];
-}
-
-export async function deleteOpportunities(ids = []) {
-  if (!ids.length) return [];
-  const sb = getSupabase();
-  if (sb) {
-    const { data, error } = await sb
-      .from('opportunities')
-      .delete()
-      .in('id', ids)
-      .select('id');
-    if (error) throw error;
-    return data || [];
-  }
-  const deleted = [];
-  _demo.opportunities = _demo.opportunities.filter(o => {
-    if (ids.includes(o.id)) {
-      deleted.push({ id: o.id });
-      return false;
-    }
-    return true;
-  });
-  return deleted;
 }
 
 // ─── Sources ──────────────────────────────────────────────────────────────────
@@ -373,7 +270,6 @@ export async function listIngestionLogs({ sourceId, limit = 50 } = {}) {
  */
 export async function processBatch(rawJobs, sourceId) {
   const existingHashes = await getExistingHashes();
-  const existingOpportunityKeys = new Set(await getExistingOpportunityKeys());
   // Secondary dedup: source_family:source_job_id — catches re-runs even if title/content changes.
   const existingSourceJobIds = await getExistingSourceJobIds();
   const seenSourceJobIds = new Set(existingSourceJobIds);
@@ -391,12 +287,6 @@ export async function processBatch(rawJobs, sourceId) {
           deduped.push({ ...raw, dedup_reason: 'source_job_id' });
           continue;
         }
-      }
-
-      const exactKey = opportunityExactKey(raw);
-      if (existingOpportunityKeys.has(exactKey)) {
-        deduped.push({ ...raw, dedup_reason: 'exact_match' });
-        continue;
       }
 
       const hash = generateDedupHash({
@@ -426,7 +316,6 @@ export async function processBatch(rawJobs, sourceId) {
       const saved = await insertOpportunity(rec);
       inserted.push(saved);
       existingHashes.push(hash);
-      existingOpportunityKeys.add(exactKey);
       if (raw.source_job_id && raw.source_family) {
         seenSourceJobIds.add(`${raw.source_family}:${raw.source_job_id}`);
       }

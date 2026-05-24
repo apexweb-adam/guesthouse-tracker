@@ -87,25 +87,14 @@ export const DEFAULT_SOURCES = [
   },
   // ── RSS / Atom Feeds ────────────────────────────────────────────────────────
   {
-    id: 'src-rss-seek',
-    name: 'SEEK RSS (Technical PM)',
+    id: 'src-rss-jobicy',
+    name: 'Jobicy RSS (Remote Management)',
     type: SOURCE_TYPES.RSS,
-    sourceFamily: 'seek',
-    url: 'https://www.seek.com.au/jobs-in-information-communication-technology/full-time.rss',
+    sourceFamily: 'jobicy',
+    url: 'https://jobicy.com/?feed=job_feed&job_categories=management&job_types=remote',
     enabled: false, // OFF by default — enable after deployment verification
     trustLevel: TRUST_LEVELS.MEDIUM,
-    description: 'SEEK structured RSS feed for Technical PM roles in ICT. Requires LIVE_INTAKE_ENABLED=true.',
-    liveCapable: true,
-  },
-  {
-    id: 'src-rss-apsjobs',
-    name: 'APS Jobs RSS (Federal Government TPM)',
-    type: SOURCE_TYPES.RSS,
-    sourceFamily: 'apsjobs',
-    url: 'https://www.apsjobs.gov.au/s/SearchResults?query=project+manager&f=JobTypeId%3D1&rss=true',
-    enabled: false,
-    trustLevel: TRUST_LEVELS.HIGH,
-    description: 'Australian Public Service jobs RSS — federal TPM / delivery roles. Government jobs are APS-authenticated postings.',
+    description: 'Jobicy RSS feed for remote management/TPM roles. Requires LIVE_INTAKE_ENABLED=true.',
     liveCapable: true,
   },
   // ── ATS Public APIs ─────────────────────────────────────────────────────────
@@ -159,11 +148,10 @@ export const DEFAULT_SOURCES = [
 // ─── Source Families ──────────────────────────────────────────────────────────
 
 export const SOURCE_FAMILIES = {
-  SEEK: 'seek',
+  JOBICY: 'jobicy',
   GREENHOUSE: 'greenhouse',
   LEVER: 'lever',
   USAJOBS: 'usajobs',
-  APSJOBS: 'apsjobs',
   RSS: 'rss',
   MANUAL: 'manual',
   MANUAL_EXTERNAL: 'manual_external', // user-pasted external role (e.g. from LinkedIn, company site)
@@ -254,7 +242,7 @@ export const DEFAULT_DISCOVERY_PROFILE = {
   maxRecordsPerRun: 50,
 
   // Source families to enable for this profile
-  enabledSourceFamilies: ['seek', 'greenhouse', 'lever', 'usajobs', 'rss', 'apsjobs'],
+  enabledSourceFamilies: ['jobicy', 'greenhouse', 'lever', 'usajobs', 'rss'],
 };
 
 /**

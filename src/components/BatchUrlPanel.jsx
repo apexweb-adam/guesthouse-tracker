@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext.jsx';
 import { batchUpdateApplyUrls } from '../lib/api.js';
 import { classifyReadinessGroup, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
@@ -12,14 +12,27 @@ import { classifyReadinessGroup, READINESS_GROUPS } from '../../netlify/function
  */
 export default function BatchUrlPanel({ onClose }) {
   const { state, loadOpportunities, notify } = useApp();
-  const [urls, setUrls] = useState({});
+  const initialUrls = useMemo(() => {
+    const entries = {};
+    for (const opp of state.opportunities) {
+      const existing = opp.application_url || opp.canonical_job_url || opp.url || '';
+      if (existing) entries[opp.id] = existing;
+    }
+    return entries;
+  }, [state.opportunities]);
+  const [urls, setUrls] = useState(initialUrls);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState([]);
+
+  useEffect(() => {
+    setUrls(prev => ({ ...initialUrls, ...prev }));
+  }, [initialUrls]);
 
   // Only show opportunities that need an apply URL
   const needsUrl = useMemo(() =>
     state.opportunities.filter(o =>
-      classifyReadinessGroup(o) === READINESS_GROUPS.NEEDS_APPLY_URL
+      classifyReadinessGroup(o) === READINESS_GROUPS.NEEDS_APPLY_URL ||
+      (o.approval_state === 'approved' && !o.application_url && (o.canonical_job_url || o.url))
     ).sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0)),
   [state.opportunities]);
 
@@ -28,7 +41,9 @@ export default function BatchUrlPanel({ onClose }) {
   };
 
   const handleSave = async () => {
+    const visibleIds = new Set(needsUrl.map(o => o.id));
     const entries = Object.entries(urls)
+      .filter(([id]) => visibleIds.has(id))
       .filter(([, url]) => url && url.trim())
       .map(([id, applicationUrl]) => ({ id, applicationUrl }));
 
@@ -65,8 +80,8 @@ export default function BatchUrlPanel({ onClose }) {
           <div>
             <h2 style={{ color: '#c2410c', marginBottom: 0 }}>Batch Add Apply URLs</h2>
             <div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>
-              {needsUrl.length} approved role{needsUrl.length !== 1 ? 's' : ''} waiting for an apply URL.
-              Paste URLs below to unlock full readiness.
+              {needsUrl.length} approved role{needsUrl.length !== 1 ? 's' : ''} need an apply URL saved.
+              Existing posting URLs are prefilled when available.
             </div>
           </div>
         </div>
@@ -110,8 +125,8 @@ export default function BatchUrlPanel({ onClose }) {
                       type="url"
                       className="form-input"
                       style={{ flex: '2 1 260px', minWidth: 200 }}
-                      placeholder="https://company.com/careers/apply..."
-                      value={urls[opp.id] || ''}
+                      placeholder="Paste the real apply URL..."
+                      value={urls[opp.id] ?? (opp.application_url || opp.canonical_job_url || opp.url || '')}
                       onChange={e => handleChange(opp.id, e.target.value)}
                     />
                   )}

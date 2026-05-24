@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext.jsx';
 import OpportunityCard from '../components/OpportunityCard.jsx';
-import { approveOpportunity } from '../lib/api.js';
+import { approveOpportunity, archiveLowFit } from '../lib/api.js';
 import { classifyReadinessGroup, getReadinessReason, READINESS_GROUPS } from '../../netlify/functions/_shared/readiness.js';
 
 // ─── Readiness indicator chip shown per pending opportunity ───────────────────
@@ -56,13 +56,12 @@ export default function ApprovalQueue() {
   const { state, loadOpportunities, notify } = useApp();
   const [reason, setReason] = useState('');
   const [processing, setProcessing] = useState(null);
-  const [bulkProcessing, setBulkProcessing] = useState(false);
   const [sortBy, setSortBy] = useState('fit'); // 'fit' | 'readiness'
 
   // Split pending by fit tier for grouped display
   const { highFit, standard, weakFit } = useMemo(() => {
     const all = state.opportunities
-      .filter(o => o.approval_state === 'pending' && !['rejected','ghosted','stale'].includes(o.status));
+      .filter(o => o.approval_state === 'pending' && !['rejected','ghosted','stale','archived_low_fit'].includes(o.status));
 
     const sorted = [...all].sort((a, b) => {
       if (sortBy === 'readiness') {
@@ -82,6 +81,10 @@ export default function ApprovalQueue() {
   }, [state.opportunities, sortBy]);
 
   const total = highFit.length + standard.length + weakFit.length;
+  const allPending = useMemo(
+    () => [...highFit, ...standard, ...weakFit],
+    [highFit, standard, weakFit]
+  );
 
   const handle = async (opp, action) => {
     setProcessing(opp.id);
@@ -99,22 +102,40 @@ export default function ApprovalQueue() {
 
   const handleBulkApprove = async (opps, label) => {
     if (!opps.length) return;
-    const confirmed = window.confirm(
-      `Approve ${opps.length} ${label}? This will generate apply packs and move them out of the approval queue.`
-    );
-    if (!confirmed) return;
+    const ok = window.confirm(`Approve ${opps.length} ${label} opportunit${opps.length === 1 ? 'y' : 'ies'}? The agent will only apply within its configured daily/run limits.`);
+    if (!ok) return;
 
-    setBulkProcessing(true);
+    setProcessing(`bulk-${label}`);
+    let approved = 0;
     try {
       for (const opp of opps) {
-        await approveOpportunity(opp.id, 'approve', `Bulk approved: ${label}`);
+        await approveOpportunity(opp.id, 'approve', `Bulk approved from Approval Queue (${label})`);
+        approved += 1;
       }
       await loadOpportunities();
-      notify(`Approved ${opps.length} ${label}.`, 'success');
+      notify(`Approved ${approved} opportunit${approved === 1 ? 'y' : 'ies'}.`, 'success');
+    } catch (e) {
+      await loadOpportunities();
+      notify(`Bulk approve stopped after ${approved}: ${e.message}`, 'error');
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const handleArchiveWeakFit = async () => {
+    if (!weakFit.length) return;
+    const ok = window.confirm(`Archive ${weakFit.length} weak-fit roles below 50? They will remain visible in Tracker under Archived Low Fit.`);
+    if (!ok) return;
+
+    setProcessing('archive-low-fit');
+    try {
+      const result = await archiveLowFit(49, false);
+      await loadOpportunities();
+      notify(`Archived ${result.archived || 0} low-fit roles.`, 'success');
     } catch (e) {
       notify(e.message, 'error');
     } finally {
-      setBulkProcessing(false);
+      setProcessing(null);
     }
   };
 
@@ -169,48 +190,48 @@ export default function ApprovalQueue() {
           </p>
         </div>
         {total > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <span style={{ fontSize: 12, color: '#6b7280' }}>Sort by:</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+            {highFit.length > 0 && (
+              <button
+                className="btn btn-success btn-sm"
+                disabled={!!processing}
+                onClick={() => handleBulkApprove(highFit, 'high-fit')}
+              >
+                ✓ Approve High-Fit ({highFit.length})
+              </button>
+            )}
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={!!processing}
+              onClick={() => handleBulkApprove(allPending, 'pending')}
+            >
+              ✓ Approve All ({total})
+            </button>
+            {weakFit.length > 0 && (
+              <button
+                className="btn btn-ghost btn-sm"
+                disabled={!!processing}
+                onClick={handleArchiveWeakFit}
+              >
+                Archive Low-Fit ({weakFit.length})
+              </button>
+            )}
+            <span style={{ fontSize: 12, color: '#6b7280', marginLeft: 4 }}>Sort by:</span>
             <button
               className={`btn btn-sm ${sortBy === 'fit' ? 'btn-primary' : 'btn-ghost'}`}
+              disabled={!!processing}
               style={{ fontSize: 12, padding: '4px 10px' }}
               onClick={() => setSortBy('fit')}
             >Fit Score</button>
             <button
               className={`btn btn-sm ${sortBy === 'readiness' ? 'btn-primary' : 'btn-ghost'}`}
+              disabled={!!processing}
               style={{ fontSize: 12, padding: '4px 10px' }}
               onClick={() => setSortBy('readiness')}
             >Readiness</button>
           </div>
         )}
       </div>
-
-      {total > 0 && (
-        <div className="card card-pad" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontWeight: 700, color: 'var(--gray-800)', marginBottom: 2 }}>Bulk approvals</div>
-            <div className="text-muted text-sm">
-              Use high-fit first for safer automation, or approve everything currently in this queue.
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              className="btn btn-success"
-              disabled={bulkProcessing || highFit.length === 0}
-              onClick={() => handleBulkApprove(highFit, 'high-fit role' + (highFit.length === 1 ? '' : 's'))}
-            >
-              Approve High-Fit ({highFit.length})
-            </button>
-            <button
-              className="btn btn-primary"
-              disabled={bulkProcessing || total === 0}
-              onClick={() => handleBulkApprove([...highFit, ...standard, ...weakFit], 'queued role' + (total === 1 ? '' : 's'))}
-            >
-              Approve All ({total})
-            </button>
-          </div>
-        </div>
-      )}
 
       {total === 0 ? (
         <div className="card approval-empty">

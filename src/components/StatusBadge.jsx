@@ -5,6 +5,7 @@ const LABELS = {
   queued: 'Queued',
   approved: 'Approved',
   needs_apply_url: '⚠ Needs Apply URL',
+  needs_manual_apply: 'Needs Manual Apply',
   apply_pack_generated: 'Pack Ready',
   ready_to_apply: 'Ready to Apply',
   applied: 'Applied',
@@ -16,6 +17,7 @@ const LABELS = {
   stale: 'Stale',
   ghosted: 'Ghosted',
   withdrawn: 'Withdrawn',
+  archived_low_fit: 'Archived Low Fit',
 };
 
 export default function StatusBadge({ status }) {

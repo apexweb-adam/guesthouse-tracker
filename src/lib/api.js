@@ -2,7 +2,7 @@
  * Frontend API Client
  *
  * Detects demo mode and routes accordingly:
- * - Demo mode (VITE_DEMO_MODE=true or no Supabase keys): uses localStorage + demo data
+ * - Demo mode (VITE_DEMO_MODE=true): uses localStorage + demo data
  * - Production mode: calls Netlify Functions at /.netlify/functions/*
  */
 
@@ -18,14 +18,7 @@ import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
 export function isDemoMode() {
   if (import.meta.env.VITE_DEMO_MODE === 'true') return true;
-  // User-triggered override: set when they click "Use demo mode" after a backend failure.
-  try { if (localStorage.getItem('force_demo_mode') === 'true') return true; } catch { /* ignore */ }
-  if (!import.meta.env.VITE_SUPABASE_URL) return true;
   return false;
-}
-
-export function enableDemoModeOverride() {
-  try { localStorage.setItem('force_demo_mode', 'true'); } catch { /* ignore */ }
 }
 
 const BASE = '/.netlify/functions';
@@ -73,13 +66,7 @@ async function apiFetch(path, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
-  let data;
-  try {
-    data = await res.json();
-  } catch {
-    // Non-JSON body (e.g. Netlify 502 HTML page) — surface a clean error.
-    throw new Error(`HTTP ${res.status}`);
-  }
+  const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
@@ -189,7 +176,7 @@ export async function approveOpportunity(id, action, reason = '', overrideFields
         const pack = generateApplyPack(oppForPack);
         updates.apply_pack = pack;
         // If this is a manual external role with no apply URL, flag the missing URL clearly
-        const hasApplyUrl = !!(opp.application_url || '').trim();
+        const hasApplyUrl = !!(opp.application_url || opp.canonical_job_url || opp.url || '').trim();
         if (opp.is_manual_external_intake && !hasApplyUrl) {
           updates.status = 'needs_apply_url';
           updates.apply_pack_missing_url = true;
@@ -230,6 +217,56 @@ export async function approveOpportunity(id, action, reason = '', overrideFields
     method: 'POST',
     body: JSON.stringify({ id, action, reason, overrideFields }),
   });
+}
+
+export async function archiveLowFit(maxScore = 49, dryRun = false) {
+  if (isDemoMode()) {
+    const now = new Date().toISOString();
+    let archived = 0;
+    mutateStore(s => {
+      s.opportunities = s.opportunities.map(o => {
+        const closed = ['applied', 'interviewing', 'offer', 'rejected', 'ghosted', 'withdrawn', 'archived_low_fit'].includes(o.status);
+        if ((o.fit_score || 0) <= maxScore && !closed) {
+          archived += 1;
+          if (dryRun) return o;
+          return {
+            ...o,
+            status: 'archived_low_fit',
+            notes: [o.notes, `Archived because fit score was ${o.fit_score || 0}, below the ${maxScore + 1}+ review band.`].filter(Boolean).join('\n'),
+            last_action_date: now,
+          };
+        }
+        return o;
+      });
+    });
+    return { ok: true, archived, count: archived, dry_run: dryRun, demo: true };
+  }
+
+  if (dryRun) {
+    return apiFetch('/archive-low-fit', {
+      method: 'POST',
+      body: JSON.stringify({ max_score: maxScore, max_jobs: 150, dry_run: true }),
+    });
+  }
+
+  let archived = 0;
+  let remainingEligible = 0;
+  const errors = [];
+
+  for (let batch = 0; batch < 10; batch += 1) {
+    const result = await apiFetch('/archive-low-fit', {
+      method: 'POST',
+      body: JSON.stringify({ max_score: maxScore, max_jobs: 150, dry_run: false }),
+    });
+
+    archived += result.archived || 0;
+    remainingEligible = result.remaining_eligible || 0;
+    errors.push(...(result.errors || []));
+
+    if (!result.archived || remainingEligible <= 0) break;
+  }
+
+  return { ok: true, archived, remaining_eligible: remainingEligible, errors };
 }
 
 // ─── CSV Import ───────────────────────────────────────────────────────────────

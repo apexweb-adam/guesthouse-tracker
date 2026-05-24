@@ -195,6 +195,7 @@ export default function Discovered() {
   }, [state.opportunities, filterRec, filterDemo, sortBy]);
 
   const strongFit = discovered.filter(o => (o.fit_score || 0) >= 75 && o.recommended).length;
+  const approveAllCandidates = discovered.filter(o => o.recommended && (o.fit_score || 0) >= 70);
 
   const handleApprove = async (id) => {
     setProcessing(id);
@@ -217,6 +218,33 @@ export default function Discovered() {
       notify('Rejected.', 'info');
     } catch (e) {
       notify(e.message, 'error');
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const handleApproveAll = async () => {
+    if (approveAllCandidates.length === 0) {
+      notify('No recommended discovered jobs to approve.', 'info');
+      return;
+    }
+    const ok = window.confirm(`Approve ${approveAllCandidates.length} recommended discovered job(s)? Apply Packs will be generated automatically.`);
+    if (!ok) return;
+
+    setProcessing('approve-all');
+    let approved = 0;
+    let failed = 0;
+    try {
+      for (const opp of approveAllCandidates) {
+        try {
+          await approveOpportunity(opp.id, 'approve', 'Bulk approved from Discovered Jobs.');
+          approved += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      await loadOpportunities();
+      notify(`Approved ${approved} job${approved !== 1 ? 's' : ''}${failed ? `; ${failed} failed` : ''}.`, failed ? 'warning' : 'success');
     } finally {
       setProcessing(null);
     }
@@ -275,6 +303,18 @@ export default function Discovered() {
             }}
           >
             {discoverRunning ? '⏳ Discovering…' : '▶ Run Discovery'}
+          </button>
+          <button
+            onClick={handleApproveAll}
+            disabled={processing === 'approve-all' || approveAllCandidates.length === 0}
+            style={{
+              padding: '8px 16px',
+              background: approveAllCandidates.length ? '#166534' : '#9ca3af',
+              color: '#fff', border: 'none', borderRadius: 7,
+              fontWeight: 700, fontSize: 13, cursor: approveAllCandidates.length ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {processing === 'approve-all' ? 'Approving…' : `Approve All (${approveAllCandidates.length})`}
           </button>
           <Link
             to="/discover/profile"

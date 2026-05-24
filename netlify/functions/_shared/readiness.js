@@ -57,13 +57,16 @@ export function classifyReadinessGroup(opp) {
     status,
     pack_readiness_score,
     application_url,
+    canonical_job_url,
+    url,
     next_action_due,
     fit_score,
     recommended,
   } = opp;
+  const usableApplyUrl = application_url || canonical_job_url || url;
 
   // Terminal states — not actionable
-  if (['rejected', 'ghosted', 'withdrawn'].includes(status)) {
+  if (['rejected', 'ghosted', 'withdrawn', 'archived_low_fit'].includes(status)) {
     return READINESS_GROUPS.LOW_PRIORITY;
   }
 
@@ -81,14 +84,14 @@ export function classifyReadinessGroup(opp) {
   // Pending approval — needs review, but only if has some fit merit
   if (approval_state === 'pending' && !['rejected', 'ghosted', 'stale'].includes(status)) {
     // Low-fit non-recommended pending opps are low priority
-    if (!recommended && (fit_score || 0) < 40) return READINESS_GROUPS.LOW_PRIORITY;
+    if (!recommended && (fit_score || 0) < 50) return READINESS_GROUPS.LOW_PRIORITY;
     return READINESS_GROUPS.NEEDS_APPROVAL;
   }
 
   // Approved — check readiness
   if (approval_state === 'approved') {
     // Missing apply URL is a hard blocker
-    if (!application_url) {
+    if (!usableApplyUrl) {
       return READINESS_GROUPS.NEEDS_APPLY_URL;
     }
 
@@ -145,6 +148,7 @@ export function getReadinessReason(opp) {
       return 'In progress';
 
     case READINESS_GROUPS.LOW_PRIORITY:
+      if (opp.status === 'archived_low_fit') return 'Archived because fit score is below 50';
       if (['rejected', 'ghosted', 'withdrawn'].includes(opp.status)) return 'Closed / not active';
       if (!opp.recommended) return 'Below recommendation threshold';
       return 'Low fit score';
