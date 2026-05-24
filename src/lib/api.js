@@ -16,8 +16,15 @@ import { DEMO_OPPORTUNITIES, DEMO_LOGS } from './demoData.js';
 
 // ─── Mode Detection ───────────────────────────────────────────────────────────
 
+const DEMO_OVERRIDE_KEY = 'job-search-demo-override';
+
+export function enableDemoModeOverride() {
+  localStorage.setItem(DEMO_OVERRIDE_KEY, 'true');
+}
+
 export function isDemoMode() {
   if (import.meta.env.VITE_DEMO_MODE === 'true') return true;
+  if (localStorage.getItem(DEMO_OVERRIDE_KEY) === 'true') return true;
   return false;
 }
 
