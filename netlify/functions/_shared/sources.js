@@ -92,7 +92,7 @@ export const DEFAULT_SOURCES = [
     type: SOURCE_TYPES.RSS,
     sourceFamily: 'jobicy',
     url: 'https://jobicy.com/?feed=job_feed&job_categories=management&job_types=remote',
-    enabled: false, // OFF by default — enable after deployment verification
+    enabled: true,
     trustLevel: TRUST_LEVELS.MEDIUM,
     description: 'Jobicy RSS feed for remote management/TPM roles. Requires LIVE_INTAKE_ENABLED=true.',
     liveCapable: true,
@@ -104,7 +104,7 @@ export const DEFAULT_SOURCES = [
     type: SOURCE_TYPES.API,
     sourceFamily: 'greenhouse',
     url: null, // configured via GREENHOUSE_BOARDS env var (comma-separated board tokens)
-    enabled: false, // OFF by default — enable after adding GREENHOUSE_BOARDS
+    enabled: true,
     trustLevel: TRUST_LEVELS.HIGH,
     description: 'Greenhouse public job board API. Set GREENHOUSE_BOARDS env var to comma-separated board tokens (e.g. telstra,anz). No auth required — these are public boards.',
     liveCapable: true,
@@ -115,7 +115,7 @@ export const DEFAULT_SOURCES = [
     type: SOURCE_TYPES.API,
     sourceFamily: 'lever',
     url: null, // configured via LEVER_BOARDS env var (comma-separated site slugs)
-    enabled: false,
+    enabled: true,
     trustLevel: TRUST_LEVELS.HIGH,
     description: 'Lever public postings API. Set LEVER_BOARDS env var to comma-separated company slugs. Public read-only — no auth required.',
     liveCapable: true,
