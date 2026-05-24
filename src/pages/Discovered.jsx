@@ -256,7 +256,7 @@ export default function Discovered() {
     try {
       // In demo mode this is a safe no-op.
       // In live mode the caller needs DISCOVERY_SECRET in env and configured sources.
-      const result = await triggerDiscover({});
+      const result = await triggerDiscover({ discoverySecret: import.meta.env.VITE_DISCOVERY_SECRET });
       setLastRunResult(result);
       if (result.total_ingested > 0) {
         await loadOpportunities();
