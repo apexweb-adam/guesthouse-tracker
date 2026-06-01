@@ -266,17 +266,20 @@ export async function fetchApifyLinkedInJobs(config, sourceId) {
   const actorSlug = actorId.replace('/', '~');
   const url = `https://api.apify.com/v2/acts/${actorSlug}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}&format=json`;
 
-  // Pull keyword list from the discovery profile so this stays in sync with
-  // titles the rest of the pipeline accepts. Cap to 6 keywords to keep the
-  // sync run < 5 minutes (Apify's sync endpoint limit).
-  const keywords = (config.linkedinKeywords || [
+  // Pull keyword list from env (LINKEDIN_KEYWORDS) when set, otherwise fall
+  // back to the TPM defaults. Empty arrays in JS are truthy, so we MUST check
+  // length explicitly — `[] || defaults` returns `[]`, not the defaults.
+  const defaultKeywords = [
     'Technical Program Manager',
     'Technical Project Manager',
     'Senior Project Manager',
     'Delivery Manager',
     'Program Manager',
     'IT Project Manager',
-  ]).slice(0, 6);
+  ];
+  const keywords = (Array.isArray(config.linkedinKeywords) && config.linkedinKeywords.length > 0
+    ? config.linkedinKeywords
+    : defaultKeywords).slice(0, 6);
 
   const body = {
     keywords,
