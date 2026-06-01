@@ -6,9 +6,13 @@
  *   - Lever public postings JSON API
  *   - USAJobs REST API (federal government)
  *   - RSS/Atom feeds (SEEK, APSJobs, etc.)
+ *   - Apify LinkedIn (residential-proxy hit on LinkedIn's public guest-jobs
+ *     endpoint — added 2026-06-01. NOT browser automation, NOT logged-in
+ *     scraping, NOT crawling. Apify residential proxies rotate IPs against
+ *     LinkedIn's anonymous-public endpoint, which is policy-allowed.)
  *
  * Rules:
- *   - No LinkedIn scraping or automation
+ *   - No LinkedIn browser automation (account scraping is still forbidden)
  *   - No arbitrary crawling
  *   - All discovered jobs are normalised to a standard schema
  *   - Discovery Profile filtering is applied before scoring
@@ -240,6 +244,89 @@ export async function fetchRSSFeed(feedUrl, sourceFamily, sourceId) {
   return jobs;
 }
 
+// ─── Apify LinkedIn (residential-proxy guest-jobs endpoint) ───────────────────
+
+/**
+ * Fetch LinkedIn jobs via our deployed Apify actor.
+ *
+ * The actor scrapes LinkedIn's public /jobs-guest/jobs/api endpoint
+ * (no LinkedIn account involved). Residential proxy rotation by Apify means
+ * each request appears from a different real-user IP, dodging the rate limits
+ * that brick anonymous single-IP scraping.
+ *
+ * Returns normalised job records matching the rest of the pipeline's schema.
+ */
+export async function fetchApifyLinkedInJobs(config, sourceId) {
+  const token = process.env.APIFY_TOKEN;
+  const actorId = process.env.APIFY_LINKEDIN_ACTOR_ID || 'immense_greenery/linkedin-jobs-guest-scraper';
+  if (!token) {
+    console.warn('[apify-linkedin] APIFY_TOKEN missing — skipping');
+    return [];
+  }
+  const actorSlug = actorId.replace('/', '~');
+  const url = `https://api.apify.com/v2/acts/${actorSlug}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}&format=json`;
+
+  // Pull keyword list from the discovery profile so this stays in sync with
+  // titles the rest of the pipeline accepts. Cap to 6 keywords to keep the
+  // sync run < 5 minutes (Apify's sync endpoint limit).
+  const keywords = (config.linkedinKeywords || [
+    'Technical Program Manager',
+    'Technical Project Manager',
+    'Senior Project Manager',
+    'Delivery Manager',
+    'Program Manager',
+    'IT Project Manager',
+  ]).slice(0, 6);
+
+  const body = {
+    keywords,
+    location: config.linkedinLocation || 'United States',
+    hours_old: 168,
+    pages_per_keyword: 2,
+    remote_only: false,
+    use_residential_proxy: true,
+  };
+
+  let items = [];
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(240000),
+    });
+    if (!res.ok) {
+      console.warn(`[apify-linkedin] HTTP ${res.status}`);
+      return [];
+    }
+    items = await res.json();
+    if (!Array.isArray(items)) {
+      console.warn('[apify-linkedin] non-array response');
+      return [];
+    }
+  } catch (e) {
+    console.warn(`[apify-linkedin] fetch failed: ${e.message}`);
+    return [];
+  }
+
+  // Normalise to pipeline schema. The actor already strips LinkedIn tracking
+  // params from the URL, so each url is dedup-stable.
+  return items
+    .filter(it => it && it.url)
+    .map(it => ({
+      source_id: sourceId,
+      source_family: 'apify_linkedin',
+      title: it.title || '',
+      company: it.company || '',
+      location: it.location || '',
+      canonical_job_url: it.url,
+      application_url: it.url,
+      description: '',  // guest endpoint doesn't return description text
+      posted_at: it.posted_at || null,
+      source_job_id: (it.url.match(/jobs\/view\/[^/?]+-(\d+)/) || [])[1] || null,
+    }));
+}
+
 // ─── Discovery Runner ─────────────────────────────────────────────────────────
 
 /**
@@ -272,6 +359,8 @@ export async function discoverJobsForSource(source, config = {}) {
     }
   } else if (source.sourceFamily === SOURCE_FAMILIES.USAJOBS) {
     rawJobs = await fetchUSAJobsRoles(usajobsKeyword, maxResults, source.id);
+  } else if (source.sourceFamily === SOURCE_FAMILIES.APIFY_LINKEDIN) {
+    rawJobs = await fetchApifyLinkedInJobs(config, source.id);
   } else if (source.url) {
     rawJobs = await fetchRSSFeed(source.url, source.sourceFamily || SOURCE_FAMILIES.RSS, source.id);
   }

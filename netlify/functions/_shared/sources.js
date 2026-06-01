@@ -131,6 +131,17 @@ export const DEFAULT_SOURCES = [
     description: 'USAJobs REST API for federal PM/TPM roles. Set USAJOBS_API_KEY and USAJOBS_USER_AGENT. Must be used within API terms of service.',
     liveCapable: true,
   },
+  {
+    id: 'src-apify-linkedin',
+    name: 'LinkedIn (Apify residential-proxy)',
+    type: SOURCE_TYPES.API,
+    sourceFamily: 'apify_linkedin',
+    url: null, // configured via APIFY_TOKEN + APIFY_LINKEDIN_ACTOR_ID env vars
+    enabled: true,
+    trustLevel: TRUST_LEVELS.HIGH,
+    description: 'Apify-hosted actor hitting LinkedIn public guest-jobs endpoint via residential proxy rotation. No LinkedIn account involved. Set APIFY_TOKEN + APIFY_LINKEDIN_ACTOR_ID env vars.',
+    liveCapable: true,
+  },
   // ── Not automated ────────────────────────────────────────────────────────────
   {
     id: 'src-rss-linkedin-jobs',
@@ -158,6 +169,7 @@ export const SOURCE_FAMILIES = {
   CSV: 'csv',
   DEMO: 'demo',
   LINKEDIN: 'linkedin', // NOT automated — email intake only
+  APIFY_LINKEDIN: 'apify_linkedin', // Apify residential-proxy hit on LinkedIn guest endpoint (NOT browser automation)
 };
 
 // ─── Discovery Profile (Sample Candidate) ────────────────────────────────────

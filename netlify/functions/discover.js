@@ -141,6 +141,11 @@ export const handler = async (event) => {
     usajobsKeyword,
     maxResults: parseInt(process.env.MAX_RECORDS_PER_RUN || '50', 10),
     discoveryProfile: DEFAULT_DISCOVERY_PROFILE,
+    // Apify LinkedIn (src-apify-linkedin) — keywords + location passthrough.
+    // Defaults pulled from discovery profile inside fetchApifyLinkedInJobs.
+    linkedinLocation: process.env.LINKEDIN_LOCATION || 'United States',
+    linkedinKeywords: (process.env.LINKEDIN_KEYWORDS || '')
+      .split(',').map(s => s.trim()).filter(Boolean),
   };
 
   const results = [];
