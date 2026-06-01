@@ -156,7 +156,33 @@ export const handler = async (event) => {
   let totalIngested = 0;
   let totalRecommended = 0; // count of ingested records with recommended=true (score >= 70)
 
-  for (const source of sourcesToRun) {
+  // Phase 1: fetch all sources IN PARALLEL. Before this change each source's
+  // network fetch was sequential, so adding sources (Ashby, Apify LinkedIn)
+  // compounded the latency and pushed the handler over Netlify's 26s sync
+  // timeout. Parallelizing brings total wall-clock down to max(slowest source).
+  const fetched = await Promise.all(sourcesToRun.map(async source => {
+    try {
+      if (source.sourceFamily === 'greenhouse' && greenhouseBoards.length === 0) {
+        throw new Error('GREENHOUSE_BOARDS env var is empty');
+      }
+      if (source.sourceFamily === 'lever' && leverBoards.length === 0) {
+        throw new Error('LEVER_BOARDS env var is empty');
+      }
+      if (source.sourceFamily === 'usajobs' && (!process.env.USAJOBS_API_KEY || !process.env.USAJOBS_USER_AGENT)) {
+        throw new Error('USAJOBS_API_KEY and USAJOBS_USER_AGENT env vars are required');
+      }
+      const jobs = await discoverJobsForSource(source, config);
+      return { source, jobs, fetchError: null };
+    } catch (err) {
+      return { source, jobs: [], fetchError: err };
+    }
+  }));
+
+  // Phase 2: process each source's batch sequentially. processBatch hits the
+  // shared opportunities table with dedup-hash unique constraint — running
+  // them sequentially avoids race conditions on near-simultaneous duplicate
+  // inserts across sources.
+  for (const { source, jobs, fetchError } of fetched) {
     const sourceResult = {
       source_id: source.id,
       source_name: source.name,
@@ -166,18 +192,7 @@ export const handler = async (event) => {
     };
 
     try {
-      // Pre-validate source config so misconfigurations fail loudly
-      if (source.sourceFamily === 'greenhouse' && greenhouseBoards.length === 0) {
-        throw new Error('GREENHOUSE_BOARDS env var is empty — set at least one board token (e.g. GREENHOUSE_BOARDS=atlassian,servicenow)');
-      }
-      if (source.sourceFamily === 'lever' && leverBoards.length === 0) {
-        throw new Error('LEVER_BOARDS env var is empty — set at least one company slug (e.g. LEVER_BOARDS=atlassian,canva)');
-      }
-      if (source.sourceFamily === 'usajobs' && (!process.env.USAJOBS_API_KEY || !process.env.USAJOBS_USER_AGENT)) {
-        throw new Error('USAJOBS_API_KEY and USAJOBS_USER_AGENT env vars are required for USAJobs source');
-      }
-
-      const jobs = await discoverJobsForSource(source, config);
+      if (fetchError) throw fetchError;
       sourceResult.discovered = jobs.length;
       totalDiscovered += jobs.length;
 
