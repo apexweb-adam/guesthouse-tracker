@@ -244,6 +244,47 @@ export async function fetchRSSFeed(feedUrl, sourceFamily, sourceId) {
   return jobs;
 }
 
+// ─── Ashby public job-board API ───────────────────────────────────────────────
+
+/**
+ * Fetch jobs from an Ashby job board.
+ * Endpoint: https://api.ashbyhq.com/posting-api/job-board/{slug}
+ * Public read-only — no auth needed. Tested against openai, ramp, plaid, etc.
+ */
+export async function fetchAshbyJobs(boardSlug, sourceId) {
+  if (!boardSlug) return [];
+  let data;
+  try {
+    data = await fetchJSON(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(boardSlug)}`);
+  } catch (e) {
+    console.warn(`[ashby] ${boardSlug}: ${e.message}`);
+    return [];
+  }
+  const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+  return jobs.filter(j => j.isListed !== false).map(j => {
+    const wpt = (j.workplaceType || '').toLowerCase();
+    const work_type = wpt.includes('remote') ? 'remote'
+                    : wpt.includes('hybrid') ? 'hybrid'
+                    : wpt ? 'onsite'
+                    : (j.isRemote === true ? 'remote' : null);
+    return {
+      source_id: sourceId,
+      source_family: 'ashby',
+      title: j.title || '',
+      company: boardSlug,
+      location: j.location || (j.secondaryLocations && j.secondaryLocations[0]) || '',
+      canonical_job_url: j.jobUrl || j.applyUrl || '',
+      application_url: j.applyUrl || j.jobUrl || '',
+      description: (j.descriptionPlain || '').slice(0, 8000),
+      posted_at: j.publishedAt || null,
+      source_job_id: j.id || null,
+      employment_type: (j.employmentType || '').toLowerCase().replace('fulltime', 'full_time') || null,
+      work_type,
+      department: j.department || j.team || null,
+    };
+  });
+}
+
 // ─── Apify LinkedIn (residential-proxy guest-jobs endpoint) ───────────────────
 
 /**
@@ -368,6 +409,11 @@ export async function discoverJobsForSource(source, config = {}) {
     }
   } else if (source.sourceFamily === SOURCE_FAMILIES.USAJOBS) {
     rawJobs = await fetchUSAJobsRoles(usajobsKeyword, maxResults, source.id);
+  } else if (source.sourceFamily === SOURCE_FAMILIES.ASHBY) {
+    for (const boardSlug of (config.ashbyBoards || [])) {
+      const jobs = await fetchAshbyJobs(boardSlug, source.id);
+      rawJobs.push(...jobs);
+    }
   } else if (source.sourceFamily === SOURCE_FAMILIES.APIFY_LINKEDIN) {
     rawJobs = await fetchApifyLinkedInJobs(config, source.id);
   } else if (source.url) {

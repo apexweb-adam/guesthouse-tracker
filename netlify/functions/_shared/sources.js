@@ -142,6 +142,17 @@ export const DEFAULT_SOURCES = [
     description: 'Apify-hosted actor hitting LinkedIn public guest-jobs endpoint via residential proxy rotation. No LinkedIn account involved. Set APIFY_TOKEN + APIFY_LINKEDIN_ACTOR_ID env vars.',
     liveCapable: true,
   },
+  {
+    id: 'src-ashby-boards',
+    name: 'Ashby Public Job Boards',
+    type: SOURCE_TYPES.API,
+    sourceFamily: 'ashby',
+    url: null, // configured via ASHBY_BOARDS env var (comma-separated org slugs)
+    enabled: true,
+    trustLevel: TRUST_LEVELS.HIGH,
+    description: 'Ashby public posting-api job boards. Set ASHBY_BOARDS env var. Strong TPM coverage at openai, ramp, plaid, cohere, crusoe, wealthsimple, etc.',
+    liveCapable: true,
+  },
   // ── Not automated ────────────────────────────────────────────────────────────
   {
     id: 'src-rss-linkedin-jobs',
@@ -170,6 +181,7 @@ export const SOURCE_FAMILIES = {
   DEMO: 'demo',
   LINKEDIN: 'linkedin', // NOT automated — email intake only
   APIFY_LINKEDIN: 'apify_linkedin', // Apify residential-proxy hit on LinkedIn guest endpoint (NOT browser automation)
+  ASHBY: 'ashby', // Ashby public posting-api/job-board/{slug} endpoint
 };
 
 // ─── Discovery Profile (Sample Candidate) ────────────────────────────────────

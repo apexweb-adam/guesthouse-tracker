@@ -133,11 +133,14 @@ export const handler = async (event) => {
     .split(',').map(s => s.trim()).filter(Boolean);
   const leverBoards = (process.env.LEVER_BOARDS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
+  const ashbyBoards = (process.env.ASHBY_BOARDS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
   const usajobsKeyword = process.env.USAJOBS_KEYWORD || 'technical project manager';
 
   const config = {
     greenhouseBoards,
     leverBoards,
+    ashbyBoards,
     usajobsKeyword,
     maxResults: parseInt(process.env.MAX_RECORDS_PER_RUN || '50', 10),
     discoveryProfile: DEFAULT_DISCOVERY_PROFILE,
