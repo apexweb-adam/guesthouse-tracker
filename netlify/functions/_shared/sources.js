@@ -238,8 +238,10 @@ export const DEFAULT_DISCOVERY_PROFILE = {
   // Salary floor (AUD) — used to filter if salary data is available
   salaryFloorAUD: 120000,
 
-  // Maximum records per discovery run (before dedup/scoring)
-  maxRecordsPerRun: 50,
+  // Maximum records per discovery run (before dedup/scoring).
+  // Raised 2026-06-01 from 50 → 250 because 25 active greenhouse boards
+  // + 4 lever boards would otherwise saturate at Stripe alone.
+  maxRecordsPerRun: 250,
 
   // Source families to enable for this profile
   enabledSourceFamilies: ['jobicy', 'greenhouse', 'lever', 'usajobs', 'rss'],
