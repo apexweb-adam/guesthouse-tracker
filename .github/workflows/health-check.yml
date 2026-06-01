@@ -1,0 +1,43 @@
+name: Daily Health Check
+
+# Runs daily at 06:00 UTC. Opens (or appends to) a single GitHub Issue when
+# anything is broken — Adam gets emailed as repo owner before Candidate ever
+# notices.
+#
+# Checks:
+#   1. GREENHOUSE_BOARDS env vars: every configured board pings 200
+#   2. LEVER_BOARDS env vars: every configured board pings 200
+#   3. Supabase: opportunities count over last 7 days > floor
+#   4. Discover endpoint: smoke-test that POST /discover returns >0 total
+#
+# Each broken board is auto-listed in the issue, so Adam can swap them out.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install httpx supabase
+
+      - name: Probe boards + Supabase + discover endpoint
+        env:
+          GREENHOUSE_BOARDS: ${{ secrets.GREENHOUSE_BOARDS }}
+          LEVER_BOARDS: ${{ secrets.LEVER_BOARDS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DISCOVERY_SECRET: ${{ secrets.DISCOVERY_SECRET }}
+          NETLIFY_BASE_URL: ${{ secrets.NETLIFY_BASE_URL }}
+        run: python scripts/health_check.py
