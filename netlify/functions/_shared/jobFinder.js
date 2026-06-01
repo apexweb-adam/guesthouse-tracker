@@ -277,15 +277,19 @@ export async function fetchApifyLinkedInJobs(config, sourceId) {
     'Program Manager',
     'IT Project Manager',
   ];
+  // Aggressive scope cap — Netlify Functions sync timeout is 26s; an Apify
+  // sync run with residential proxy averages ~5-8s per keyword-page. So:
+  //   2 keywords × 1 page = ~12-16s actor time, fits comfortably.
+  // For bigger volume, add a separate 6h cron function (TODO).
   const keywords = (Array.isArray(config.linkedinKeywords) && config.linkedinKeywords.length > 0
     ? config.linkedinKeywords
-    : defaultKeywords).slice(0, 6);
+    : defaultKeywords).slice(0, 2);
 
   const body = {
     keywords,
     location: config.linkedinLocation || 'United States',
     hours_old: 168,
-    pages_per_keyword: 2,
+    pages_per_keyword: 1,
     remote_only: false,
     use_residential_proxy: true,
   };
@@ -296,7 +300,9 @@ export async function fetchApifyLinkedInJobs(config, sourceId) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(240000),
+      // 20s ceiling — leaves 6s of the Netlify 26s budget for everything else
+      // in the discover handler (other sources, scoring, DB writes).
+      signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) {
       console.warn(`[apify-linkedin] HTTP ${res.status}`);
