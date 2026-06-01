@@ -35,6 +35,8 @@ jobs:
 
       - name: Probe boards + Supabase + discover endpoint
         env:
+          # GH_TOKEN required so `gh issue create` works inside the runner
+          GH_TOKEN: ${{ github.token }}
           GREENHOUSE_BOARDS: ${{ secrets.GREENHOUSE_BOARDS }}
           LEVER_BOARDS: ${{ secrets.LEVER_BOARDS }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
