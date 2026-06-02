@@ -74,12 +74,19 @@ async function runIngestion() {
   }
 
   // Resolve job-finder config from env vars
+  // 2026-06-02 — added ashbyBoards + linkedin* so the CLOUD cron (this file,
+  // runs on Netlify servers every 2h, independent of anyone's laptop/wifi)
+  // picks up the same sources as the manual discover endpoint. Without these
+  // the scheduled run silently skipped Ashby + Apify LinkedIn.
   const config = {
     greenhouseBoards: (process.env.GREENHOUSE_BOARDS || '').split(',').map(s => s.trim()).filter(Boolean),
     leverBoards: (process.env.LEVER_BOARDS || '').split(',').map(s => s.trim()).filter(Boolean),
+    ashbyBoards: (process.env.ASHBY_BOARDS || '').split(',').map(s => s.trim()).filter(Boolean),
     usajobsKeyword: process.env.USAJOBS_KEYWORD || 'technical project manager',
     maxResults: MAX_RECORDS_PER_RUN,
     discoveryProfile: DEFAULT_DISCOVERY_PROFILE,
+    linkedinLocation: process.env.LINKEDIN_LOCATION || 'United States',
+    linkedinKeywords: (process.env.LINKEDIN_KEYWORDS || '').split(',').map(s => s.trim()).filter(Boolean),
   };
 
   for (const source of liveSources) {
