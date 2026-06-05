@@ -18,7 +18,7 @@
   included_files = ["netlify/functions/_shared/**"]
 
 [functions."ingest-scheduled"]
-  schedule = "0 */2 * * *"
+  schedule = "0 */6 * * *"  # 2026-06-05 dropped from every 2h to every 6h to cut Apify residential-proxy bandwidth cost
 
 [functions."stale-scan-scheduled"]
   schedule = "0 8 * * *"
