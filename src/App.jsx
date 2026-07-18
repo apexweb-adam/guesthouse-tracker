@@ -1,5 +1,5 @@
 import React from 'react';
-import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Outlet, useRouteError } from 'react-router-dom';
 import { AppProvider } from './context/AppContext.jsx';
 import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
@@ -39,7 +39,11 @@ class ErrorBoundary extends React.Component {
             {this.state.error?.message || String(this.state.error)}
           </pre>
           <button
-            onClick={() => { localStorage.clear(); window.location.reload(); }}
+            onClick={() => {
+              ['job-search-os-v1', 'discovery_profile_v1', 'job-search-os-readiness-history-v1', 'job-search-os-resume-vault-v1']
+                .forEach(k => localStorage.removeItem(k));
+              window.location.reload();
+            }}
             style={{ marginTop: 16, padding: '8px 16px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
           >
             Clear data & reload
@@ -69,17 +73,29 @@ function AppShell() {
   );
 }
 
+// ── Router Error Element ────────────────────────────────────────────────────
+function RouterErrorElement() {
+  const error = useRouteError();
+  const is404 = error?.status === 404;
+  return (
+    <div style={{ padding: 40, fontFamily: 'system-ui, sans-serif' }}>
+      <h1 style={{ color: '#c81e1e' }}>{is404 ? 'Page not found' : 'Something went wrong'}</h1>
+      {!is404 && (
+        <pre style={{ background: '#f3f4f6', padding: 16, borderRadius: 8, fontSize: 12, overflow: 'auto', whiteSpace: 'pre-wrap', marginBottom: 16 }}>
+          {error?.message || String(error)}
+        </pre>
+      )}
+      <a href="/" style={{ color: '#1e3a5f' }}>← Back to Dashboard</a>
+    </div>
+  );
+}
+
 // ── Router ─────────────────────────────────────────────────────────────────
 const router = createBrowserRouter([
   {
     path: '/',
     element: <AppShell />,
-    errorElement: (
-      <div style={{ padding: 40, fontFamily: 'system-ui, sans-serif' }}>
-        <h1 style={{ color: '#c81e1e' }}>Page not found</h1>
-        <a href="/" style={{ color: '#1e3a5f' }}>← Back to Dashboard</a>
-      </div>
-    ),
+    errorElement: <RouterErrorElement />,
     children: [
       { index: true, element: <Dashboard /> },
       { path: 'queue', element: <ApprovalQueue /> },

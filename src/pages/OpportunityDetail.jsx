@@ -40,6 +40,12 @@ export default function OpportunityDetail() {
     }
   }, [opp, prepLoading, notify]);
 
+  if (state.loading) return (
+    <div className="card card-pad">
+      <div className="text-muted">Loading…</div>
+    </div>
+  );
+
   if (!opp) return (
     <div className="card card-pad">
       <div className="text-muted">Opportunity not found.</div>
