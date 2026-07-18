@@ -580,4 +580,3 @@ export function recommendResumeVersion(lane, score = 0, signals = []) {
     reason: `Low fit or generic lane (${lane}, score ${score}). MASTER-01 is the fallback but consider whether this role warrants application at all.`,
   };
 }
-

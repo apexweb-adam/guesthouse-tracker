@@ -1,6 +1,6 @@
 # Job Search OS
 
-**Approval-based job search operating system for Sample Candidate.**
+**Approval-based job search operating system demonstrated with a fictional sample candidate.**
 
 A website-centred, automated-intake, human-approval job search system. Not a blind auto-apply bot.
 
@@ -50,7 +50,7 @@ find role → paste into Quick Add → auto-score → approve (→ Apply Pack ge
 ---
 ## Candidate Truth (Locked)
 
-This system is built around Sample Candidate actual strongest positioning.
+The public demo uses a fictional sample profile. Replace it with a candidate-approved profile in a private deployment.
 
 **Non-negotiable hierarchy:**
 1. **Technical Project Manager (TPM)** — Primary lane, maximum fit score ceiling

@@ -272,7 +272,7 @@ export function generateCopyReadyTailoredResumeBlock(opp, topKeywords = [], proo
 
   return [
     'SAMPLE CANDIDATE',
-    'United States | (+1 555 0100 | candidate@example.com | linkedin.com/in/candidate-candidate-pm',
+    'United States | +1 555 0100 | candidate@example.com | linkedin.com/in/candidate',
     '',
     `${title.toUpperCase()} TARGET RESUME`,
     `${company} | Fit Score: ${opp.fit_score ?? 'N/A'} | Focus: ${laneConfig.label}`,
@@ -297,14 +297,14 @@ export function generateCopyReadyCoverLetterBlock(opp, topKeywords = []) {
   const title = opp.title || '[Role Title]';
   return [
     'Sample Candidate',
-    'United States | (+1 555 0100 | candidate@example.com',
+    'United States | +1 555 0100 | candidate@example.com',
     '',
     `Re: ${title} at ${company}`,
     '',
     generateCopyReadyCoverNoteBlock(opp, topKeywords)
       .replace('[DRAFT — review and personalise before use. This is a starting point, not a finished cover letter.]\n\n', '')
       .replace(/\[personalise — insert what specifically appeals about the role\/company\]/g, `the opportunity to support ${company}'s project delivery goals`)
-      .replace(/\[Your Name\]\n\[Your Contact Details\]/g, 'Sample Candidate\n(+1 555 0100 | candidate@example.com'),
+      .replace(/\[Your Name\]\n\[Your Contact Details\]/g, 'Sample Candidate\n+1 555 0100 | candidate@example.com'),
   ].join('\n');
 }
 
