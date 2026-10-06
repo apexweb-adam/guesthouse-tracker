@@ -142,12 +142,33 @@ export async function getOpportunity(id) {
   return _demo.opportunities.find(o => o.id === id) || null;
 }
 
+// Supabase returns at most 1000 rows per request, so page through the table.
+async function selectAllRows(sb, columns, applyFilter = q => q) {
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await applyFilter(sb.from('opportunities').select(columns)).range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < 1000) return rows;
+  }
+}
+
+// Columns of the opportunities table; anything else on a discovered record
+// (e.g. Ashby's department, Apify's source_id) is dropped before insert.
+const OPPORTUNITY_TABLE_COLUMNS = new Set([
+  'id', 'title', 'company', 'location', 'url', 'description', 'source', 'dedup_hash', 'is_duplicate',
+  'lane', 'fit_score', 'fit_signals', 'recommended', 'high_fit', 'resume_emphasis', 'recommendation_text',
+  'status', 'approval_state', 'human_override', 'notes', 'applied_date', 'last_action_date', 'next_action',
+  'next_action_due', 'stale_flag', 'stale_reason', 'stale_flagged_at', 'suggested_next_status', 'ingested_at',
+  'updated_at', 'canonical_job_url', 'application_url', 'source_family', 'source_job_id', 'is_demo_record',
+  'discovered_at', 'discovery_source_id', 'apply_pack', 'apply_pack_missing_url', 'pack_readiness_score',
+  'status_advance_from_needs_apply_url', 'candidate_slug', 'applied_at', 'screening_answers', 'agent_source',
+]);
+
 export async function getExistingHashes() {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb.from('opportunities').select('dedup_hash');
-    if (error) throw error;
-    return (data || []).map(r => r.dedup_hash);
+    return (await selectAllRows(sb, 'dedup_hash')).map(r => r.dedup_hash);
   }
   return _demo.opportunities.map(o => o.dedup_hash);
 }
@@ -159,12 +180,12 @@ export async function getExistingHashes() {
 export async function getExistingSourceJobIds() {
   const sb = getSupabase();
   if (sb) {
-    const { data, error } = await sb
-      .from('opportunities')
-      .select('source_family, source_job_id')
-      .not('source_job_id', 'is', null);
-    if (error) return [];
-    return (data || []).map(r => `${r.source_family}:${r.source_job_id}`);
+    try {
+      const rows = await selectAllRows(sb, 'source_family, source_job_id', q => q.not('source_job_id', 'is', null));
+      return rows.map(r => `${r.source_family}:${r.source_job_id}`);
+    } catch {
+      return [];
+    }
   }
   return _demo.opportunities
     .filter(o => o.source_job_id)
@@ -183,7 +204,8 @@ export async function insertOpportunity(opp) {
     human_override: null,
   };
   if (sb) {
-    const { data, error } = await sb.from('opportunities').insert(record).select().single();
+    const row = Object.fromEntries(Object.entries(record).filter(([k]) => OPPORTUNITY_TABLE_COLUMNS.has(k)));
+    const { data, error } = await sb.from('opportunities').insert(row).select().single();
     if (error) throw error;
     return data;
   }
@@ -341,6 +363,11 @@ export async function processBatch(rawJobs, sourceId) {
         seenSourceJobIds.add(`${raw.source_family}:${raw.source_job_id}`);
       }
     } catch (err) {
+      // Already stored (unique dedup_hash) counts as a duplicate, not an error.
+      if (/opportunities_dedup_hash_key/.test(err.message)) {
+        deduped.push({ ...raw, dedup_reason: 'hash' });
+        continue;
+      }
       errors.push({ raw, error: err.message });
     }
   }
