@@ -283,7 +283,7 @@ export async function fetchAshbyJobs(boardSlug, sourceId) {
       canonical_job_url: j.jobUrl || j.applyUrl || '',
       application_url: j.applyUrl || j.jobUrl || '',
       description: (j.descriptionPlain || '').slice(0, 8000),
-      posted_at: j.publishedAt || null,
+      discovered_at: j.publishedAt || null, // no posted_at column in opportunities
       source_job_id: j.id || null,
       employment_type: (j.employmentType || '').toLowerCase().replace('fulltime', 'full_time') || null,
       work_type,
@@ -372,7 +372,7 @@ export async function fetchApifyLinkedInJobs(config, sourceId) {
       canonical_job_url: it.url,
       application_url: it.url,
       description: '',  // guest endpoint doesn't return description text
-      posted_at: it.posted_at || null,
+      discovered_at: it.posted_at || null, // no posted_at column in opportunities
       source_job_id: (it.url.match(/jobs\/view\/[^/?]+-(\d+)/) || [])[1] || null,
     }));
 }
