@@ -1,6 +1,9 @@
 [build]
-  command = "npm ci && npm run build"
-  publish = "dist"
+  # 2026-10-05: the live dashboard frontend (deployed 2026-06-16) was never
+  # committed; its exact published files are kept in live-frontend/ and served
+  # as-is. src/ is older than that frontend, so it is not built for production.
+  command = "npm ci"
+  publish = "live-frontend"
   functions = "netlify/functions"
 
 [build.environment]

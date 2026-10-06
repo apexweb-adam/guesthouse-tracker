@@ -7,7 +7,8 @@
     "dev": "netlify dev",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node scripts/verify.js"
+    "test": "node scripts/verify.js",
+    "deploy:prod": "netlify deploy --prod --build"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
