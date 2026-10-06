@@ -228,11 +228,18 @@ export async function fetchRSSFeed(feedUrl, sourceFamily, sourceId) {
     const title = get('title');
     if (!title) continue;
 
+    // Jobicy publishes location/company as job_listing:* tags, and every
+    // Jobicy listing is remote, so tag it as such for the remote-only dashboard.
+    let location = get('location') || get('job_listing:location') || '';
+    if (sourceFamily === SOURCE_FAMILIES.JOBICY && !/remote/i.test(location)) {
+      location = location ? `Remote (${location})` : 'Remote';
+    }
+
     jobs.push(normaliseJob({
       title,
-      company: get('author') || get('dc:creator') || '',
+      company: get('author') || get('dc:creator') || get('job_listing:company') || '',
       description: stripHtml(get('description') || get('summary') || get('content') || ''),
-      location: get('location') || '',
+      location,
       canonical_job_url: linkHref || null,
       application_url: linkHref || null,
       source_job_id: get('guid') || linkHref || null,
@@ -299,11 +306,8 @@ export async function fetchAshbyJobs(boardSlug, sourceId) {
  */
 export async function fetchApifyLinkedInJobs(config, sourceId) {
   const token = process.env.APIFY_TOKEN;
-  const actorId = process.env.APIFY_LINKEDIN_ACTOR_ID || 'immense_greenery/linkedin-jobs-guest-scraper';
-  if (!token) {
-    console.warn('[apify-linkedin] APIFY_TOKEN missing — skipping');
-    return [];
-  }
+  const actorId = process.env.APIFY_LINKEDIN_ACTOR_ID || 'PL3BTctQCTfa7Zqd1';
+  if (!token) throw new Error('APIFY_TOKEN env var missing');
   const actorSlug = actorId.replace('/', '~');
   const url = `https://api.apify.com/v2/acts/${actorSlug}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}&format=json`;
 
@@ -346,17 +350,13 @@ export async function fetchApifyLinkedInJobs(config, sourceId) {
       signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) {
-      console.warn(`[apify-linkedin] HTTP ${res.status}`);
-      return [];
+      const detail = (await res.text().catch(() => '')).slice(0, 200);
+      throw new Error(`Apify actor ${actorId} HTTP ${res.status}: ${detail}`);
     }
     items = await res.json();
-    if (!Array.isArray(items)) {
-      console.warn('[apify-linkedin] non-array response');
-      return [];
-    }
+    if (!Array.isArray(items)) throw new Error('Apify returned a non-array response');
   } catch (e) {
-    console.warn(`[apify-linkedin] fetch failed: ${e.message}`);
-    return [];
+    throw new Error(`LinkedIn (Apify) failed: ${e.message.replace(token, '***')}`);
   }
 
   // Normalise to pipeline schema. The actor already strips LinkedIn tracking
@@ -380,6 +380,33 @@ export async function fetchApifyLinkedInJobs(config, sourceId) {
 // ─── Discovery Runner ─────────────────────────────────────────────────────────
 
 /**
+ * Fetch every board in parallel (8 at a time). One dead board (404, timeout)
+ * is logged and skipped instead of failing the whole source; the source only
+ * fails when every board fails.
+ */
+async function fetchAllBoards(boards, fetchBoard, label) {
+  const jobs = [];
+  const failures = [];
+  const queue = [...boards];
+  const worker = async () => {
+    while (queue.length) {
+      const board = queue.shift();
+      try {
+        jobs.push(...(await fetchBoard(board)));
+      } catch (e) {
+        failures.push(`${board}: ${e.message}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, boards.length) }, worker));
+  if (failures.length) console.warn(`[${label}] ${failures.length}/${boards.length} boards failed: ${failures.join('; ')}`);
+  if (boards.length && failures.length === boards.length) {
+    throw new Error(`All ${label} boards failed: ${failures.slice(0, 3).join('; ')}`);
+  }
+  return jobs;
+}
+
+/**
  * Run discovery for a given source configuration.
  * Returns normalised, profile-filtered jobs ready for intake pipeline.
  *
@@ -398,22 +425,13 @@ export async function discoverJobsForSource(source, config = {}) {
   let rawJobs = [];
 
   if (source.sourceFamily === SOURCE_FAMILIES.GREENHOUSE) {
-    for (const boardToken of greenhouseBoards) {
-      const jobs = await fetchGreenhouseJobs(boardToken, source.id);
-      rawJobs.push(...jobs);
-    }
+    rawJobs = await fetchAllBoards(greenhouseBoards, b => fetchGreenhouseJobs(b, source.id), 'greenhouse');
   } else if (source.sourceFamily === SOURCE_FAMILIES.LEVER) {
-    for (const siteSlug of leverBoards) {
-      const jobs = await fetchLeverJobs(siteSlug, source.id);
-      rawJobs.push(...jobs);
-    }
+    rawJobs = await fetchAllBoards(leverBoards, b => fetchLeverJobs(b, source.id), 'lever');
   } else if (source.sourceFamily === SOURCE_FAMILIES.USAJOBS) {
     rawJobs = await fetchUSAJobsRoles(usajobsKeyword, maxResults, source.id);
   } else if (source.sourceFamily === SOURCE_FAMILIES.ASHBY) {
-    for (const boardSlug of (config.ashbyBoards || [])) {
-      const jobs = await fetchAshbyJobs(boardSlug, source.id);
-      rawJobs.push(...jobs);
-    }
+    rawJobs = await fetchAllBoards(config.ashbyBoards || [], b => fetchAshbyJobs(b, source.id), 'ashby');
   } else if (source.sourceFamily === SOURCE_FAMILIES.APIFY_LINKEDIN) {
     rawJobs = await fetchApifyLinkedInJobs(config, source.id);
   } else if (source.url) {

@@ -11,6 +11,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { scoreOpportunity, getRecommendation } from './scoring.js';
 import { generateDedupHash } from './dedup.js';
+import { isRemoteLocation } from './sources.js';
 
 // ─── Supabase Client ──────────────────────────────────────────────────────────
 
@@ -75,12 +76,18 @@ const OPPORTUNITY_LIST_COLUMNS = [
   'stale_reason',
   'pack_readiness_score',
   'apply_pack_missing_url',
+  'candidate_slug',
+  'agent_source',
 ].join(',');
 
-export async function listOpportunities({ status, lane, recommended } = {}) {
+// remoteOnly option: when true, only rows whose location indicates remote are returned.
+// On the live path a coarse ilike narrows rows over the wire, then isRemoteLocation
+// (imported from sources.js) does the exact JS-side filter to drop hybrids/on-site.
+// On the demo path the JS filter runs directly on the in-memory array.
+export async function listOpportunities({ status, lane, recommended, candidate_slug, limit, remoteOnly } = {}) {
   const sb = getSupabase();
   if (sb) {
-    const pageSize = 1000;
+    const pageSize = limit || 1000;
     const rows = [];
 
     for (let from = 0; ; from += pageSize) {
@@ -92,15 +99,27 @@ export async function listOpportunities({ status, lane, recommended } = {}) {
       if (status) q = q.eq('status', status);
       if (lane) q = q.eq('lane', lane);
       if (recommended !== undefined) q = q.eq('recommended', recommended);
+      if (candidate_slug) q = q.eq('candidate_slug', candidate_slug);
+      // Coarse server-side narrowing: pull only rows that might be remote.
+      // The exact JS filter below removes any false positives (e.g. hybrid rows).
+      if (remoteOnly) {
+        q = q.or(
+          'location.ilike.%remote%,location.ilike.%wfh%,location.ilike.%work from home%,location.ilike.%distributed%,location.ilike.%anywhere%'
+        );
+      }
 
       const { data, error } = await q;
       if (error) throw error;
 
       const page = data || [];
       rows.push(...page);
-      if (page.length < pageSize) break;
+      if (page.length < pageSize || limit) break;
     }
 
+    // Exact JS-side remote filter: removes hybrids, on-site, and ambiguous rows.
+    if (remoteOnly) {
+      return rows.filter(r => isRemoteLocation(r.location));
+    }
     return rows;
   }
   // Demo fallback
@@ -108,6 +127,8 @@ export async function listOpportunities({ status, lane, recommended } = {}) {
   if (status) results = results.filter(o => o.status === status);
   if (lane) results = results.filter(o => o.lane === lane);
   if (recommended !== undefined) results = results.filter(o => o.recommended === recommended);
+  if (candidate_slug) results = results.filter(o => o.candidate_slug === candidate_slug);
+  if (remoteOnly) results = results.filter(o => isRemoteLocation(o.location));
   return results;
 }
 

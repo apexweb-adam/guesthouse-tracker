@@ -91,7 +91,7 @@ export const DEFAULT_SOURCES = [
     name: 'Jobicy RSS (Remote Management)',
     type: SOURCE_TYPES.RSS,
     sourceFamily: 'jobicy',
-    url: 'https://jobicy.com/?feed=job_feed&job_categories=management&job_types=remote',
+    url: 'https://jobicy.com/?feed=job_feed&search_keywords=program+manager', // 2026-10-05: the management category feed went empty
     enabled: true,
     trustLevel: TRUST_LEVELS.MEDIUM,
     description: 'Jobicy RSS feed for remote management/TPM roles. Requires LIVE_INTAKE_ENABLED=true.',
@@ -321,4 +321,12 @@ export function mergeWithDefaults(dbSources = []) {
     }
   }
   return merged;
+}
+
+/**
+ * True when a location string indicates a remote role. Used by the
+ * opportunities list, which only shows remote roles to the candidate.
+ */
+export function isRemoteLocation(location) {
+  return /remote|wfh|work from home|distributed|anywhere/i.test(location || '');
 }

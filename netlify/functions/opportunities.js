@@ -38,11 +38,15 @@ export const handler = async (event) => {
         if (!opp) return json(404, { error: 'Not found' });
         return json(200, opp);
       }
-      const { status, lane, recommended } = event.queryStringParameters || {};
+      const { status, lane, recommended, candidate_slug, limit, remote } = event.queryStringParameters || {};
       const opps = await listOpportunities({
         status: status || undefined,
         lane: lane || undefined,
         recommended: recommended !== undefined ? recommended === 'true' : undefined,
+        candidate_slug: candidate_slug || undefined,
+        limit: limit ? Math.min(parseInt(limit, 10) || 1000, 1000) : undefined,
+        // The dashboard only lists remote roles; ?remote=false returns everything.
+        remoteOnly: remote !== 'false',
       });
       return json(200, { opportunities: opps, count: opps.length, demo: isDemoMode() });
     }

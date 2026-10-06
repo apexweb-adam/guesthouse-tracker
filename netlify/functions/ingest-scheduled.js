@@ -12,7 +12,7 @@
  *   - Per-source enabled flag must be true
  *   - MAX_RECORDS_PER_RUN cap applied per source (default: 50)
  *
- * Schedule: every 2 hours (configurable via netlify.toml)
+ * Schedule: every 2 hours (netlify.toml)
  */
 
 import { listSources, processBatch, logIngestion, isDemoMode } from './_shared/db.js';
@@ -89,23 +89,27 @@ async function runIngestion() {
     linkedinKeywords: (process.env.LINKEDIN_KEYWORDS || '').split(',').map(s => s.trim()).filter(Boolean),
   };
 
-  for (const source of liveSources) {
-    summary.sources++;
-    let jobs = [];
-    let fetchError = null;
-
+  // Fetch every source in parallel so the run fits the 30s scheduled-function
+  // limit; DB writes below stay sequential to avoid dedup races (as in discover.js).
+  const fetched = await Promise.all(liveSources.map(async (source) => {
     try {
       if (source.sourceFamily && source.sourceFamily !== 'rss') {
         // Use the structured job-finder adapter for ATS/API sources
         const result = await discoverJobsForSource(source, config);
-        jobs = Array.isArray(result) ? result : result.jobs || [];
+        return { source, jobs: Array.isArray(result) ? result : result.jobs || [], fetchError: null };
       } else if (source.type === SOURCE_TYPES.RSS) {
         // Legacy RSS fetcher — preserve backward compat
-        jobs = await fetchRSSJobs(source);
+        return { source, jobs: await fetchRSSJobs(source), fetchError: null };
       }
+      return { source, jobs: [], fetchError: null };
     } catch (err) {
-      fetchError = err.message;
+      return { source, jobs: [], fetchError: err.message };
     }
+  }));
+
+  for (const { source, jobs: fetchedJobs, fetchError } of fetched) {
+    summary.sources++;
+    let jobs = fetchedJobs;
 
     if (fetchError || !jobs.length) {
       await logIngestion({
